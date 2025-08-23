@@ -1,0 +1,108 @@
+# Complete Directory Listing for API Folder
+# Generated on August 8, 2025
+# Full paths for all files and directories
+
+## ROOT LEVEL FILES (/api/)
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__init__.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/analyze_streamlit_repo.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/api_contents.txt
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/app.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/app.py.backup
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/app.py.backup_1754577099
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/ast_parser_service.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/dead_code_similarity_analyzer.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/debt_database.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/list.txt
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/main.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/minimal_app.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/populate_via_api.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/real_backend.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/repository_analyzer.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/requirements-ai-refactoring.txt
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/security_database_setup.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/server.log
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/simple_test.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/technical_debt_service.py
+
+## ROUTERS DIRECTORY (/api/routers/)
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/__init__.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/documentation.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/github.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/hybrid_search.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/jira.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/repositories.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/security.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/security_enhanced.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/webhooks.py
+
+## SERVICES DIRECTORY (/api/services/)
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__init__.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/ai_refactoring_config.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/app_services.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/database_manager.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/embedding_generator.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/enhanced_ast_parser.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/enhanced_security_service.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/hybrid_search_service.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/performance_hybrid_search_service.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/purpose_extractor.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/refactoring_engine.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/security_analysis_service.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/service_patches.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/service_registry.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/similarity_engine.py
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/simple_search_service.py
+
+## SCRIPTS DIRECTORY (/api/scripts/)
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/scripts/generate_docs.py
+
+## PYTHON CACHE FILES (/api/__pycache__/)
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/__init__.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/analyze_streamlit_repo.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/app.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/ast_parser_service.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/dead_code_similarity_analyzer.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/debt_database.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/main.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/minimal_app.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/real_backend.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/repository_analyzer.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/__pycache__/technical_debt_service.cpython-313.pyc
+
+## ROUTERS PYTHON CACHE FILES (/api/routers/__pycache__/)
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/__pycache__/__init__.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/__pycache__/documentation.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/__pycache__/hybrid_search.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/__pycache__/jira.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/__pycache__/repositories.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/__pycache__/security_enhanced.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/routers/__pycache__/webhooks.cpython-313.pyc
+
+## SERVICES PYTHON CACHE FILES (/api/services/__pycache__/)
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/__init__.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/app_services.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/database_manager.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/embedding_generator.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/enhanced_ast_parser.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/hybrid_search_service.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/performance_hybrid_search_service.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/purpose_extractor.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/refactoring_engine.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/security_analysis_service.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/service_registry.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/similarity_engine.cpython-313.pyc
+/home/rhelmsjr/Documents/Code/Code_Management_Analyzer/api/services/__pycache__/simple_search_service.cpython-313.pyc
+
+## SUMMARY
+Total Files: 72
+- Root Level: 21 files
+- Routers: 9 files  
+- Services: 16 files
+- Scripts: 1 file
+- Cache Files: 25 files
+
+## KEY FILES
+- Main Entry: main.py
+- FastAPI App: app.py (3,229 lines)
+- Configuration: api_contents.txt (consolidated API documentation)
+- Requirements: requirements-ai-refactoring.txt

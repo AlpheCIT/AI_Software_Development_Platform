@@ -1,0 +1,34 @@
+# Prometheus Configuration for AI Code Management System
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # Add rule files here if needed
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:4000']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  - job_name: 'arangodb'
+    static_configs:
+      - targets: ['arangodb:8529']
+    scrape_interval: 30s
+    metrics_path: /_admin/metrics
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    scrape_interval: 30s
+
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['ollama:11434']
+    scrape_interval: 30s

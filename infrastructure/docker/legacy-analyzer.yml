@@ -1,0 +1,144 @@
+services:
+  # ArangoDB service
+  arangodb:
+    image: arangodb:latest
+    container_name: arangodb
+    ports:
+      - "8529:8529"
+    environment:
+      - ARANGO_ROOT_PASSWORD=password
+    volumes:
+      - arangodb_data:/var/lib/arangodb3
+      - arangodb_apps:/var/lib/arangodb3-apps
+    restart: unless-stopped
+
+  # Embedding model service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    pull_policy: always
+    tty: true
+    ports:
+      - "11436:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # The example doesn't use healthcheck, which may be causing issues
+    # healthcheck:
+    #   test: ["CMD", "curl", "-s", "--fail", "http://localhost:11434/api/health"]
+    #   interval: 20s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 30s
+    # CPU resource limits (since GPU is not available)
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  # Model initialization service
+  ollama-init:
+    image: curlimages/curl:latest
+    container_name: ollama-init
+    restart: on-failure
+    entrypoint: sh
+    command: >
+      -c "
+      set -e;
+      echo 'Waiting for Ollama API to be ready...';
+      for i in \$(seq 1 30); do
+        if curl -s --fail http://ollama:11434/api/health >/dev/null 2>&1; then
+          echo '✅ Ollama API is ready.';
+          break;
+        fi;
+        echo '⏳ Attempt '\$i'/30: Waiting for Ollama API...';
+        if [ \$i -eq 30 ]; then
+          echo '❌ Timed out waiting for Ollama API';
+          exit 1;
+        fi;
+        sleep 5;
+      done;
+      
+      echo 'Checking if model already exists...';
+      if curl -s http://ollama:11434/api/tags | grep -q 'nomic-embed-text'; then
+        echo '✅ Model nomic-embed-text already exists.';
+      else
+        echo '🔄 Pulling embedding model nomic-embed-text...';
+        curl -X POST http://ollama:11434/api/pull -d '{\"model\":\"nomic-embed-text\"}';
+        
+        for i in \$(seq 1 60); do
+          if curl -s http://ollama:11434/api/tags | grep -q 'nomic-embed-text'; then
+            echo '✅ Model successfully downloaded!';
+            exit 0;
+          fi;
+          echo '⏳ Waiting for model download... '\$i'/60';
+          sleep 5;
+        done;
+        
+        echo '❌ Timed out waiting for model';
+        exit 1;
+      fi;
+      exit 0;
+      "
+    depends_on:
+      - ollama
+
+  # Web interface for model management
+  ollama-ui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: ollama-ui
+    ports:
+      - "3001:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=
+    volumes:
+      - ollama_webui_data:/app/backend/data
+    depends_on:
+      - ollama
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+
+  # Streamlit application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: streamlit-app
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      - ARANGO_HOST=arangodb
+      - ARANGO_PORT=8529
+      - ARANGO_USER=root
+      - ARANGO_PASSWORD=openSesame
+      - ARANGO_DATABASE=ARANGO_AISDP_DB
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=nomic-embed-text:latest  # Added :latest to match what's available
+      # Jira Integration - these will be loaded from .env file
+      # You can also override them here if needed:
+      # - JIRA_SERVER_URL=https://alphavirtusai.atlassian.net
+      # - JIRA_USERNAME=richard@alphavirtusai.com
+      # - JIRA_API_TOKEN=your_token_here
+      # - JIRA_PROJECT_KEY=TA
+    volumes:
+      - ./:/app
+    depends_on:
+      - ollama-init
+      - arangodb
+    restart: unless-stopped
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+volumes:
+  arangodb_data:
+  arangodb_apps:
+  ollama_data:
+  ollama_webui_data:

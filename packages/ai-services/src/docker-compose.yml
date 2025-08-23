@@ -1,0 +1,9 @@
+services:  
+  ai-processing:  
+    build: ./backend/ai-processing  
+    ports:  
+      - "5000:5000"  
+    depends_on:  
+      - pubsub  
+    environment:  
+      - REDIS_URL=redis://pubsub:6379  
