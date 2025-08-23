@@ -1,0 +1,35 @@
+Feature / Function,Source App (071108 � Code_Management),Target App (085534 � Software Dev Platform),R/W,Status,What�s Missing & Action,Priority Phase
+Call graph extraction,"Reads code_entities; writes to imports, calls edges",Enhanced ingestion service with calls collection,R/W,Done,Specialized calls collection created and populated by enhanced service.,Phase 1
+Dependency graph (file?file),Writes depends_on edges,Enhanced ingestion service with depends_on collection,R/W,Done,Specialized depends_on collection created and populated.,Phase 1
+External package / 3rd-party deps,"doc_external_packages, external_dependency",Enhanced ingestion service with specialized collections,R/W,Done,Both doc_external_packages and external_dependency collections created and populated.,Phase 2
+Inheritance mapping (extends/implements/abstract),"Writes inherits, implements, abstract_implements; doc_ai_inheritance_analysis",Enhanced ingestion service with inheritance collections,R/W,Done,All inheritance collections created: inherits implements abstract_implements.,Phase 1
+Reads / References edges,"Specialized edge collections: reads_from, reads, references, contains",Enhanced ingestion service with specialized edge collections,R/W,Done,Specialized edge collections created: reads_from reads references.,Phase 1
+AI Dependency analysis docs,"Writes doc_ai_dependency_analysis, doc_dependencies",Enhanced ingestion service generates AI analysis docs,W,Done,doc_ai_dependency_analysis collection created and populated by enhanced service.,Phase 2
+AI Function analysis docs,Writes doc_ai_function_analysis,Enhanced ingestion service generates AI analysis docs,W,Done,doc_ai_function_analysis collection created and populated by enhanced service.,Phase 2
+AI Inheritance analysis docs,Writes doc_ai_inheritance_analysis,Enhanced ingestion service generates AI analysis docs,W,Done,doc_ai_inheritance_analysis collection created and populated by enhanced service.,Phase 2
+Security findings,Writes doc_security_findings,Enhanced ingestion service with vulnerability detection,R/W,Done,security_findings collection created with comprehensive vulnerability scanning.,Phase 1
+Performance profiles / metrics,Writes doc_performance_profiles,PerformanceTab.tsx charts scaffolded,R/W,Partial,Wire profiles to inspector.,Phase 1
+Code metrics,Writes doc_code_metrics,Inspector �Quality� mocked,R,Missing,Add Quality tab; bind to backend metrics.,Phase 2
+Architecture insights,Writes doc_architecture_insights,Enhanced ingestion service generates architecture insights,R/W,Done,doc_architecture_insights collection created and populated by enhanced service.,Phase 3
+Trend / hotspot / risk analysis,"Writes doc_trend_analysis, doc_hotspot_analysis, doc_risk_assessment",Collections exist; not surfaced,R,Missing,Add overlays & heatmaps.,Phase 3
+Business logic analyzer,business-logic-analyzer.service.ts ? doc_business_logic,No inspector tab,R,Missing,Add Business Logic tab; wire analyzer.,Phase 2
+Complexity analysis,Analyzer outputs stored in docs,No tab,R,Missing,Add Complexity tab with metrics.,Phase 2
+AST / Entities,Reads/writes code_entities,Enhanced ingestion service populates code_entities collection,R/W,Done,code_entities collection replaces legacy entities with enhanced metadata.,Phase 1
+Embeddings / Vector search (GraphRAG),Writes doc_embeddings; hybrid search,Enhanced ingestion service generates embeddings,R,Done,doc_embeddings collection created and populated for semantic search.,Phase 2
+Pattern discovery / clustering,Clustering analyzers + doc_similarity_groups,AQL stub exists,R,Partial,Add �Discover� drawer with cluster cards.,Phase 3
+Vector cache & sessions,"doc_similarity_cache, doc_search_sessions",Cache helper exists,R,Partial,Add �Recent searches� in search panel.,Phase 3
+Human feedback / expert assignments,"Feedback docs: doc_expert_assignments, etc.",Collections exist; no UI,R/W,Missing,Add Feedback drawer; POST feedback.,Phase 2
+Ownership / Code owners,Stores code_ownership,Mock Ownership inspector section,R,Partial,Bind ownership docs; add team chips.,Phase 2
+Saved Views,Not present in source,API /saved-views; UI buggy,R/W,Partial,Fix state bug; wire to API.,Phase 1
+Graph seeds / neighborhood expansion,Seeds via analyzers,"graphApi.getSeeds(), getNeighborhood() stubbed",R,Partial,Wire GraphCanvas load & dbl-click expansion.,Phase 1
+Graph search,Hybrid search logic,graphApi.search() stubbed,R,Partial,Implement toolbar search + focus node.,Phase 1
+Node inspector (tabs),Source populates Security/Perf/Quality docs,"Tabs scaffolded, backend missing",R,Missing,Bind getNodeDetails() to backend.,Phase 1
+CI/CD & activity,"Tracks hotspots, commits, change stats",Inspector History tab scaffolded,R,Partial,Add backend endpoints; wire commits/deploys.,Phase 2
+Jira integration (stories & sync),�,"Full CRUD on stories, jira_sync_log",R/W,Present,? Working in target.,Done
+Graph metadata / index configs,Specialized edges in schema,Centralized graph_metadata,W,Diff model,Align migration strategy.,Phase 3
+Schema discovery / docs generator,Saves schema reports + docs,Not present,R,Missing,Add admin diagnostics page.,Phase 3
+Regex-based relationship extraction,Regex roadmap,Not exposed,W,Missing,Add admin action �Extract Relationships.�,Phase 3
+External integrations (GitHub/Jira/Slack),Classes + connectors exist,Not surfaced,R,Missing,Add optional integrations UI.,Phase 3
+Agent collaboration (knowledge transfers),"doc_agent_contexts, doc_knowledge_transfers",Enhanced ingestion service creates agent contexts,R,Done,doc_agent_contexts collection created and populated by enhanced service.,Phase 3
+Auth / API client,Basic auth in scripts,api/client.ts + helpers,R/W,Present,Add login UI + token mgmt.,Phase 1
+"Graph UI (canvas, overlays)",N/A (backend only),GraphCanvas scaffold; GraphPage stubbed,R,Scaffold only,"Replace with Graphin/AntV; add overlays, zoom/pan, legends.",Phase 1

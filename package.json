@@ -1,6 +1,7 @@
 {
   "name": "ai-platform-enhancement",
   "version": "1.0.0",
+  "type": "module",
   "description": "Repository data enhancement for AI Software Development Platform",
   "main": "enhance-repository-data.js",
   "scripts": {
@@ -10,9 +11,14 @@
   },
   "dependencies": {
     "arangojs": "^8.8.1",
+    "axios": "^1.11.0",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.1",
+    "socket.io": "^4.8.1"
   },
   "keywords": [
     "ai",
