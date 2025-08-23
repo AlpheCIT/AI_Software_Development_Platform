@@ -1,0 +1,12 @@
+analyze_streamlit_repo.py	  populate_via_api.py
+api_contents.txt		  __pycache__
+app.py				  real_backend.py
+app.py.backup			  repository_analyzer.py
+app.py.backup_1754577099	  requirements-ai-refactoring.txt
+ast_parser_service.py		  routers
+dead_code_similarity_analyzer.py  scripts
+debt_database.py		  security_database_setup.py
+__init__.py			  server.log
+list.txt			  services
+main.py				  simple_test.py
+minimal_app.py			  technical_debt_service.py

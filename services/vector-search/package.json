@@ -1,0 +1,49 @@
+{
+  "name": "@ai-code-management/vector-search",
+  "version": "1.0.0",
+  "description": "Vector search and GraphRAG service for AI Code Intelligence Platform",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "setup": "tsx src/utils/vector-search-setup.ts",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "clean": "rimraf dist"
+  },
+  "keywords": [
+    "vector-search",
+    "semantic-search",
+    "graphrag",
+    "code-intelligence",
+    "ai",
+    "typescript"
+  ],
+  "author": "AI Code Management System",
+  "license": "MIT",
+  "dependencies": {
+    "arangojs": "^8.8.1",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "@types/node": "^20.5.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/cors": "^2.8.13",
+    "@types/jest": "^29.5.4",
+    "typescript": "^5.1.6",
+    "tsx": "^3.12.7",
+    "jest": "^29.6.2",
+    "ts-jest": "^29.1.1",
+    "eslint": "^8.47.0",
+    "@typescript-eslint/parser": "^6.4.0",
+    "@typescript-eslint/eslint-plugin": "^6.4.0",
+    "rimraf": "^5.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

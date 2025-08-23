@@ -1,0 +1,9 @@
+services:  
+  api-gateway:  
+    build: ./backend/api-gateway  
+    ports:  
+      - "4000:4000"  
+    depends_on:  
+      - agent-manager  
+      - ai-processing  
+      - vector-search  

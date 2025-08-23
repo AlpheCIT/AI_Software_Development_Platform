@@ -1,0 +1,78 @@
+version: '3.8'
+
+name: ai-software-development-platform-dev
+
+services:
+  # Infrastructure services
+  arangodb:
+    image: arangodb:3.12.5
+    container_name: aisdp_db_dev
+    environment:
+      ARANGO_ROOT_PASSWORD: ${ARANGO_PASSWORD:-}
+      ARANGO_NO_AUTH: ${ARANGO_NO_AUTH:-1}
+    ports:
+      - "${ARANGO_PORT_DEV:-8529}:8529"  # Different port to avoid conflict
+    volumes:
+      - arangodb_data:/var/lib/arangodb3
+    networks:
+      - aisdp_network_dev
+    
+  redis:
+    image: redis:7-alpine
+    container_name: aisdp_redis_dev
+    ports:
+      - "${REDIS_PORT:-6380}:6379"  # Different port to avoid conflict
+    networks:
+      - aisdp_network_dev
+      
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aisdp_ollama_dev
+    ports:
+      - "${OLLAMA_PORT:-11435}:11434"  # Different port to avoid conflict
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - aisdp_network_dev
+
+  # Development environment with dependency installation
+  dev-environment:
+    build:
+      context: .
+      dockerfile: Dockerfile.simple
+    container_name: aisdp_dev_env
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+      - "${API_PORT:-4000}:4000"
+      - "${WEBSOCKET_PORT:-4001}:4001"
+    volumes:
+      - .:/app
+    environment:
+      - NODE_ENV=development
+      - ARANGO_URL=${ARANGO_URL:-http://arangodb:8529}
+      - ARANGO_DATABASE=${ARANGO_DATABASE:-ARANGO_AISDP_DB}
+      - ARANGO_USERNAME=${ARANGO_USERNAME:-root}
+      - ARANGO_PASSWORD=${ARANGO_PASSWORD:-}
+      - REDIS_URL=redis://redis:6379
+      - OLLAMA_URL=http://ollama:11434
+    networks:
+      - aisdp_network_dev
+    depends_on:
+      - arangodb
+      - redis
+      - ollama
+    working_dir: /app
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+networks:
+  aisdp_network_dev:
+    name: aisdp_dev_network
+    driver: bridge
+
+volumes:
+  arangodb_data:
+    name: aisdp_arangodb_data_dev
+  ollama_data:
+    name: aisdp_ollama_data_dev

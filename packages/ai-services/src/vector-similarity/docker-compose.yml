@@ -1,0 +1,9 @@
+services:  
+  vector-search:  
+    build: ./backend/vector-search  
+    ports:  
+      - "8000:8000"  
+    depends_on:  
+      - graph-db  
+    environment:  
+      - ARANGO_URL=http://graph-db:8529

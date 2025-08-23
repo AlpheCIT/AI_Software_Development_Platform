@@ -1,0 +1,82 @@
+{
+  "name": "enhanced-ai-orchestration-service",
+  "version": "2.0.0",
+  "description": "Enhanced AI orchestration service with CCI Framework, A2A Protocol, and comprehensive agent coordination",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "build": "tsc",
+    "test": "echo 'Enhanced AI Orchestration Service - Tests not implemented yet'",
+    "lint": "eslint src/**/*.ts",
+    "demo": "curl -X POST http://localhost:8003/demo/run",
+    "agents:list": "curl http://localhost:8003/agents",
+    "agents:capabilities": "curl http://localhost:8003/agents/capabilities",
+    "health": "curl http://localhost:8003/health",
+    "info": "curl http://localhost:8003/info",
+    "metrics": "curl http://localhost:8003/metrics",
+    "analyze:security": "curl -X POST http://localhost:8003/analyze/security -H 'Content-Type: application/json' -d '{\"entityKey\":\"demo_entity\"}'",
+    "analyze:performance": "curl -X POST http://localhost:8003/analyze/performance -H 'Content-Type: application/json' -d '{\"entityKey\":\"demo_entity\"}'",
+    "analyze:comprehensive": "curl -X POST http://localhost:8003/analyze/comprehensive -H 'Content-Type: application/json' -d '{\"entityKey\":\"demo_entity\"}'",
+    "collaborate": "curl -X POST http://localhost:8003/collaborate -H 'Content-Type: application/json' -d '{\"entityKey\":\"demo_entity\",\"coordinationType\":\"consensus\"}'"
+  },
+  "dependencies": {
+    "arangojs": "^8.8.1",
+    "fastify": "^4.24.3",
+    "uuid": "^9.0.1",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^9.0.7",
+    "eslint": "^8.54.0",
+    "nodemon": "^3.0.2",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai-orchestration",
+    "multi-agent-systems",
+    "code-intelligence",
+    "cci-framework",
+    "a2a-protocol",
+    "security-analysis",
+    "performance-optimization",
+    "agent-collaboration",
+    "consensus-building",
+    "business-impact-analysis",
+    "real-time-coordination",
+    "quality-assessment"
+  ],
+  "author": "Richard Helms <richard@alphavirtusai.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardhelms/ai-code-management-system"
+  },
+  "bugs": {
+    "url": "https://github.com/richardhelms/ai-code-management-system/issues"
+  },
+  "homepage": "https://github.com/richardhelms/ai-code-management-system#readme",
+  "config": {
+    "ports": {
+      "main": 8003,
+      "backup": 8103
+    },
+    "features": [
+      "multi_agent_analysis",
+      "agent_coordination",
+      "consensus_building",
+      "business_impact_analysis",
+      "comprehensive_security_analysis",
+      "comprehensive_performance_analysis",
+      "real_time_collaboration",
+      "quality_assessment",
+      "a2a_communication",
+      "cci_framework_compatibility"
+    ]
+  }
+}

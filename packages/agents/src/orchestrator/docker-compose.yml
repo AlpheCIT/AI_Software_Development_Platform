@@ -1,0 +1,9 @@
+services:  
+  agent-manager:  
+    build: ./backend/agent-manager  
+    ports:  
+      - "4001:4001"  
+    depends_on:  
+      - pubsub  
+    environment:  
+      - REDIS_URL=redis://pubsub:6379  
