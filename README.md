@@ -19,22 +19,28 @@ A revolutionary AI-powered code intelligence platform featuring advanced graph v
 
 ## 🚀 **Quick Start**
 
-### **🎯 One-Click Startup**
+### **🎯 One-Click Complete Platform Startup**
 
-**Windows Users:**
+**🚀 PRODUCTION READY - Start Everything:**
 ```bash
-# Double-click to run:
-🚀 CLICK TO START.bat
+# Windows (Recommended):
+START_COMPLETE_PLATFORM.bat
 
-# Or from command line:
-start.bat
+# Cross-Platform PowerShell:
+.\start-platform.ps1
+
+# Test Everything Works:
+TEST_PLATFORM.bat
+
+# Clean Shutdown:
+STOP_PLATFORM.bat
 ```
 
-**Linux/Mac Users:**
-```bash
-chmod +x start.sh
-./start.sh
-```
+**🔧 What Gets Started:**
+- ✅ ArangoDB Database (Docker) - Port 8529
+- ✅ MCP HTTP Server - Port 3002  
+- ✅ API Gateway (WebSocket + REST) - Port 3001
+- ✅ React Frontend (Vite Dev Server) - Port 3000
 
 ### **🌐 Access Your Platform**
 
@@ -42,10 +48,11 @@ Once started, access these endpoints:
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| 🎨 **Main Dashboard** | http://localhost:3000 | Interactive graph visualization |
-| 🔗 **Backend API** | http://localhost:8000 | REST API endpoints |
-| 📚 **API Documentation** | http://localhost:8000/docs | Interactive API documentation |
-| 💓 **Health Check** | http://localhost:8000/api/system/status | System monitoring |
+| 🎨 **Frontend Dashboard** | http://localhost:3000 | React + TypeScript + Chakra UI |
+| 🔗 **API Gateway** | http://localhost:3001 | Express + Socket.IO |
+| � **MCP Server** | http://localhost:3002 | ArangoDB Bridge |
+| 🗄️  **ArangoDB** | http://localhost:8529 | Graph Database |
+| 💓 **Health Checks** | http://localhost:*/health | Service Monitoring |
 
 ---
 
