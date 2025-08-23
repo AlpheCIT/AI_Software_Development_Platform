@@ -1,37 +1,99 @@
-import React from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Box, Text, Button, VStack, Alert, AlertIcon } from '@chakra-ui/react';
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error?: Error;
+interface Props {
+  children?: ReactNode;
 }
 
-export class ErrorBoundary extends React.Component<
-  React.PropsWithChildren<{}>,
-  ErrorBoundaryState
-> {
-  constructor(props: React.PropsWithChildren<{}>) {
-    super(props);
-    this.state = { hasError: false };
-  }
+interface State {
+  hasError: boolean;
+  error?: Error;
+  errorInfo?: ErrorInfo;
+}
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+export class ErrorBoundary extends Component<Props, State> {
+  public state: State = {
+    hasError: false
+  };
+
+  public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Uncaught error:', error, errorInfo);
+    this.setState({
+      error,
+      errorInfo
+    });
   }
 
-  render() {
+  private handleReload = () => {
+    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+    window.location.reload();
+  };
+
+  private handleReset = () => {
+    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+  };
+
+  public render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: '20px', textAlign: 'center' }}>
-          <h2>Something went wrong.</h2>
-          <p>{this.state.error?.message}</p>
-          <button onClick={() => this.setState({ hasError: false })}>
-            Try again
-          </button>
-        </div>
+        <Box
+          minHeight="100vh"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          bg="gray.50"
+          p={8}
+        >
+          <Box maxWidth="md" width="100%">
+            <Alert status="error" borderRadius="lg" p={6}>
+              <AlertIcon boxSize={6} />
+              <VStack align="stretch" spacing={4} width="100%">
+                <Box>
+                  <Text fontSize="lg" fontWeight="bold">
+                    Something went wrong
+                  </Text>
+                  <Text fontSize="sm" color="gray.600" mt={2}>
+                    The application encountered an unexpected error. Please try reloading the page.
+                  </Text>
+                </Box>
+
+                {this.state.error && (
+                  <Box
+                    bg="red.50"
+                    p={4}
+                    borderRadius="md"
+                    border="1px solid"
+                    borderColor="red.200"
+                  >
+                    <Text fontSize="sm" fontFamily="mono" color="red.800">
+                      {this.state.error.message}
+                    </Text>
+                    {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
+                      <Box mt={2}>
+                        <Text fontSize="xs" color="red.600" fontFamily="mono">
+                          {this.state.errorInfo.componentStack}
+                        </Text>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+
+                <Box>
+                  <Button colorScheme="blue" onClick={this.handleReload} mr={3}>
+                    Reload Page
+                  </Button>
+                  <Button variant="outline" onClick={this.handleReset}>
+                    Try Again
+                  </Button>
+                </Box>
+              </VStack>
+            </Alert>
+          </Box>
+        </Box>
       );
     }
 

@@ -1,86 +1,154 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 
+interface UseWebSocketProps {
+  autoConnect?: boolean;
+  reconnectionDelay?: number;
+  maxReconnectionAttempts?: number;
+}
+
 interface UseWebSocketReturn {
   socket: Socket | null;
   isConnected: boolean;
-  subscribeToGraph: (repositoryId: string) => void;
-  on: (event: string, handler: Function) => void;
-  off: (event: string, handler: Function) => void;
-  emit: (event: string, data?: any) => void;
+  isConnecting: boolean;
+  error: string | null;
+  connect: () => void;
+  disconnect: () => void;
 }
 
-export function useWebSocket(): UseWebSocketReturn {
-  const [socket, setSocket] = useState<Socket | null>(null);
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
+export const useWebSocket = (
+  namespace: string = '/',
+  options: UseWebSocketProps = {}
+): UseWebSocketReturn => {
+  const {
+    autoConnect = true,
+    reconnectionDelay = 1000,
+    maxReconnectionAttempts = 5
+  } = options;
+
   const [isConnected, setIsConnected] = useState(false);
-  const handlersRef = useRef<Map<string, Function[]>>(new Map());
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const reconnectionAttemptsRef = useRef(0);
+  const reconnectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const connect = () => {
+    if (socketRef.current?.connected) return;
+
+    setIsConnecting(true);
+    setError(null);
+
+    try {
+      const socketUrl = `${API_BASE_URL}${namespace}`;
+      
+      socketRef.current = io(socketUrl, {
+        transports: ['websocket', 'polling'],
+        timeout: 20000,
+        forceNew: true,
+        reconnection: false, // We'll handle reconnection manually
+      });
+
+      socketRef.current.on('connect', () => {
+        console.log(`WebSocket connected to ${namespace}`);
+        setIsConnected(true);
+        setIsConnecting(false);
+        setError(null);
+        reconnectionAttemptsRef.current = 0;
+      });
+
+      socketRef.current.on('disconnect', (reason) => {
+        console.log(`WebSocket disconnected from ${namespace}:`, reason);
+        setIsConnected(false);
+        setIsConnecting(false);
+
+        // Auto-reconnect unless it was a manual disconnect
+        if (reason !== 'io client disconnect' && autoConnect) {
+          handleReconnection();
+        }
+      });
+
+      socketRef.current.on('connect_error', (error) => {
+        console.error(`WebSocket connection error for ${namespace}:`, error);
+        setIsConnected(false);
+        setIsConnecting(false);
+        setError(`Connection failed: ${error.message}`);
+        
+        if (autoConnect) {
+          handleReconnection();
+        }
+      });
+
+      socketRef.current.on('error', (error) => {
+        console.error(`WebSocket error for ${namespace}:`, error);
+        setError(`Socket error: ${error}`);
+      });
+
+    } catch (error) {
+      console.error('Failed to create socket connection:', error);
+      setIsConnecting(false);
+      setError(error instanceof Error ? error.message : 'Unknown connection error');
+    }
+  };
+
+  const handleReconnection = () => {
+    if (reconnectionAttemptsRef.current >= maxReconnectionAttempts) {
+      setError(`Failed to reconnect after ${maxReconnectionAttempts} attempts`);
+      return;
+    }
+
+    reconnectionAttemptsRef.current++;
+    const delay = reconnectionDelay * reconnectionAttemptsRef.current;
+
+    console.log(`Attempting to reconnect to ${namespace} in ${delay}ms (attempt ${reconnectionAttemptsRef.current})`);
+
+    reconnectionTimeoutRef.current = setTimeout(() => {
+      setIsConnecting(true);
+      connect();
+    }, delay);
+  };
+
+  const disconnect = () => {
+    if (reconnectionTimeoutRef.current) {
+      clearTimeout(reconnectionTimeoutRef.current);
+      reconnectionTimeoutRef.current = null;
+    }
+
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
+    setIsConnected(false);
+    setIsConnecting(false);
+    reconnectionAttemptsRef.current = 0;
+  };
 
   useEffect(() => {
-    const socketInstance = io(
-      import.meta.env.VITE_WS_URL || 'http://localhost:4001',
-      {
-        transports: ['websocket'],
-        autoConnect: true
-      }
-    );
-
-    socketInstance.on('connect', () => {
-      console.log('🔌 WebSocket connected');
-      setIsConnected(true);
-    });
-
-    socketInstance.on('disconnect', () => {
-      console.log('🔌 WebSocket disconnected');
-      setIsConnected(false);
-    });
-
-    setSocket(socketInstance);
+    if (autoConnect) {
+      connect();
+    }
 
     return () => {
-      socketInstance.disconnect();
+      disconnect();
+    };
+  }, [namespace, autoConnect]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      disconnect();
     };
   }, []);
 
-  const subscribeToGraph = (repositoryId: string) => {
-    if (socket) {
-      socket.emit('join-repository', repositoryId);
-    }
-  };
-
-  const on = (event: string, handler: Function) => {
-    if (socket) {
-      socket.on(event, handler as any);
-      
-      // Keep track of handlers for cleanup
-      const handlers = handlersRef.current.get(event) || [];
-      handlers.push(handler);
-      handlersRef.current.set(event, handlers);
-    }
-  };
-
-  const off = (event: string, handler: Function) => {
-    if (socket) {
-      socket.off(event, handler as any);
-      
-      // Remove from tracked handlers
-      const handlers = handlersRef.current.get(event) || [];
-      const filteredHandlers = handlers.filter(h => h !== handler);
-      handlersRef.current.set(event, filteredHandlers);
-    }
-  };
-
-  const emit = (event: string, data?: any) => {
-    if (socket && isConnected) {
-      socket.emit(event, data);
-    }
-  };
-
   return {
-    socket,
+    socket: socketRef.current,
     isConnected,
-    subscribeToGraph,
-    on,
-    off,
-    emit
+    isConnecting,
+    error,
+    connect,
+    disconnect
   };
-}
+};

@@ -16,12 +16,12 @@
   },
   "dependencies": {
     "@antv/g6": "^4.8.20",
-    "@antv/graphin": "^2.6.1",
     "@chakra-ui/react": "^2.8.1",
     "@emotion/react": "^11.11.1",
     "@emotion/styled": "^11.11.0",
     "@hello-pangea/dnd": "^16.6.0",
     "@tanstack/react-query": "^4.35.3",
+    "axios": "^1.6.0",
     "date-fns": "^2.30.0",
     "framer-motion": "^10.16.4",
     "lodash": "^4.17.21",

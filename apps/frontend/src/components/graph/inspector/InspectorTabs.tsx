@@ -1,117 +1,382 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
+  Box,
   Tabs,
   TabList,
   TabPanels,
   Tab,
   TabPanel,
-  Box,
   Text,
-  VStack,
-  HStack,
   Badge,
-  Progress,
+  Spinner,
   Alert,
   AlertIcon,
-  Spinner
+  VStack,
+  HStack,
+  Divider,
+  Card,
+  CardBody,
+  Stat,
+  StatLabel,
+  StatNumber,
+  StatHelpText,
+  StatArrow,
+  SimpleGrid,
+  Progress,
+  Code,
+  useColorModeValue
 } from '@chakra-ui/react';
+import {
+  Info,
+  Code2,
+  Shield,
+  Zap,
+  GitBranch,
+  Users,
+  History,
+  FileText,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Activity
+} from 'lucide-react';
+import { useMCP } from '../../../lib/mcp/useMCP';
 
 interface InspectorTabsProps {
-  nodeId: string;
+  nodeId: string | null;
+  width?: number;
+  height?: number;
 }
 
-export default function InspectorTabs({ nodeId }: InspectorTabsProps) {
+interface NodeData {
+  id: string;
+  name: string;
+  type: string;
+  properties: Record<string, any>;
+  metrics: {
+    security: {
+      vulnerabilities: any[];
+      riskScore: number;
+    };
+    performance: {
+      complexity: number;
+      lines: number;
+      testCoverage: number;
+    };
+    quality: {
+      maintainabilityIndex: number;
+      technicalDebt: number;
+      codeSmells: number;
+    };
+  };
+}
+
+const tabConfigs = [
+  {
+    label: 'Overview',
+    icon: Info,
+    color: 'blue'
+  },
+  {
+    label: 'Code',
+    icon: Code2,
+    color: 'green'
+  },
+  {
+    label: 'Security',
+    icon: Shield,
+    color: 'red'
+  },
+  {
+    label: 'Performance',
+    icon: Zap,
+    color: 'orange'
+  },
+  {
+    label: 'CI/CD',
+    icon: GitBranch,
+    color: 'purple'
+  },
+  {
+    label: 'Ownership',
+    icon: Users,
+    color: 'teal'
+  },
+  {
+    label: 'History',
+    icon: History,
+    color: 'gray'
+  }
+];
+
+export const InspectorTabs: React.FC<InspectorTabsProps> = ({
+  nodeId,
+  width = 400,
+  height = 600
+}) => {
+  const [nodeData, setNodeData] = useState<NodeData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
 
-  // Mock data - replace with real API calls
-  const mockNodeData = {
-    id: nodeId,
-    name: nodeId.split(':')[1] || nodeId,
-    type: nodeId.split(':')[0] || 'unknown',
-    security: [
-      {
-        id: 'sec-001',
-        severity: 'HIGH',
-        type: 'SQL_INJECTION',
-        description: 'Potential SQL injection vulnerability',
-        file: 'user.controller.ts',
-        line: 42
+  const { loadNodeDetails, executeAQL } = useMCP();
+
+  const bgColor = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+
+  // Load node data when nodeId changes
+  useEffect(() => {
+    const loadData = async () => {
+      if (!nodeId) {
+        setNodeData(null);
+        return;
       }
-    ],
-    performance: [
-      {
-        name: 'Response Time',
-        value: 250,
-        unit: 'ms',
-        threshold: 200,
-        status: 'warning'
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        // Load basic node details
+        const details = await loadNodeDetails(nodeId);
+        
+        // Load additional metrics via AQL queries
+        const securityQuery = `
+          FOR vuln IN security_findings
+            FILTER vuln.nodeId == @nodeId
+            RETURN vuln
+        `;
+
+        const performanceQuery = `
+          FOR metric IN performance_metrics
+            FILTER metric.nodeId == @nodeId
+            RETURN metric
+        `;
+
+        const qualityQuery = `
+          FOR quality IN quality_metrics
+            FILTER quality.nodeId == @nodeId
+            RETURN quality
+        `;
+
+        const [securityResults, performanceResults, qualityResults] = await Promise.all([
+          executeAQL(securityQuery, { nodeId }).catch(() => []),
+          executeAQL(performanceQuery, { nodeId }).catch(() => []),
+          executeAQL(qualityQuery, { nodeId }).catch(() => [])
+        ]);
+
+        const nodeDataWithMetrics: NodeData = {
+          id: nodeId,
+          name: details?.name || nodeId,
+          type: details?.type || 'unknown',
+          properties: details?.properties || {},
+          metrics: {
+            security: {
+              vulnerabilities: securityResults || [],
+              riskScore: calculateRiskScore(securityResults || [])
+            },
+            performance: {
+              complexity: performanceResults?.[0]?.complexity || 0,
+              lines: performanceResults?.[0]?.lines || 0,
+              testCoverage: performanceResults?.[0]?.testCoverage || 0
+            },
+            quality: {
+              maintainabilityIndex: qualityResults?.[0]?.maintainabilityIndex || 0,
+              technicalDebt: qualityResults?.[0]?.technicalDebt || 0,
+              codeSmells: qualityResults?.[0]?.codeSmells || 0
+            }
+          }
+        };
+
+        setNodeData(nodeDataWithMetrics);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load node data');
+      } finally {
+        setLoading(false);
       }
-    ],
-    quality: [
-      {
-        name: 'Code Coverage',
-        value: 75,
-        maxValue: 100,
-        threshold: 80,
-        status: 'warning'
-      }
-    ],
-    ownership: {
-      team: 'Platform Team',
-      owner: 'John Doe',
-      contact: 'john.doe@company.com'
-    },
-    coverage: 0.75
+    };
+
+    loadData();
+  }, [nodeId, loadNodeDetails, executeAQL]);
+
+  const calculateRiskScore = (vulnerabilities: any[]): number => {
+    if (!vulnerabilities.length) return 0;
+    
+    const weights = { critical: 10, high: 7, medium: 4, low: 1 };
+    const score = vulnerabilities.reduce((total, vuln) => {
+      const severity = vuln.severity?.toLowerCase() || 'low';
+      return total + (weights[severity as keyof typeof weights] || 1);
+    }, 0);
+    
+    return Math.min(100, score);
   };
 
+  const getSeverityColor = (severity: string): string => {
+    switch (severity?.toLowerCase()) {
+      case 'critical': return 'red';
+      case 'high': return 'orange';
+      case 'medium': return 'yellow';
+      case 'low': return 'green';
+      default: return 'gray';
+    }
+  };
+
+  if (!nodeId) {
+    return (
+      <Box
+        width={width}
+        height={height}
+        bg={bgColor}
+        border="1px solid"
+        borderColor={borderColor}
+        borderRadius="md"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        p={6}
+      >
+        <VStack spacing={3}>
+          <FileText size={48} color="gray" />
+          <Text color="gray.500" textAlign="center">
+            Select a node to view detailed information
+          </Text>
+        </VStack>
+      </Box>
+    );
+  }
+
+  if (loading) {
+    return (
+      <Box
+        width={width}
+        height={height}
+        bg={bgColor}
+        border="1px solid"
+        borderColor={borderColor}
+        borderRadius="md"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+      >
+        <VStack spacing={3}>
+          <Spinner size="xl" />
+          <Text>Loading node details...</Text>
+        </VStack>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box
+        width={width}
+        height={height}
+        bg={bgColor}
+        border="1px solid"
+        borderColor={borderColor}
+        borderRadius="md"
+        p={4}
+      >
+        <Alert status="error">
+          <AlertIcon />
+          <Box>
+            <Text fontWeight="bold">Failed to load data</Text>
+            <Text fontSize="sm">{error}</Text>
+          </Box>
+        </Alert>
+      </Box>
+    );
+  }
+
   return (
-    <Box height="100%">
-      <Tabs index={activeTab} onChange={setActiveTab} variant="enclosed" height="100%">
-        <TabList>
-          <Tab>Overview</Tab>
-          <Tab>Code</Tab>
-          <Tab>Security</Tab>
-          <Tab>Performance</Tab>
-          <Tab>CI/CD</Tab>
-          <Tab>Ownership</Tab>
-          <Tab>History</Tab>
+    <Box
+      width={width}
+      height={height}
+      bg={bgColor}
+      border="1px solid"
+      borderColor={borderColor}
+      borderRadius="md"
+      overflow="hidden"
+    >
+      <Tabs
+        index={activeTab}
+        onChange={setActiveTab}
+        variant="enclosed"
+        colorScheme="blue"
+        height="100%"
+        display="flex"
+        flexDirection="column"
+      >
+        <TabList flexShrink={0} overflowX="auto">
+          {tabConfigs.map((tab, index) => (
+            <Tab key={index} fontSize="sm" minW="fit-content">
+              <HStack spacing={1}>
+                <tab.icon size={14} />
+                <Text>{tab.label}</Text>
+              </HStack>
+            </Tab>
+          ))}
         </TabList>
 
-        <TabPanels height="calc(100% - 40px)" overflowY="auto">
+        <TabPanels flex="1" overflow="auto">
           {/* Overview Tab */}
           <TabPanel>
             <VStack spacing={4} align="stretch">
               <Box>
-                <Text fontSize="lg" fontWeight="bold">{mockNodeData.name}</Text>
-                <HStack spacing={2}>
-                  <Badge colorScheme="blue">{mockNodeData.type}</Badge>
-                  <Badge colorScheme="green">Active</Badge>
+                <HStack justify="space-between" mb={2}>
+                  <Text fontSize="lg" fontWeight="bold">
+                    {nodeData?.name}
+                  </Text>
+                  <Badge colorScheme="blue" variant="subtle">
+                    {nodeData?.type}
+                  </Badge>
                 </HStack>
-              </Box>
-              
-              <Box>
-                <Text fontWeight="semibold" mb={2}>Test Coverage</Text>
-                <Progress value={mockNodeData.coverage * 100} colorScheme="green" />
                 <Text fontSize="sm" color="gray.600">
-                  {Math.round(mockNodeData.coverage * 100)}%
+                  ID: {nodeData?.id}
                 </Text>
               </Box>
 
+              <Divider />
+
+              <SimpleGrid columns={2} spacing={4}>
+                <Stat size="sm">
+                  <StatLabel>Security Score</StatLabel>
+                  <StatNumber color={nodeData?.metrics.security.riskScore > 50 ? 'red.500' : 'green.500'}>
+                    {100 - (nodeData?.metrics.security.riskScore || 0)}%
+                  </StatNumber>
+                  <StatHelpText>
+                    <StatArrow type={nodeData?.metrics.security.riskScore > 50 ? 'decrease' : 'increase'} />
+                    Risk Level
+                  </StatHelpText>
+                </Stat>
+
+                <Stat size="sm">
+                  <StatLabel>Complexity</StatLabel>
+                  <StatNumber>{nodeData?.metrics.performance.complexity || 0}</StatNumber>
+                  <StatHelpText>Cyclomatic</StatHelpText>
+                </Stat>
+
+                <Stat size="sm">
+                  <StatLabel>Lines of Code</StatLabel>
+                  <StatNumber>{nodeData?.metrics.performance.lines || 0}</StatNumber>
+                  <StatHelpText>Total</StatHelpText>
+                </Stat>
+
+                <Stat size="sm">
+                  <StatLabel>Test Coverage</StatLabel>
+                  <StatNumber>{nodeData?.metrics.performance.testCoverage || 0}%</StatNumber>
+                  <StatHelpText>Coverage</StatHelpText>
+                </Stat>
+              </SimpleGrid>
+
               <Box>
-                <Text fontWeight="semibold" mb={2}>Quick Stats</Text>
-                <VStack spacing={2} align="stretch">
-                  <HStack justify="space-between">
-                    <Text>Security Issues:</Text>
-                    <Badge colorScheme="red">{mockNodeData.security.length}</Badge>
-                  </HStack>
-                  <HStack justify="space-between">
-                    <Text>Performance Issues:</Text>
-                    <Badge colorScheme="yellow">{mockNodeData.performance.length}</Badge>
-                  </HStack>
-                  <HStack justify="space-between">
-                    <Text>Quality Issues:</Text>
-                    <Badge colorScheme="orange">{mockNodeData.quality.length}</Badge>
-                  </HStack>
+                <Text fontSize="sm" fontWeight="medium" mb={2}>Properties</Text>
+                <VStack spacing={1} align="stretch">
+                  {Object.entries(nodeData?.properties || {}).slice(0, 5).map(([key, value]) => (
+                    <HStack key={key} justify="space-between" fontSize="xs">
+                      <Text color="gray.600">{key}:</Text>
+                      <Text>{String(value)}</Text>
+                    </HStack>
+                  ))}
                 </VStack>
               </Box>
             </VStack>
@@ -120,113 +385,229 @@ export default function InspectorTabs({ nodeId }: InspectorTabsProps) {
           {/* Code Tab */}
           <TabPanel>
             <VStack spacing={4} align="stretch">
-              <Text fontSize="md" fontWeight="semibold">Code Analysis</Text>
-              <Text color="gray.600">
-                Code viewer and analysis coming soon...
-              </Text>
-              <Alert status="info">
-                <AlertIcon />
-                This tab will show syntax-highlighted code with inline annotations.
-              </Alert>
+              <HStack justify="space-between">
+                <Text fontSize="md" fontWeight="bold">Code Details</Text>
+                <Badge>{nodeData?.properties?.language || 'Unknown'}</Badge>
+              </HStack>
+
+              <SimpleGrid columns={1} spacing={3}>
+                <Card size="sm">
+                  <CardBody>
+                    <Stat size="sm">
+                      <StatLabel>Lines of Code</StatLabel>
+                      <StatNumber>{nodeData?.metrics.performance.lines || 0}</StatNumber>
+                      <StatHelpText>Total lines</StatHelpText>
+                    </Stat>
+                  </CardBody>
+                </Card>
+
+                <Card size="sm">
+                  <CardBody>
+                    <Stat size="sm">
+                      <StatLabel>Cyclomatic Complexity</StatLabel>
+                      <StatNumber>{nodeData?.metrics.performance.complexity || 0}</StatNumber>
+                      <StatHelpText>
+                        {(nodeData?.metrics.performance.complexity || 0) > 10 ? 'High complexity' : 'Low complexity'}
+                      </StatHelpText>
+                    </Stat>
+                  </CardBody>
+                </Card>
+              </SimpleGrid>
+
+              {nodeData?.properties?.code && (
+                <Box>
+                  <Text fontSize="sm" fontWeight="medium" mb={2}>Code Preview</Text>
+                  <Code 
+                    display="block" 
+                    whiteSpace="pre" 
+                    overflow="auto" 
+                    maxH="200px" 
+                    fontSize="xs"
+                    p={3}
+                  >
+                    {nodeData.properties.code.substring(0, 500)}
+                    {nodeData.properties.code.length > 500 && '...'}
+                  </Code>
+                </Box>
+              )}
             </VStack>
           </TabPanel>
 
           {/* Security Tab */}
           <TabPanel>
             <VStack spacing={4} align="stretch">
-              <Text fontSize="md" fontWeight="semibold">Security Issues</Text>
-              {mockNodeData.security.map((issue) => (
-                <Alert key={issue.id} status="error">
-                  <AlertIcon />
-                  <Box>
-                    <Text fontWeight="bold">{issue.type}</Text>
-                    <Text fontSize="sm">{issue.description}</Text>
-                    <Text fontSize="xs" color="gray.600">
-                      {issue.file}:{issue.line}
-                    </Text>
-                  </Box>
-                </Alert>
-              ))}
+              <HStack justify="space-between">
+                <Text fontSize="md" fontWeight="bold">Security Analysis</Text>
+                <Badge 
+                  colorScheme={nodeData?.metrics.security.riskScore > 50 ? 'red' : 'green'}
+                  variant="solid"
+                >
+                  Risk: {nodeData?.metrics.security.riskScore || 0}
+                </Badge>
+              </HStack>
+
+              <Box>
+                <Text fontSize="sm" fontWeight="medium" mb={2}>Risk Assessment</Text>
+                <Progress 
+                  value={nodeData?.metrics.security.riskScore || 0}
+                  colorScheme={nodeData?.metrics.security.riskScore > 50 ? 'red' : 'green'}
+                  size="lg"
+                  borderRadius="md"
+                />
+              </Box>
+
+              <Box>
+                <Text fontSize="sm" fontWeight="medium" mb={3}>
+                  Vulnerabilities ({nodeData?.metrics.security.vulnerabilities.length || 0})
+                </Text>
+                <VStack spacing={2} align="stretch">
+                  {nodeData?.metrics.security.vulnerabilities.slice(0, 5).map((vuln, index) => (
+                    <Card key={index} size="sm">
+                      <CardBody>
+                        <HStack justify="space-between">
+                          <VStack align="start" spacing={1}>
+                            <Text fontSize="sm" fontWeight="medium">
+                              {vuln.title || vuln.type || 'Security Issue'}
+                            </Text>
+                            <Text fontSize="xs" color="gray.600">
+                              {vuln.description?.substring(0, 100)}...
+                            </Text>
+                          </VStack>
+                          <Badge 
+                            colorScheme={getSeverityColor(vuln.severity)}
+                            variant="solid"
+                          >
+                            {vuln.severity || 'Unknown'}
+                          </Badge>
+                        </HStack>
+                      </CardBody>
+                    </Card>
+                  ))}
+                  {(nodeData?.metrics.security.vulnerabilities.length || 0) === 0 && (
+                    <Card size="sm">
+                      <CardBody>
+                        <HStack>
+                          <CheckCircle size={16} color="green" />
+                          <Text fontSize="sm" color="green.600">
+                            No security vulnerabilities detected
+                          </Text>
+                        </HStack>
+                      </CardBody>
+                    </Card>
+                  )}
+                </VStack>
+              </Box>
             </VStack>
           </TabPanel>
 
           {/* Performance Tab */}
           <TabPanel>
             <VStack spacing={4} align="stretch">
-              <Text fontSize="md" fontWeight="semibold">Performance Metrics</Text>
-              {mockNodeData.performance.map((metric, index) => (
-                <Box key={index} p={3} border="1px" borderColor="gray.200" borderRadius="md">
-                  <HStack justify="space-between" mb={2}>
-                    <Text fontWeight="semibold">{metric.name}</Text>
-                    <Badge colorScheme={metric.status === 'warning' ? 'yellow' : 'green'}>
-                      {metric.status}
-                    </Badge>
-                  </HStack>
-                  <Text fontSize="lg">
-                    {metric.value} {metric.unit}
-                  </Text>
-                  <Text fontSize="sm" color="gray.600">
-                    Threshold: {metric.threshold} {metric.unit}
-                  </Text>
-                </Box>
-              ))}
+              <Text fontSize="md" fontWeight="bold">Performance Metrics</Text>
+
+              <SimpleGrid columns={1} spacing={3}>
+                <Card size="sm">
+                  <CardBody>
+                    <Stat size="sm">
+                      <StatLabel>Cyclomatic Complexity</StatLabel>
+                      <StatNumber color={nodeData?.metrics.performance.complexity > 10 ? 'orange.500' : 'green.500'}>
+                        {nodeData?.metrics.performance.complexity || 0}
+                      </StatNumber>
+                      <StatHelpText>
+                        {nodeData?.metrics.performance.complexity > 10 ? 'High complexity' : 'Low complexity'}
+                      </StatHelpText>
+                    </Stat>
+                  </CardBody>
+                </Card>
+
+                <Card size="sm">
+                  <CardBody>
+                    <Stat size="sm">
+                      <StatLabel>Test Coverage</StatLabel>
+                      <StatNumber color={nodeData?.metrics.performance.testCoverage < 80 ? 'red.500' : 'green.500'}>
+                        {nodeData?.metrics.performance.testCoverage || 0}%
+                      </StatNumber>
+                      <StatHelpText>
+                        {nodeData?.metrics.performance.testCoverage < 80 ? 'Below threshold' : 'Good coverage'}
+                      </StatHelpText>
+                    </Stat>
+                  </CardBody>
+                </Card>
+
+                <Card size="sm">
+                  <CardBody>
+                    <Stat size="sm">
+                      <StatLabel>Maintainability Index</StatLabel>
+                      <StatNumber color={nodeData?.metrics.quality.maintainabilityIndex < 70 ? 'orange.500' : 'green.500'}>
+                        {nodeData?.metrics.quality.maintainabilityIndex || 0}
+                      </StatNumber>
+                      <StatHelpText>
+                        {nodeData?.metrics.quality.maintainabilityIndex < 70 ? 'Needs improvement' : 'Good maintainability'}
+                      </StatHelpText>
+                    </Stat>
+                  </CardBody>
+                </Card>
+              </SimpleGrid>
             </VStack>
           </TabPanel>
 
           {/* CI/CD Tab */}
           <TabPanel>
             <VStack spacing={4} align="stretch">
-              <Text fontSize="md" fontWeight="semibold">CI/CD Pipeline</Text>
-              <Text color="gray.600">
-                Pipeline information and deployment history coming soon...
-              </Text>
-              <Alert status="info">
-                <AlertIcon />
-                This tab will show build status, deployment history, and pipeline configuration.
-              </Alert>
+              <Text fontSize="md" fontWeight="bold">CI/CD Pipeline</Text>
+              
+              <Card size="sm">
+                <CardBody>
+                  <HStack>
+                    <Activity size={16} color="gray" />
+                    <Text fontSize="sm" color="gray.600">
+                      No CI/CD data available for this node
+                    </Text>
+                  </HStack>
+                </CardBody>
+              </Card>
             </VStack>
           </TabPanel>
 
           {/* Ownership Tab */}
           <TabPanel>
             <VStack spacing={4} align="stretch">
-              <Text fontSize="md" fontWeight="semibold">Ownership Information</Text>
-              <Box p={3} border="1px" borderColor="gray.200" borderRadius="md">
-                <VStack spacing={2} align="stretch">
-                  <HStack justify="space-between">
-                    <Text fontWeight="semibold">Team:</Text>
-                    <Text>{mockNodeData.ownership.team}</Text>
-                  </HStack>
-                  <HStack justify="space-between">
-                    <Text fontWeight="semibold">Owner:</Text>
-                    <Text>{mockNodeData.ownership.owner}</Text>
-                  </HStack>
-                  <HStack justify="space-between">
-                    <Text fontWeight="semibold">Contact:</Text>
-                    <Text fontSize="sm" color="blue.600">
-                      {mockNodeData.ownership.contact}
+              <Text fontSize="md" fontWeight="bold">Code Ownership</Text>
+              
+              <Card size="sm">
+                <CardBody>
+                  <HStack>
+                    <Users size={16} color="gray" />
+                    <Text fontSize="sm" color="gray.600">
+                      No ownership data available for this node
                     </Text>
                   </HStack>
-                </VStack>
-              </Box>
+                </CardBody>
+              </Card>
             </VStack>
           </TabPanel>
 
           {/* History Tab */}
           <TabPanel>
             <VStack spacing={4} align="stretch">
-              <Text fontSize="md" fontWeight="semibold">Change History</Text>
-              <Text color="gray.600">
-                Git history and change tracking coming soon...
-              </Text>
-              <Alert status="info">
-                <AlertIcon />
-                This tab will show commit history, change frequency, and modification patterns.
-              </Alert>
+              <Text fontSize="md" fontWeight="bold">Change History</Text>
+              
+              <Card size="sm">
+                <CardBody>
+                  <HStack>
+                    <History size={16} color="gray" />
+                    <Text fontSize="sm" color="gray.600">
+                      No history data available for this node
+                    </Text>
+                  </HStack>
+                </CardBody>
+              </Card>
             </VStack>
           </TabPanel>
         </TabPanels>
       </Tabs>
     </Box>
   );
-}
+};
+
+export default InspectorTabs;
