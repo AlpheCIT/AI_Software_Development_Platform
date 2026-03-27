@@ -31,7 +31,8 @@
       "Bash(grep -r \"export.*Panel\\\\|export.*Dashboard\\\\|export default\" /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai/apps/frontend/src/components/qa-intelligence/*.tsx)",
       "Bash(grep -r \"TODO\\\\|FIXME\\\\|XXX\\\\|BUG:\" /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai/apps/frontend/src --include=*.tsx --include=*.ts)",
       "Bash(python3 -c \":*)",
-      "Bash(curl -s http://localhost:3005/qa/wiki/d0714b0e-975c-4bfd-848c-806488b5568e)"
+      "Bash(curl -s http://localhost:3005/qa/wiki/d0714b0e-975c-4bfd-848c-806488b5568e)",
+      "Bash(curl -s -X POST http://localhost:3005/qa/run -H \"Content-Type: application/json\" -d '{\"\"repoUrl\"\":\"\"https://github.com/AlpheCIT/MES\"\",\"\"branch\"\":\"\"dev\"\",\"\"config\"\":{\"\"maxTests\"\":10,\"\"testTypes\"\":[\"\"unit\"\",\"\"api\"\"]}}')"
     ]
   }
 }
