@@ -21,23 +21,25 @@ import {
   useBreakpointValue
 } from '@chakra-ui/react';
 import { 
-  Database, 
-  Activity, 
-  Settings, 
+  Database,
+  Activity,
+  Settings,
   Menu,
   BarChart3,
-  Search
+  Search,
+  Shield
 } from 'lucide-react';
 
 import RepositoryIngestionDashboard from '../components/ingestion/RepositoryIngestionDashboard';
 import GraphCanvas from '../components/graph/GraphCanvas';
 import InspectorTabs from '../components/graph/inspector/InspectorTabs';
+import QAIntelligenceDashboard from '../components/qa-intelligence/QAIntelligenceDashboard';
 import { useMCP } from '../lib/mcp/useMCP';
 import { useIngestionStore } from '../stores/ingestion-store';
 
 const MainDashboard: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics'>('ingestion');
+  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics' | 'qa-intelligence'>('ingestion');
   const { isOpen, onOpen, onClose } = useDisclosure();
   
   const { 
@@ -82,6 +84,13 @@ const MainDashboard: React.FC = () => {
 
   const renderMainContent = () => {
     switch (currentView) {
+      case 'qa-intelligence':
+        return (
+          <Box height="100%">
+            <QAIntelligenceDashboard />
+          </Box>
+        );
+
       case 'ingestion':
         return (
           <Box height="100%">
@@ -289,7 +298,16 @@ const MainDashboard: React.FC = () => {
             >
               Analytics
             </Button>
-            
+            <Button
+              variant={currentView === 'qa-intelligence' ? 'solid' : 'ghost'}
+              colorScheme="purple"
+              size="sm"
+              onClick={() => setCurrentView('qa-intelligence')}
+              leftIcon={<Shield size={16} />}
+            >
+              QA Intelligence
+            </Button>
+
             {isMobile && (
               <IconButton
                 aria-label="Menu"
