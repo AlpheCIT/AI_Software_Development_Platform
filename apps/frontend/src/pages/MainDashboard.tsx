@@ -16,6 +16,7 @@ import {
   DrawerContent,
   DrawerCloseButton,
   useColorModeValue,
+  useColorMode,
   IconButton,
   Tooltip,
   useBreakpointValue
@@ -30,6 +31,8 @@ import {
   Shield,
   BookOpen,
   List,
+  Moon,
+  Sun,
 } from 'lucide-react';
 
 import RepositoryIngestionDashboard from '../components/ingestion/RepositoryIngestionDashboard';
@@ -57,6 +60,7 @@ const MainDashboard: React.FC = () => {
 
   const { currentJob, jobHistory } = useIngestionStore();
 
+  const { colorMode, toggleColorMode } = useColorMode();
   const bgColor = useColorModeValue('gray.50', 'gray.900');
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -391,6 +395,15 @@ const MainDashboard: React.FC = () => {
           </HStack>
 
           <HStack spacing={2}>
+            <Tooltip label={colorMode === 'light' ? 'Dark mode' : 'Light mode'}>
+              <IconButton
+                aria-label="Toggle color mode"
+                icon={colorMode === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+                size="sm"
+                variant="ghost"
+                onClick={toggleColorMode}
+              />
+            </Tooltip>
             <Button
               variant={currentView === 'ingestion' ? 'solid' : 'ghost'}
               colorScheme="blue"
