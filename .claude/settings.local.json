@@ -29,7 +29,9 @@
       "Bash(find /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai/apps/frontend/src -name \"*.tsx\" -exec grep -l \"loading\\\\|error\\\\|empty\" {})",
       "Bash(grep -r \"learnings\\\\|LEARNINGS\\\\|bug.*archetype\\\\|BUG_ARCH\" /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai --include=*.ts --include=*.tsx)",
       "Bash(grep -r \"export.*Panel\\\\|export.*Dashboard\\\\|export default\" /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai/apps/frontend/src/components/qa-intelligence/*.tsx)",
-      "Bash(grep -r \"TODO\\\\|FIXME\\\\|XXX\\\\|BUG:\" /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai/apps/frontend/src --include=*.tsx --include=*.ts)"
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|XXX\\\\|BUG:\" /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai/apps/frontend/src --include=*.tsx --include=*.ts)",
+      "Bash(python3 -c \":*)",
+      "Bash(curl -s http://localhost:3005/qa/wiki/d0714b0e-975c-4bfd-848c-806488b5568e)"
     ]
   }
 }
