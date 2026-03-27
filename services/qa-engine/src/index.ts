@@ -8,6 +8,7 @@ import { qaConfig } from './config';
 import { DatabaseClient } from '@asdp/database-client';
 import { createQARunsRouter } from './routes/qa-runs';
 import { createProductIntelligenceRouter } from './routes/product-intelligence';
+import { createWikiRouter } from './routes/wiki';
 import { ensureCollections } from './graph/collections';
 
 const app = express();
@@ -54,6 +55,7 @@ const eventPublisher = {
 // QA API Routes
 app.use('/qa', createQARunsRouter(dbClient, eventPublisher));
 app.use('/qa/product', createProductIntelligenceRouter(dbClient));
+app.use('/qa/wiki', createWikiRouter(dbClient));
 
 // Health check
 app.get('/health', (req, res) => {

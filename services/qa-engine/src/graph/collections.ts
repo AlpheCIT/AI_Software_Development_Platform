@@ -11,6 +11,7 @@ export const QA_COLLECTIONS = {
   RISK_SCORES: 'qa_risk_scores',
   AGENT_EFFECTIVENESS: 'qa_agent_effectiveness',
   BUG_ARCHETYPES: 'qa_bug_archetypes',
+  WIKI_DATA: 'qa_wiki_data',
 
   // Edge collections
   TESTS_FILE: 'qa_tests_file',
@@ -36,6 +37,7 @@ export const DOCUMENT_COLLECTIONS = [
   QA_COLLECTIONS.RISK_SCORES,
   QA_COLLECTIONS.AGENT_EFFECTIVENESS,
   QA_COLLECTIONS.BUG_ARCHETYPES,
+  QA_COLLECTIONS.WIKI_DATA,
 ];
 
 export const EDGE_COLLECTIONS = [

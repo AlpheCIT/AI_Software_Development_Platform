@@ -224,6 +224,27 @@ export function useQARun(): UseQARunReturn {
     loadRecentRuns();
   }, [loadRecentRuns]);
 
+  // Auto-load the latest completed run so the dashboard shows data immediately
+  useEffect(() => {
+    if (runId) return; // Don't override if a run is already active
+
+    const loadLatestRun = async () => {
+      try {
+        const runs = await qaService.listRuns(1);
+        const completedRun = runs.find(r => r.status === 'completed');
+        if (completedRun) {
+          setRunId(completedRun.id);
+          applyRunData(completedRun);
+        }
+      } catch {
+        // Silently fail - auto-load is best-effort
+      }
+    };
+
+    loadLatestRun();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return {
     runId,
     status,

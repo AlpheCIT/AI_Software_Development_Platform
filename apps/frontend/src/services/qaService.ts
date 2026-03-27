@@ -67,6 +67,183 @@ export interface QARun {
   config: QARunConfig;
 }
 
+// ── Code Quality & Product Intelligence Types ─────────────────────────────
+
+export interface CodeSmell {
+  file: string;
+  line: number;
+  type: string;
+  severity: 'info' | 'warning' | 'error';
+  message: string;
+  suggestion?: string;
+}
+
+export interface DuplicationHotspot {
+  files: string[];
+  lines: number;
+  similarity: number;
+  suggestion: string;
+}
+
+export interface ComplexityHotspot {
+  file: string;
+  function: string;
+  complexity: number;
+  linesOfCode: number;
+  suggestion: string;
+}
+
+export interface ArchitectureIssue {
+  type: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  affectedFiles: string[];
+  recommendation: string;
+}
+
+export interface RefactoringItem {
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  effort: 'XS' | 'S' | 'M' | 'L' | 'XL';
+  impact: 'low' | 'medium' | 'high';
+  files: string[];
+  category: string;
+}
+
+export interface ConsolidationOpportunity {
+  title: string;
+  description: string;
+  files: string[];
+  estimatedReduction: string;
+  effort: 'XS' | 'S' | 'M' | 'L' | 'XL';
+}
+
+export interface DeadCodeItem {
+  file: string;
+  type: 'function' | 'variable' | 'import' | 'class' | 'export';
+  name: string;
+  line: number;
+  confidence: number;
+}
+
+export interface BestPracticeViolation {
+  rule: string;
+  severity: 'info' | 'warning' | 'error';
+  file: string;
+  line: number;
+  message: string;
+  fix?: string;
+}
+
+export interface CodeQualityReport {
+  codeSmells: CodeSmell[];
+  duplicationHotspots: DuplicationHotspot[];
+  complexityHotspots: ComplexityHotspot[];
+  architectureIssues: ArchitectureIssue[];
+  refactoringPlan: RefactoringItem[];
+  consolidationOpportunities: ConsolidationOpportunity[];
+  deadCode: DeadCodeItem[];
+  bestPracticeViolations: BestPracticeViolation[];
+  summary: {
+    overallScore: number;
+    totalIssues: number;
+    criticalIssues: number;
+    techDebtHours: number;
+  };
+}
+
+export interface FeatureRecommendation {
+  title: string;
+  description: string;
+  userImpact: 'low' | 'medium' | 'high';
+  effort: 'XS' | 'S' | 'M' | 'L' | 'XL';
+  revenueSignal: string;
+  implementationNotes: string;
+  acceptanceCriteria: string[];
+}
+
+export interface ProductRoadmap {
+  appDomain: string;
+  currentStrengths: string[];
+  criticalGaps: string[];
+  userPersonas: Array<{
+    name: string;
+    role: string;
+    painPoints: string[];
+    desiredOutcomes: string[];
+  }>;
+  roadmap: {
+    immediate: FeatureRecommendation[];
+    shortTerm: FeatureRecommendation[];
+    mediumTerm: FeatureRecommendation[];
+    longTerm: FeatureRecommendation[];
+  };
+}
+
+export interface TrendInsight {
+  trend: string;
+  description: string;
+  category: string;
+  relevance: 'game-changer' | 'significant' | 'nice-to-have';
+  effort: 'XS' | 'S' | 'M' | 'L' | 'XL';
+  implementationPath: string;
+  examples: string[];
+}
+
+export interface CompetitorIntel {
+  competitor: string;
+  threatLevel: 'low' | 'medium' | 'high';
+  strengths: string[];
+  weaknesses: string[];
+  recentMoves: string[];
+}
+
+export interface MonopolyStrategy {
+  strategy: string;
+  type: string;
+  description: string;
+  feasibility: 'low' | 'medium' | 'high';
+  implementation: string;
+}
+
+export interface CombinedPriority {
+  rank: number;
+  title: string;
+  description: string;
+  source: string;
+  impact: 'low' | 'medium' | 'high';
+  effort: 'XS' | 'S' | 'M' | 'L' | 'XL';
+  monopolyPotential: boolean;
+}
+
+export interface ResearchInsights {
+  domainAnalysis: {
+    industry: string;
+    marketSize: string;
+    growthDirection: string;
+    keyDrivers: string[];
+  };
+  trendInsights: TrendInsight[];
+  competitorIntel: CompetitorIntel[];
+  monopolyStrategies: MonopolyStrategy[];
+}
+
+export interface ProductIntelligenceData {
+  roadmap: ProductRoadmap;
+  research: ResearchInsights;
+  priorities: CombinedPriority[];
+  codeQuality?: CodeQualityReport;
+  summary: {
+    appDomain: string;
+    totalFeatures: number;
+    criticalGaps: number;
+    gameChangerTrends: number;
+    monopolyStrategies: number;
+    combinedPriorities: number;
+  };
+}
+
 export interface AgentLogEntry {
   id: string;
   timestamp: string;
@@ -148,6 +325,43 @@ export const qaService = {
    */
   getWebSocketUrl(): string {
     return QA_ENGINE_URL.replace('http', 'ws');
+  },
+
+  /**
+   * Get product intelligence data (roadmap, research, priorities) for a run
+   */
+  async getProductIntelligence(runId: string): Promise<ProductIntelligenceData> {
+    const url = `${QA_ENGINE_URL}/qa/product/${runId}`;
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch product intelligence: ${response.status}`);
+    }
+    return response.json();
+  },
+
+  /**
+   * Get the latest completed run (convenience method)
+   */
+  async getLatestRun(): Promise<QARun | null> {
+    const runs = await this.listRuns(1);
+    const completed = runs.find(r => r.status === 'completed');
+    return completed ?? null;
+  },
+
+  /**
+   * Get the auto-generated repository wiki for a run
+   */
+  async getRepoWiki(runId: string): Promise<Record<string, unknown>> {
+    const url = `${QA_ENGINE_URL}/qa/wiki/${runId}`;
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch repo wiki: ${response.status}`);
+    }
+    return response.json();
   },
 };
 
