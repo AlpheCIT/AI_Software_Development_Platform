@@ -7,7 +7,7 @@
  *   Bottom: Intelligence tabs (Risk Heatmap, Mutation Trends placeholders)
  */
 
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Grid,
@@ -21,6 +21,8 @@ import {
   TabPanels,
   Tab,
   TabPanel,
+  Button,
+  IconButton,
   useColorModeValue,
   Flex,
   SimpleGrid,
@@ -38,6 +40,10 @@ import {
   Target,
   Briefcase,
   FileText,
+  Terminal,
+  Bell,
+  Heart,
+  Play,
 } from 'lucide-react';
 
 import QARunControl from './QARunControl';
@@ -49,8 +55,16 @@ import ActionableSummary from './ActionableSummary';
 import RiskHeatmap from './RiskHeatmap';
 import MutationTrends from './MutationTrends';
 import CumulativeReport from './CumulativeReport';
+import AgentControlRoom from './AgentControlRoom';
+import OperatorTerminal from './OperatorTerminal';
+import HealthScoreDashboard from './HealthScoreDashboard';
+import RunReplayPlayer from './RunReplayPlayer';
+import NotificationBell from './NotificationBell';
+import AgentReportsTab from './AgentReportsTab';
+import AgentDebateView from './AgentDebateView';
 import { useQARun } from '../../hooks/useQARun';
 import { useAgentStream } from '../../hooks/useAgentStream';
+import { useNotifications } from '../../hooks/useNotifications';
 
 // ── Placeholder Components for Bottom Tabs ─────────────────────────────────
 
@@ -141,8 +155,9 @@ const RunSummaryStats: React.FC<{
   totalTests: number;
   passedTests: number;
   failedTests: number;
+  skippedTests?: number;
   mutationScore: number;
-}> = ({ totalTests, passedTests, failedTests, mutationScore }) => {
+}> = ({ totalTests, passedTests, failedTests, skippedTests = 0, mutationScore }) => {
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
@@ -157,11 +172,11 @@ const RunSummaryStats: React.FC<{
       </Box>
       <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4}>
         <Stat>
-          <StatLabel fontSize="xs">Pass Rate</StatLabel>
-          <StatNumber fontSize="2xl" color="green.500">
+          <StatLabel fontSize="xs">Syntax Valid</StatLabel>
+          <StatNumber fontSize="2xl" color={passedTests > 0 ? 'green.500' : 'yellow.500'}>
             {totalTests > 0 ? `${Math.round((passedTests / totalTests) * 100)}%` : '--'}
           </StatNumber>
-          <StatHelpText fontSize="xs">{passedTests} of {totalTests} passed</StatHelpText>
+          <StatHelpText fontSize="xs">{passedTests} of {totalTests} compiled{skippedTests > 0 ? ` (${skippedTests} need project context)` : ''}</StatHelpText>
         </Stat>
       </Box>
       <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4}>
@@ -189,27 +204,116 @@ const RunSummaryStats: React.FC<{
 const QAIntelligenceDashboard: React.FC = () => {
   const qaRun = useQARun();
   const agentStream = useAgentStream(qaRun.runId);
+  const notifications = useNotifications(agentStream.agentTimeline);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [showReplay, setShowReplay] = useState(false);
+  const [showDebate, setShowDebate] = useState(false);
+
+  // Check if any loops occurred (for debate view button)
+  const hasLoops = agentStream.agentTimeline.some(e => e.event === 'agent.loop');
 
   const bgColor = useColorModeValue('gray.50', 'gray.900');
   const headerColor = useColorModeValue('gray.800', 'gray.100');
 
+  // Escape key closes terminal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showTerminal) setShowTerminal(false);
+      if (e.key === '`' && !showTerminal) setShowTerminal(true);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showTerminal]);
+
+  // Merge real-time agent status from Socket.IO stream into agent tiles
+  const liveAgents = qaRun.agents.map(a => {
+    const backendName = a.name === 'mutation' ? 'mutation-verifier' : a.name;
+    if (agentStream.activeAgent === a.name || agentStream.activeAgent === backendName) {
+      return { ...a, status: 'active' as const, message: a.message || `${a.name} is working...` };
+    }
+    if (agentStream.handoffData[a.name] || agentStream.handoffData[backendName]) {
+      return { ...a, status: a.status === 'idle' ? 'completed' as const : a.status, progress: 100 };
+    }
+    return a;
+  });
+
+  // Operator Terminal (full-screen overlay)
+  if (showTerminal) {
+    return (
+      <OperatorTerminal
+        timeline={agentStream.agentTimeline}
+        isRunning={qaRun.isRunning}
+        onClose={() => setShowTerminal(false)}
+      />
+    );
+  }
+
   return (
     <Box bg={bgColor} minH="100%" p={4}>
       <VStack spacing={4} align="stretch">
-        {/* Page Header */}
-        <HStack spacing={3}>
-          <Shield size={24} />
-          <Text fontSize="xl" fontWeight="bold" color={headerColor}>
-            QA Intelligence Dashboard
-          </Text>
-          <Badge colorScheme="green" variant="subtle" fontSize="xs" px={2} py={0.5} borderRadius="full">
-            AI-Powered
-          </Badge>
-          {agentStream.isConnected && (
-            <Badge colorScheme="blue" variant="solid" fontSize="2xs" borderRadius="full">
-              Stream Connected
+        {/* ═══ ZONE 1: Command Bar ═══ */}
+        <HStack spacing={3} justify="space-between">
+          <HStack spacing={3}>
+            <Shield size={24} />
+            <Text fontSize="xl" fontWeight="bold" color={headerColor}>
+              QA Intelligence Dashboard
+            </Text>
+            <Badge colorScheme="green" variant="subtle" fontSize="xs" px={2} py={0.5} borderRadius="full">
+              AI-Powered
             </Badge>
-          )}
+            {agentStream.isConnected && (
+              <Badge colorScheme="blue" variant="solid" fontSize="2xs" borderRadius="full">
+                Stream Connected
+              </Badge>
+            )}
+          </HStack>
+
+          {/* Right side: Terminal toggle + Notification bell */}
+          <HStack spacing={2}>
+            {/* Replay button (after run completes) */}
+            {qaRun.status === 'completed' && agentStream.agentTimeline.length > 0 && (
+              <Button
+                size="xs"
+                variant="outline"
+                colorScheme="blue"
+                leftIcon={<Play size={12} />}
+                onClick={() => setShowReplay(!showReplay)}
+              >
+                {showReplay ? 'Hide Replay' : 'Replay'}
+              </Button>
+            )}
+
+            {/* Debate view (when loops occurred) */}
+            {hasLoops && qaRun.runId && (
+              <Button
+                size="xs"
+                variant={showDebate ? 'solid' : 'outline'}
+                colorScheme="orange"
+                onClick={() => setShowDebate(!showDebate)}
+              >
+                {showDebate ? 'Hide Debate' : 'Agent Debate'}
+              </Button>
+            )}
+
+            {/* Terminal mode */}
+            <Button
+              size="xs"
+              variant={showTerminal ? 'solid' : 'outline'}
+              colorScheme="gray"
+              leftIcon={<Terminal size={12} />}
+              onClick={() => setShowTerminal(true)}
+            >
+              Terminal
+            </Button>
+
+            {/* Notification bell */}
+            <NotificationBell
+              notifications={notifications.notifications}
+              unreadCount={notifications.unreadCount}
+              onMarkAllRead={notifications.markAllRead}
+              onMarkRead={notifications.markRead}
+            />
+          </HStack>
         </HStack>
 
         {/* Run Summary Stats */}
@@ -217,6 +321,7 @@ const QAIntelligenceDashboard: React.FC = () => {
           totalTests={qaRun.totalTests}
           passedTests={qaRun.passedTests}
           failedTests={qaRun.failedTests}
+          skippedTests={qaRun.skippedTests}
           mutationScore={qaRun.mutation.score}
         />
 
@@ -232,8 +337,36 @@ const QAIntelligenceDashboard: React.FC = () => {
           onRefresh={qaRun.refreshStatus}
         />
 
-        {/* Compact Agent Pipeline — always visible, expands when running */}
-        <AgentPipeline agents={qaRun.agents} />
+        {/* Replay Player (when active) */}
+        {showReplay && (
+          <RunReplayPlayer
+            timeline={agentStream.agentTimeline}
+            onReplayEvent={() => {}}
+            onClose={() => setShowReplay(false)}
+          />
+        )}
+
+        {/* ═══ ZONE 2: Agent Control Room ═══ */}
+        <AgentControlRoom
+          agents={liveAgents}
+          runId={qaRun.runId || undefined}
+          activeAgent={agentStream.activeAgent}
+          streamingState={agentStream.streamingState}
+          streamingBuffer={agentStream.streamingBuffer}
+          handoffData={agentStream.handoffData}
+        />
+
+        {/* Agent Pipeline (compact fallback — shows all 13 tiles) */}
+        <AgentPipeline
+          agents={liveAgents}
+          runId={qaRun.runId}
+          streamingState={agentStream.streamingState}
+        />
+
+        {/* Agent Debate View (when loops occurred and user clicked button) */}
+        {showDebate && qaRun.runId && (
+          <AgentDebateView runId={qaRun.runId} onClose={() => setShowDebate(false)} />
+        )}
 
         {/* Show test results + log stream when running */}
         {qaRun.isRunning && (
@@ -266,13 +399,19 @@ const QAIntelligenceDashboard: React.FC = () => {
           />
         )}
 
-        {/* Bottom Intelligence Tabs */}
+        {/* ═══ ZONE 3: Intelligence Panels ═══ */}
         <Tabs variant="enclosed" colorScheme="blue" size="sm">
           <TabList>
             <Tab>
               <HStack spacing={1}>
                 <Briefcase size={14} />
                 <Text>Action Center</Text>
+              </HStack>
+            </Tab>
+            <Tab>
+              <HStack spacing={1}>
+                <Heart size={14} />
+                <Text>Health Scores</Text>
               </HStack>
             </Tab>
             <Tab>
@@ -293,11 +432,20 @@ const QAIntelligenceDashboard: React.FC = () => {
                 <Text>Full Report</Text>
               </HStack>
             </Tab>
+            <Tab>
+              <HStack spacing={1}>
+                <Shield size={14} />
+                <Text>Agent Reports</Text>
+              </HStack>
+            </Tab>
           </TabList>
 
           <TabPanels>
             <TabPanel px={0}>
               <ActionCenter runId={qaRun.runId} />
+            </TabPanel>
+            <TabPanel px={0}>
+              <HealthScoreDashboard runId={qaRun.runId || undefined} />
             </TabPanel>
             <TabPanel px={0}>
               <RiskHeatmap runId={qaRun.runId} />
@@ -307,6 +455,9 @@ const QAIntelligenceDashboard: React.FC = () => {
             </TabPanel>
             <TabPanel px={0}>
               <CumulativeReport runId={qaRun.runId} />
+            </TabPanel>
+            <TabPanel px={0}>
+              <AgentReportsTab runId={qaRun.runId || undefined} />
             </TabPanel>
           </TabPanels>
         </Tabs>

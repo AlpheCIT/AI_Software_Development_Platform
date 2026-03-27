@@ -1,7 +1,8 @@
-import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { QAAgentState, CriticFeedback } from '../state';
 import { qaConfig } from '../../config';
+import { persistConversation } from '../persist-conversation';
+import { throttledInvoke, createModel } from '../llm-throttle';
 
 const CRITIC_SYSTEM_PROMPT = `You are a rigorous QA critic. Your job is to review generated tests and identify weaknesses.
 
@@ -31,6 +32,7 @@ Set confidenceScore to your confidence that this test will catch real bugs (0.0 
 
 export async function criticNode(
   state: QAAgentState,
+  dbClient?: any,
   eventPublisher?: any
 ): Promise<Partial<QAAgentState>> {
   const currentIterationTests = state.generatedTests.filter(
@@ -59,16 +61,9 @@ export async function criticNode(
     description: t.description,
   }));
 
-  const model = new ChatAnthropic({
-    modelName: qaConfig.anthropic.model,
-    anthropicApiKey: qaConfig.anthropic.apiKey,
-    temperature: 0.2,
-    maxTokens: 4096,
-  });
+  const model = createModel({ temperature: 0.2, maxTokens: 4096 });
 
-  const response = await model.invoke([
-    new SystemMessage(CRITIC_SYSTEM_PROMPT),
-    new HumanMessage(`Review these generated tests. Be thorough and critical.
+  const userMessage = `Review these generated tests. Be thorough and critical.
 
 ## Strategy Context
 Focus areas: ${state.strategy?.focusAreas.join(', ')}
@@ -77,8 +72,28 @@ Risk areas: ${state.strategy?.riskAreas.slice(0, 5).map(r => `${r.filePath} (${r
 ## Tests to Review
 ${JSON.stringify(testsForReview, null, 2)}
 
-Respond with ONLY a valid JSON array, no markdown fencing.`),
-  ]);
+Respond with ONLY a valid JSON array, no markdown fencing.`;
+
+  const startMs = Date.now();
+  const response = await throttledInvoke(model, [
+    new SystemMessage(CRITIC_SYSTEM_PROMPT),
+    new HumanMessage(userMessage),
+  ], 'critic', eventPublisher, state.runId);
+  const durationMs = Date.now() - startMs;
+
+  const responseText = typeof response.content === 'string' ? response.content : '';
+  if (dbClient) {
+    persistConversation(dbClient, {
+      runId: state.runId,
+      agent: 'critic',
+      systemPrompt: CRITIC_SYSTEM_PROMPT,
+      userMessage,
+      response: responseText,
+      tokensUsed: { input: (response as any).usage_metadata?.input_tokens, output: (response as any).usage_metadata?.output_tokens },
+      durationMs,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   let feedback: CriticFeedback[];
   try {

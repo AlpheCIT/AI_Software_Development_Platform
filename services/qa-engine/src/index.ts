@@ -9,6 +9,7 @@ import { DatabaseClient } from '@asdp/database-client';
 import { createQARunsRouter } from './routes/qa-runs';
 import { createProductIntelligenceRouter } from './routes/product-intelligence';
 import { createWikiRouter } from './routes/wiki';
+import { createChatRouter } from './routes/chat';
 import { ensureCollections } from './graph/collections';
 
 const app = express();
@@ -56,6 +57,7 @@ const eventPublisher = {
 app.use('/qa', createQARunsRouter(dbClient, eventPublisher));
 app.use('/qa/product', createProductIntelligenceRouter(dbClient));
 app.use('/qa/wiki', createWikiRouter(dbClient));
+app.use('/qa/chat', createChatRouter(dbClient));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -69,6 +71,12 @@ app.get('/health', (req, res) => {
       hasApiKey: !!qaConfig.anthropic.apiKey,
       mutationThreshold: qaConfig.qa.mutationScoreThreshold,
       maxTestsPerRun: qaConfig.qa.maxTestsPerRun,
+      rateLimit: {
+        delayBetweenCallsMs: qaConfig.rateLimit.delayBetweenCallsMs,
+        maxParallelCalls: qaConfig.rateLimit.maxParallelCalls,
+        retryOnRateLimit: qaConfig.rateLimit.retryOnRateLimit,
+        maxRetries: qaConfig.rateLimit.maxRetries,
+      },
     },
   });
 });
