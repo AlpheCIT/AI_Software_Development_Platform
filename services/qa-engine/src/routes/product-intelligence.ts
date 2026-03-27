@@ -11,10 +11,11 @@ export function createProductIntelligenceRouter(dbClient: any) {
     try {
       const { runId } = req.params;
 
-      const [roadmap, research, priorities] = await Promise.all([
+      const [roadmap, research, priorities, codeQuality] = await Promise.all([
         dbClient.getDocument('qa_product_roadmaps', `roadmap_${runId}`).catch(() => null),
         dbClient.getDocument('qa_research_insights', `research_${runId}`).catch(() => null),
         dbClient.getDocument('qa_product_priorities', `priorities_${runId}`).catch(() => null),
+        dbClient.getDocument('qa_code_quality_reports', `quality_${runId}`).catch(() => null),
       ]);
 
       if (!roadmap && !research) {
@@ -27,6 +28,7 @@ export function createProductIntelligenceRouter(dbClient: any) {
       res.json({
         roadmap,
         research,
+        codeQuality,
         priorities: priorities?.priorities || [],
         summary: {
           appDomain: roadmap?.appDomain || 'Unknown',
@@ -35,6 +37,9 @@ export function createProductIntelligenceRouter(dbClient: any) {
           gameChangerTrends: research?.gameChangerCount || 0,
           monopolyStrategies: research?.monopolyStrategies?.length || 0,
           combinedPriorities: priorities?.priorities?.length || 0,
+          codeHealthScore: codeQuality?.overallHealth?.score || null,
+          codeHealthGrade: codeQuality?.overallHealth?.grade || null,
+          totalFindings: codeQuality?.totalFindings || 0,
         },
       });
     } catch (error: any) {

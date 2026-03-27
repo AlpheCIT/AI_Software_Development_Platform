@@ -1,10 +1,12 @@
 import { productManagerNode, ProductRoadmap } from './product-manager';
 import { researchAssistantNode, ResearchInsights } from './research-assistant';
+import { codeQualityArchitectNode, CodeQualityReport } from './code-quality-architect';
 import { QA_COLLECTIONS } from '../../../graph/collections';
 
 export interface ProductIntelligenceResult {
   roadmap: ProductRoadmap;
   research: ResearchInsights;
+  codeQuality: CodeQualityReport;
   combinedPriorities: CombinedPriority[];
 }
 
@@ -62,16 +64,33 @@ export async function runProductIntelligencePipeline(
     eventPublisher
   );
 
-  // Step 3: Combine and prioritize
+  // Step 3: Code Quality Architect runs in parallel with Research (both depend on PM output)
+  eventPublisher?.emit('qa:agent.progress', {
+    runId,
+    agent: 'code-quality-architect',
+    progress: 0,
+    message: 'Code Quality Architect auditing codebase for smells, duplication, and refactoring...',
+  });
+
+  const codeQuality = await codeQualityArchitectNode(
+    codeFiles,
+    codeEntities,
+    repoUrl,
+    runId,
+    eventPublisher
+  );
+
+  // Step 4: Combine and prioritize
   const combinedPriorities = buildCombinedPriorities(roadmap, research);
 
-  // Step 4: Persist to ArangoDB
+  // Step 5: Persist to ArangoDB
   await persistProductIntelligence(
     dbClient,
     repositoryId,
     runId,
     roadmap,
     research,
+    codeQuality,
     combinedPriorities
   );
 
@@ -83,10 +102,12 @@ export async function runProductIntelligencePipeline(
       monopolyStrategies: research.monopolyStrategies.length,
       gameChangerTrends: research.trendInsights.filter(t => t.relevance === 'game-changer').length,
       domain: roadmap.appDomain,
+      codeHealthScore: codeQuality.overallHealth.score,
+      codeHealthGrade: codeQuality.overallHealth.grade,
     },
   });
 
-  return { roadmap, research, combinedPriorities };
+  return { roadmap, research, codeQuality, combinedPriorities };
 }
 
 function buildCombinedPriorities(
@@ -191,6 +212,7 @@ async function persistProductIntelligence(
   runId: string,
   roadmap: ProductRoadmap,
   research: ResearchInsights,
+  codeQuality: CodeQualityReport,
   priorities: CombinedPriority[]
 ): Promise<void> {
   try {
@@ -237,7 +259,33 @@ async function persistProductIntelligence(
       createdAt: new Date().toISOString(),
     });
 
-    console.log(`[ProductIntelligence] Persisted roadmap + research + ${priorities.length} priorities`);
+    // Store code quality report
+    await dbClient.upsertDocument('qa_code_quality_reports', {
+      _key: `quality_${runId}`,
+      repositoryId,
+      runId,
+      overallHealth: codeQuality.overallHealth,
+      codeSmells: codeQuality.codeSmells,
+      duplicationHotspots: codeQuality.duplicationHotspots,
+      complexityHotspots: codeQuality.complexityHotspots,
+      architectureIssues: codeQuality.architectureIssues,
+      refactoringRoadmap: codeQuality.refactoringRoadmap,
+      consolidationOpportunities: codeQuality.consolidationOpportunities,
+      deadCode: codeQuality.deadCode,
+      bestPracticeViolations: codeQuality.bestPracticeViolations,
+      totalFindings:
+        codeQuality.codeSmells.length +
+        codeQuality.duplicationHotspots.length +
+        codeQuality.complexityHotspots.length +
+        codeQuality.architectureIssues.length +
+        codeQuality.deadCode.length +
+        codeQuality.bestPracticeViolations.length,
+      createdAt: new Date().toISOString(),
+    });
+
+    console.log(
+      `[ProductIntelligence] Persisted roadmap + research + quality (${codeQuality.overallHealth.grade}) + ${priorities.length} priorities`
+    );
   } catch (error: any) {
     console.error('[ProductIntelligence] Failed to persist:', error.message);
   }
