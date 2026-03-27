@@ -24,8 +24,8 @@ export const useWebSocket = (
 ): UseWebSocketReturn => {
   const {
     autoConnect = true,
-    reconnectionDelay = 2000,
-    maxReconnectionAttempts = 2
+    reconnectionDelay = 5000,
+    maxReconnectionAttempts = 0  // Don't retry — if gateway is down, stop immediately
   } = options;
 
   const [isConnected, setIsConnected] = useState(false);

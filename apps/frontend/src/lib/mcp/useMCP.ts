@@ -480,12 +480,14 @@ export const useMCP = (): UseMCPReturn => {
     }
   }, []);
 
-  // Load initial data
+  // Load initial data (only once, skip if gateway already known to be down)
   useEffect(() => {
+    if ((window as any).__apiGatewayDown) return;
     refreshCollections();
     loadGraphSeeds();
     refreshAnalytics();
-  }, [refreshCollections, loadGraphSeeds, refreshAnalytics]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     // Collections
