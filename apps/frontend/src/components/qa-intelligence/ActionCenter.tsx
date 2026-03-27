@@ -832,7 +832,20 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
     );
   }
 
-  if (!data) return null;
+  if (!data) {
+    return (
+      <Box p={8} textAlign="center" border="2px dashed" borderColor="gray.300" borderRadius="lg">
+        <Text fontSize="3xl" mb={3}>🎯</Text>
+        <Text fontSize="lg" fontWeight="bold" color="gray.600" mb={2}>
+          No Intelligence Data Yet
+        </Text>
+        <Text fontSize="sm" color="gray.500" maxW="400px" mx="auto">
+          Run a QA analysis on your repository to get AI-powered action items,
+          code quality insights, product roadmap recommendations, and competitive intelligence.
+        </Text>
+      </Box>
+    );
+  }
 
   // Compute summary metrics for the banner
   const codeHealthScore = data.codeQuality?.overallHealth?.score ?? data.summary?.codeHealthScore ?? 0;

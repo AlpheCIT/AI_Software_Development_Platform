@@ -167,100 +167,37 @@ export default function BackendShowcase() {
           return;
         }
       }
-    } catch { /* fall through to demo data */ }
-    setActiveAgents([
-      {
-        id: 'agent-1',
-        name: 'Code Analyzer',
-        type: 'analyzer',
-        status: 'active',
-        lastActivity: new Date(Date.now() - 1000 * 60 * 5).toISOString()
-      },
-      {
-        id: 'agent-2',
-        name: 'Security Scanner',
-        type: 'security',
-        status: 'processing',
-        lastActivity: new Date(Date.now() - 1000 * 60 * 2).toISOString()
-      },
-      {
-        id: 'agent-3',
-        name: 'Performance Optimizer',
-        type: 'optimizer',
-        status: 'idle',
-        lastActivity: new Date(Date.now() - 1000 * 60 * 15).toISOString()
-      },
-      {
-        id: 'agent-4',
-        name: 'Code Reviewer',
-        type: 'reviewer',
-        status: 'active',
-        lastActivity: new Date(Date.now() - 1000 * 60 * 1).toISOString()
-      }
-    ]);
+    } catch { /* QA engine not available */ }
+    // No mock data — show empty state when QA engine is unavailable
+    setActiveAgents([]);
   };
 
   const loadConversations = async () => {
-    // Mock conversations - replace with real API call
-    setConversations([
-      {
-        id: 'conv-1',
-        participants: ['Code Analyzer', 'Security Scanner'],
-        topic: 'Vulnerability Assessment in Payment Module',
-        lastMessage: 'Found 3 potential SQL injection points',
-        timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-        messageCount: 12
-      },
-      {
-        id: 'conv-2',
-        participants: ['Performance Optimizer', 'Code Reviewer'],
-        topic: 'Database Query Optimization',
-        lastMessage: 'Suggested indexing strategy implemented',
-        timestamp: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
-        messageCount: 8
-      },
-      {
-        id: 'conv-3',
-        participants: ['Code Analyzer', 'Code Reviewer', 'Performance Optimizer'],
-        topic: 'Architecture Review for Microservices Split',
-        lastMessage: 'Consensus reached on service boundaries',
-        timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-        messageCount: 24
+    try {
+      const QA_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+      const res = await fetch(`${QA_URL}/chat/conversations`);
+      if (res.ok) {
+        const data = await res.json();
+        setConversations(data.conversations || []);
+        return;
       }
-    ]);
+    } catch { /* API not available */ }
+    // No mock data — show empty state when API is unavailable
+    setConversations([]);
   };
 
   const loadJiraTickets = async () => {
-    // Mock Jira tickets - replace with real API call
-    setJiraTickets([
-      {
-        id: 'ticket-1',
-        key: 'SCRUM-42',
-        summary: 'Fix authentication vulnerability in user service',
-        status: 'In Progress',
-        priority: 'High',
-        assignee: 'john.doe',
-        created: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString()
-      },
-      {
-        id: 'ticket-2',
-        key: 'SCRUM-43',
-        summary: 'Optimize database queries in payment processing',
-        status: 'To Do',
-        priority: 'Medium',
-        assignee: 'jane.smith',
-        created: new Date(Date.now() - 1000 * 60 * 60 * 1).toISOString()
-      },
-      {
-        id: 'ticket-3',
-        key: 'SCRUM-44',
-        summary: 'Implement caching layer for user profiles',
-        status: 'Done',
-        priority: 'Low',
-        assignee: 'bob.wilson',
-        created: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString()
+    try {
+      const QA_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+      const res = await fetch(`${QA_URL}/jira/tickets`);
+      if (res.ok) {
+        const data = await res.json();
+        setJiraTickets(data.tickets || []);
+        return;
       }
-    ]);
+    } catch { /* API not available */ }
+    // No mock data — show empty state when API is unavailable
+    setJiraTickets([]);
   };
 
   const loadDatabaseMetrics = async (qaUrl?: string) => {
@@ -523,7 +460,18 @@ export default function BackendShowcase() {
                   </Button>
                 </HStack>
 
-                {conversations.map((conv) => (
+                {conversations.length === 0 ? (
+                  <Alert status="info">
+                    <AlertIcon />
+                    <Box>
+                      <Text fontWeight="bold">No Conversations Yet</Text>
+                      <Text fontSize="sm">
+                        Run a QA analysis to see real agent conversations. Agents communicate
+                        findings as they analyze your codebase.
+                      </Text>
+                    </Box>
+                  </Alert>
+                ) : conversations.map((conv) => (
                   <Card key={conv.id} variant="outline">
                     <CardHeader>
                       <HStack justify="space-between">
@@ -541,13 +489,13 @@ export default function BackendShowcase() {
                             ))}
                           </AvatarGroup>
                         </HStack>
-                        
+
                         <Box p={3} bg="gray.50" borderRadius="md">
                           <Text fontSize="sm" fontStyle="italic">
                             "{conv.lastMessage}"
                           </Text>
                         </Box>
-                        
+
                         <HStack justify="space-between" fontSize="xs" color="gray.500">
                           <Text>{new Date(conv.timestamp).toLocaleString()}</Text>
                           <Button size="xs" variant="outline">
@@ -582,7 +530,18 @@ export default function BackendShowcase() {
                   </Box>
                 </Alert>
 
-                {jiraTickets.map((ticket) => (
+                {jiraTickets.length === 0 ? (
+                  <Alert status="info">
+                    <AlertIcon />
+                    <Box>
+                      <Text fontWeight="bold">No Tickets Yet</Text>
+                      <Text fontSize="sm">
+                        Connect your Jira instance to see auto-generated tickets from AI analysis.
+                        Configure the Jira integration in your project settings.
+                      </Text>
+                    </Box>
+                  </Alert>
+                ) : jiraTickets.map((ticket) => (
                   <Card key={ticket.id} variant="outline">
                     <CardBody>
                       <HStack justify="space-between">
