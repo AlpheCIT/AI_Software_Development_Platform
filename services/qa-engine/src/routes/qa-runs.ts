@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { execSync } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
 import { runQAPipeline } from '../agents/graph';
 import { QARunConfig } from '../agents/state';
@@ -216,6 +217,92 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
     } catch (error: any) {
       // Collection might not exist yet
       res.json({ runs: [], total: 0 });
+    }
+  });
+
+  /**
+   * GET /qa/freshness/:repositoryId
+   * Check if the analyzed commit is still up-to-date with the remote
+   */
+  router.get('/freshness/:repositoryId', async (req: Request, res: Response) => {
+    try {
+      const { repositoryId } = req.params;
+
+      // Get the latest run for this repository
+      const runs = await dbClient.query(
+        `FOR r IN ${QA_COLLECTIONS.RUNS}
+           FILTER r.repositoryId == @repoId
+           SORT r.startedAt DESC
+           LIMIT 1
+           RETURN r`,
+        { repoId: repositoryId }
+      );
+
+      if (!runs || runs.length === 0) {
+        return res.status(404).json({ error: 'No runs found for this repository' });
+      }
+
+      const latestRun = runs[0];
+      const lastAnalyzedCommit = latestRun.commitSha || null;
+      const lastAnalyzedDate = latestRun.commitDate || latestRun.completedAt || null;
+      const repoUrl = latestRun.repoUrl;
+      const branch = latestRun.branch || 'main';
+
+      // If no commit SHA was stored, we cannot compare
+      if (!lastAnalyzedCommit) {
+        return res.json({
+          repositoryId,
+          lastAnalyzedCommit: null,
+          lastAnalyzedDate,
+          lastAnalyzedMessage: latestRun.commitMessage || null,
+          remoteHeadCommit: null,
+          isStale: 'unknown',
+          commitsBehind: null,
+          reason: 'No commit SHA recorded in the latest run',
+        });
+      }
+
+      // Try to check the remote for the latest commit
+      let remoteHeadCommit: string | null = null;
+      let isStale: boolean | 'unknown' = 'unknown';
+      let commitsBehind: number | null = null;
+
+      try {
+        const lsRemoteOutput = execSync(
+          `git ls-remote ${repoUrl} refs/heads/${branch}`,
+          { encoding: 'utf-8', timeout: 15_000, stdio: ['pipe', 'pipe', 'pipe'] }
+        ).trim();
+
+        if (lsRemoteOutput) {
+          // Output format: "<sha>\trefs/heads/<branch>"
+          remoteHeadCommit = lsRemoteOutput.split('\t')[0];
+          isStale = remoteHeadCommit !== lastAnalyzedCommit;
+
+          // Estimate commits behind (rough: 1 if different, 0 if same)
+          // Accurate count would require cloning; we provide an estimate
+          if (isStale) {
+            commitsBehind = 1; // Minimum estimate — at least 1 commit behind
+          } else {
+            commitsBehind = 0;
+          }
+        }
+      } catch (gitErr: any) {
+        console.warn(`[Freshness] Could not check remote for ${repoUrl}: ${gitErr.message}`);
+        isStale = 'unknown';
+      }
+
+      res.json({
+        repositoryId,
+        lastAnalyzedCommit,
+        lastAnalyzedDate,
+        lastAnalyzedMessage: latestRun.commitMessage || null,
+        remoteHeadCommit,
+        isStale,
+        commitsBehind,
+      });
+    } catch (error: any) {
+      console.error('Error checking freshness:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 

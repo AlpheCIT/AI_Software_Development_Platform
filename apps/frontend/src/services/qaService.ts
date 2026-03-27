@@ -383,6 +383,23 @@ export const qaService = {
     }
     return response.json();
   },
+
+  /**
+   * Check git freshness for a repository — whether analyzed commit is up-to-date
+   */
+  async getFreshness(repositoryId: string): Promise<{
+    repositoryId: string;
+    lastAnalyzedCommit: string | null;
+    lastAnalyzedDate: string | null;
+    lastAnalyzedMessage: string | null;
+    remoteHeadCommit: string | null;
+    isStale: boolean | 'unknown';
+    commitsBehind: number | null;
+  }> {
+    const response = await fetch(`${QA_ENGINE_URL}/qa/freshness/${repositoryId}`);
+    if (!response.ok) throw new Error(`Freshness check failed: ${response.status}`);
+    return response.json();
+  },
 };
 
 export default qaService;

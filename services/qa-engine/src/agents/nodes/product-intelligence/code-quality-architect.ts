@@ -59,6 +59,13 @@ Your job: Perform a deep code quality audit and produce an actionable refactorin
 - TODO/FIXME/HACK comments that need addressing
 - Missing type definitions (any, unknown abuse)
 
+### 7. Documentation Coverage
+- Count files with JSDoc/docstrings vs files without
+- Count functions with documentation vs without
+- Flag directories without README files
+- Identify code with high complexity but no documentation (critical gaps)
+- Calculate overall documentation coverage percentage
+
 ## Output Format
 
 Your output must be structured JSON:
@@ -155,7 +162,17 @@ Your output must be structured JSON:
       "recommendedPattern": "What it should do instead",
       "reference": "Link or reference to the best practice"
     }
-  ]
+  ],
+  "documentationCoverage": {
+    "totalFiles": "number of source files analyzed",
+    "documentedFiles": "number of files with JSDoc/docstrings",
+    "undocumentedFiles": "number of files without any documentation",
+    "coveragePercent": "percentage of files with documentation (0-100)",
+    "criticalGaps": ["files with high complexity but no docs"],
+    "missingReadmes": ["directories without README files"],
+    "totalFunctions": "total functions/methods found",
+    "documentedFunctions": "number of functions with doc comments"
+  }
 }
 
 Be brutally honest but constructive. Every finding must have a specific, actionable fix. Prioritize findings by impact — what would make the biggest difference to code quality and developer productivity?`;
@@ -179,6 +196,7 @@ export interface CodeQualityReport {
   consolidationOpportunities: ConsolidationOpportunity[];
   deadCode: DeadCodeItem[];
   bestPracticeViolations: BestPracticeViolation[];
+  documentationCoverage?: DocumentationCoverage;
 }
 
 export interface CodeSmell {
@@ -256,6 +274,17 @@ export interface BestPracticeViolation {
   reference: string;
 }
 
+export interface DocumentationCoverage {
+  totalFiles: number;
+  documentedFiles: number;
+  undocumentedFiles: number;
+  coveragePercent: number;
+  criticalGaps: string[];
+  missingReadmes: string[];
+  totalFunctions: number;
+  documentedFunctions: number;
+}
+
 export async function codeQualityArchitectNode(
   codeFiles: any[],
   codeEntities: any[],
@@ -311,6 +340,30 @@ export async function codeQualityArchitectNode(
     .map((f: any) => `### ${f.path} (${(f.content || '').split('\n').length} lines)\n\`\`\`\n${(f.content || '').substring(0, 2000)}\n\`\`\``)
     .join('\n\n');
 
+  // Documentation coverage statistics
+  const sourceFiles = codeFiles.filter((f: any) =>
+    f.path?.match(/\.(ts|tsx|js|jsx|py|java|cs|go|rs|rb|php)$/)
+  );
+  const documentedFiles = sourceFiles.filter((f: any) => f.hasDocumentation === true);
+  const undocumentedFiles = sourceFiles.filter((f: any) => f.hasDocumentation === false);
+  const docCoveragePercent = sourceFiles.length > 0
+    ? Math.round((documentedFiles.length / sourceFiles.length) * 100)
+    : 0;
+
+  // Detect directories missing READMEs
+  const directoriesWithFiles = new Set<string>();
+  const directoriesWithReadmes = new Set<string>();
+  for (const f of codeFiles) {
+    const dir = f.path?.split('/').slice(0, -1).join('/') || '.';
+    directoriesWithFiles.add(dir);
+    if (f.path?.toLowerCase().endsWith('readme.md') || f.path?.toLowerCase().endsWith('readme')) {
+      directoriesWithReadmes.add(dir);
+    }
+  }
+  const missingReadmeDirs = Array.from(directoriesWithFiles)
+    .filter(d => !directoriesWithReadmes.has(d) && d !== '.')
+    .slice(0, 20);
+
   // Look for common anti-patterns in code
   const todoCount = codeFiles.reduce((acc: number, f: any) =>
     acc + ((f.content || '').match(/TODO|FIXME|HACK|XXX|TEMP/gi) || []).length, 0);
@@ -358,6 +411,11 @@ ${Array.from(filesByDir.entries()).sort((a, b) => b[1] - a[1]).slice(0, 20).map(
 - Functions > 30 lines: ${longFunctions.length}
 - Files > 200 lines: ${largeFiles.length}
 
+## Documentation Coverage
+- Source files with documentation: ${documentedFiles.length}/${sourceFiles.length} (${docCoveragePercent}%)
+- Undocumented source files: ${undocumentedFiles.length}
+- Directories missing README: ${missingReadmeDirs.length} (${missingReadmeDirs.slice(0, 10).join(', ')})
+
 ## Long Functions
 ${longFunctions.join('\n')}
 
@@ -380,6 +438,7 @@ Based on this comprehensive analysis:
 7. List consolidation opportunities (shared utilities/modules to create)
 8. Find dead code
 9. Flag best practice violations
+10. Analyze documentation coverage — count documented vs undocumented files/functions, flag critical gaps (high complexity with no docs), and list directories missing READMEs
 
 Be specific — reference actual files and code patterns. Every finding must have an actionable fix.
 
@@ -403,6 +462,30 @@ Respond with ONLY valid JSON, no markdown fencing.`),
       consolidationOpportunities: [],
       deadCode: [],
       bestPracticeViolations: [],
+      documentationCoverage: {
+        totalFiles: sourceFiles.length,
+        documentedFiles: documentedFiles.length,
+        undocumentedFiles: undocumentedFiles.length,
+        coveragePercent: docCoveragePercent,
+        criticalGaps: [],
+        missingReadmes: missingReadmeDirs,
+        totalFunctions: functions.length,
+        documentedFunctions: 0,
+      },
+    };
+  }
+
+  // Ensure documentationCoverage is always present (LLM may omit it)
+  if (!report.documentationCoverage) {
+    report.documentationCoverage = {
+      totalFiles: sourceFiles.length,
+      documentedFiles: documentedFiles.length,
+      undocumentedFiles: undocumentedFiles.length,
+      coveragePercent: docCoveragePercent,
+      criticalGaps: [],
+      missingReadmes: missingReadmeDirs,
+      totalFunctions: functions.length,
+      documentedFunctions: 0,
     };
   }
 
@@ -426,6 +509,7 @@ Respond with ONLY valid JSON, no markdown fencing.`),
       complexityHotspots: report.complexityHotspots.length,
       architectureIssues: report.architectureIssues.length,
       quickWins: report.refactoringRoadmap.quickWins.length,
+      documentationCoverage: report.documentationCoverage?.coveragePercent ?? docCoveragePercent,
     },
   });
 
