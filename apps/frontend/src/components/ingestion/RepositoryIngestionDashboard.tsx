@@ -373,7 +373,16 @@ export const RepositoryIngestionDashboard: React.FC = () => {
                 Recent Analysis History
               </Text>
               <VStack spacing={3} align="stretch">
-                {jobHistory.slice(0, 5).map((job, index) => (
+                {jobHistory
+                  .filter((job) => {
+                    // Filter out stale running jobs (>30 min old)
+                    if (job.status === 'running' && job.startTime) {
+                      const age = Date.now() - new Date(job.startTime).getTime();
+                      return age < 30 * 60 * 1000;
+                    }
+                    return true;
+                  })
+                  .slice(0, 5).map((job, index) => (
                   <Box key={job.id || `job-${index}`}>
                     <HStack justify="space-between">
                       <HStack>
