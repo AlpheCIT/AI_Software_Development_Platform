@@ -53,77 +53,9 @@ export default function CodeTab({ nodeId }: CodeTabProps) {
     );
   }
 
-  // Mock code files data - this would come from your code analysis service
-  const codeFiles: CodeFile[] = [
-    {
-      path: 'src/index.ts',
-      language: 'typescript',
-      content: `// Main entry point for ${data.name || nodeId}
-import express from 'express';
-import { router } from './routes';
-import { errorHandler } from './middleware/errorHandler';
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json());
-app.use('/api', router);
-app.use(errorHandler);
-
-app.listen(PORT, () => {
-  console.log(\`Server running on port \${PORT}\`);
-});`,
-      lines: 14,
-      lastModified: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
-      author: 'john.doe'
-    },
-    {
-      path: 'src/routes/index.ts',
-      language: 'typescript',
-      content: `// API routes for ${data.name || nodeId}
-import { Router } from 'express';
-import { userController } from '../controllers/userController';
-import { authMiddleware } from '../middleware/auth';
-
-const router = Router();
-
-router.get('/health', (req, res) => {
-  res.json({ status: 'healthy' });
-});
-
-router.use('/users', authMiddleware, userController);
-
-export { router };`,
-      lines: 13,
-      lastModified: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(), // 4 hours ago
-      author: 'jane.smith'
-    },
-    {
-      path: 'package.json',
-      language: 'json',
-      content: `{
-  "name": "${data.name?.toLowerCase().replace(/\s+/g, '-') || 'service'}",
-  "version": "1.0.0",
-  "description": "AI-powered service component",
-  "main": "dist/index.js",
-  "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "test": "jest"
-  },
-  "dependencies": {
-    "express": "^4.18.0",
-    "typescript": "^5.0.0"
-  }
-}`,
-      lines: 16,
-      lastModified: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // 1 day ago
-      author: 'bob.wilson'
-    }
-  ];
-
-  const currentFile = codeFiles.find(f => f.path === selectedFile) || codeFiles[0];
+  // Code files come from the graph node's metadata — no mock data
+  const codeFiles: CodeFile[] = data.metadata?.codeFiles || [];
+  const currentFile = codeFiles.find(f => f.path === selectedFile) || codeFiles[0] || null;
 
   const handleCopyCode = () => {
     if (currentFile?.content) {
@@ -151,26 +83,58 @@ export { router };`,
     return colors[language.toLowerCase()] || 'gray';
   };
 
+  if (codeFiles.length === 0) {
+    return (
+      <VStack spacing={6} align="stretch" p={4}>
+        <Alert status="info">
+          <AlertIcon />
+          <Box>
+            <Text fontWeight="bold">No Code Files Available</Text>
+            <Text fontSize="sm">
+              Connect your code analysis service or ingest a repository to see
+              source code associated with this graph node.
+            </Text>
+          </Box>
+        </Alert>
+
+        {/* Show language metadata if available */}
+        {data.metadata?.language && (
+          <Card>
+            <CardBody>
+              <Text fontSize="lg" fontWeight="bold" mb={4}>Node Metadata</Text>
+              <HStack>
+                <Text fontSize="sm" color="gray.600">Primary Language</Text>
+                <Badge colorScheme={getLanguageColor(data.metadata.language)}>
+                  {data.metadata.language}
+                </Badge>
+              </HStack>
+            </CardBody>
+          </Card>
+        )}
+      </VStack>
+    );
+  }
+
   return (
     <VStack spacing={6} align="stretch" p={4}>
       {/* Code Overview */}
       <Card>
         <CardBody>
           <Text fontSize="lg" fontWeight="bold" mb={4}>Code Overview</Text>
-          
+
           <HStack justify="space-between" mb={4}>
             <VStack spacing={1} align="start">
               <Text fontSize="sm" color="gray.600">Total Files</Text>
               <Text fontSize="lg" fontWeight="bold">{codeFiles.length}</Text>
             </VStack>
-            
+
             <VStack spacing={1} align="start">
               <Text fontSize="sm" color="gray.600">Total Lines</Text>
               <Text fontSize="lg" fontWeight="bold">
                 {codeFiles.reduce((sum, file) => sum + file.lines, 0)}
               </Text>
             </VStack>
-            
+
             <VStack spacing={1} align="start">
               <Text fontSize="sm" color="gray.600">Primary Language</Text>
               <Badge colorScheme={getLanguageColor(data.metadata?.language || 'typescript')}>
