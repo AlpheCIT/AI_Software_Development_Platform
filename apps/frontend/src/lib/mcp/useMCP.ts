@@ -403,6 +403,9 @@ export const useMCP = (): UseMCPReturn => {
             // Extra: source flag so UI knows this is QA data
             _source: 'qa-engine',
             _qaDetails: {
+              repoUrl: completedRuns[0]?.repoUrl || '',
+              branch: completedRuns[0]?.branch || '',
+              repoName: (completedRuns[0]?.repoUrl || '').split('/').pop() || 'Unknown',
               completedRuns: completedRuns.length,
               totalTests,
               totalPassed,

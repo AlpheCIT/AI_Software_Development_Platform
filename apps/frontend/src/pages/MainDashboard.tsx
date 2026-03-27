@@ -134,9 +134,23 @@ const MainDashboard: React.FC = () => {
         return (
           <Box height="100%" p={6}>
             <VStack spacing={6} align="stretch">
-              <Text fontSize="2xl" fontWeight="bold">
-                Repository Analytics
-              </Text>
+              <VStack align="start" spacing={1}>
+                <Text fontSize="2xl" fontWeight="bold">
+                  Repository Analytics
+                </Text>
+                {(analytics as any)?._qaDetails?.repoUrl && (
+                  <HStack spacing={2} fontSize="sm" color="gray.500">
+                    <Database size={14} />
+                    <Text fontWeight="medium" color="gray.700">
+                      {(analytics as any)._qaDetails.repoName}
+                    </Text>
+                    <Text>({(analytics as any)._qaDetails.branch})</Text>
+                    <Badge colorScheme="blue" variant="outline" fontSize="xs">
+                      {(analytics as any)._qaDetails.repoUrl}
+                    </Badge>
+                  </HStack>
+                )}
+              </VStack>
               
               {analyticsLoading ? (
                 <Box>Loading analytics...</Box>
@@ -208,9 +222,9 @@ const MainDashboard: React.FC = () => {
                         </Badge>
                       </HStack>
                       <HStack justify="space-between">
-                        <Text>Data Source:</Text>
+                        <Text>Repository:</Text>
                         <Badge colorScheme="blue" variant="outline">
-                          QA Engine + ArangoDB
+                          {(analytics as any)?._qaDetails?.repoName || 'Unknown'} ({(analytics as any)?._qaDetails?.branch || '—'})
                         </Badge>
                       </HStack>
                       <HStack justify="space-between">
