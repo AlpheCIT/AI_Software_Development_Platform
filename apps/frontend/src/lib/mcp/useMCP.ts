@@ -480,12 +480,39 @@ export const useMCP = (): UseMCPReturn => {
     }
   }, []);
 
-  // Load initial data (only once, skip if gateway already known to be down)
+  // Load initial data — probe gateway first with a fast check to avoid console spam
   useEffect(() => {
     if ((window as any).__apiGatewayDown) return;
-    refreshCollections();
-    loadGraphSeeds();
-    refreshAnalytics();
+    let cancelled = false;
+
+    const init = async () => {
+      // Fast probe: try to reach the gateway with a tiny timeout
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'}/health`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+      } catch {
+        // Gateway is down — set flag and skip all API calls
+        (window as any).__apiGatewayDown = true;
+        console.warn('API gateway unreachable — running in standalone mode (QA Engine on :3005)');
+        // Still load analytics from QA engine (it uses fetch directly, not axios)
+        if (!cancelled) refreshAnalytics();
+        return;
+      }
+
+      // Gateway is up — load everything
+      if (!cancelled) {
+        refreshCollections();
+        loadGraphSeeds();
+        refreshAnalytics();
+      }
+    };
+
+    init();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

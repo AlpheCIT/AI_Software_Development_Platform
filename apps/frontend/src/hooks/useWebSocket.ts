@@ -130,8 +130,23 @@ export const useWebSocket = (
   };
 
   useEffect(() => {
+    // Don't attempt WebSocket if API gateway is known to be down
+    if ((window as any).__apiGatewayDown) return;
+
+    // Probe first — only connect if gateway responds
     if (autoConnect) {
-      connect();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1500);
+      fetch(`${API_BASE_URL}/health`, { signal: controller.signal })
+        .then(() => {
+          clearTimeout(timeout);
+          connect();
+        })
+        .catch(() => {
+          clearTimeout(timeout);
+          (window as any).__apiGatewayDown = true;
+          // Don't connect — gateway is unreachable
+        });
     }
 
     return () => {
