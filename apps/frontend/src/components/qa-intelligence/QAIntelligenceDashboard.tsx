@@ -43,7 +43,8 @@ import QARunControl from './QARunControl';
 import AgentPipeline from './AgentPipeline';
 import AgentLogStream from './AgentLogStream';
 import TestResultsPanel from './TestResultsPanel';
-import ProductIntelligencePanel from './ProductIntelligencePanel';
+import ActionCenter from './ActionCenter';
+import ActionableSummary from './ActionableSummary';
 import RiskHeatmap from './RiskHeatmap';
 import MutationTrends from './MutationTrends';
 import { useQARun } from '../../hooks/useQARun';
@@ -267,7 +268,7 @@ const QAIntelligenceDashboard: React.FC = () => {
             <Tab>
               <HStack spacing={1}>
                 <Briefcase size={14} />
-                <Text>Product Intelligence</Text>
+                <Text>Action Center</Text>
               </HStack>
             </Tab>
             <Tab>
@@ -286,7 +287,7 @@ const QAIntelligenceDashboard: React.FC = () => {
 
           <TabPanels>
             <TabPanel px={0}>
-              <ProductIntelligencePanel runId={qaRun.runId} />
+              <ActionCenter runId={qaRun.runId} />
             </TabPanel>
             <TabPanel px={0}>
               <RiskHeatmap runId={qaRun.runId} />
