@@ -53,11 +53,11 @@ function createQAGraph(deps: QAGraphDependencies) {
   });
 
   graph.addNode('generator', async (state: QAAgentState) => {
-    return testGeneratorNode(state, eventPublisher);
+    return testGeneratorNode(state, dbClient, eventPublisher);
   });
 
   graph.addNode('critic', async (state: QAAgentState) => {
-    return criticNode(state, eventPublisher);
+    return criticNode(state, dbClient, eventPublisher);
   });
 
   graph.addNode('executor', async (state: QAAgentState) => {
@@ -65,7 +65,7 @@ function createQAGraph(deps: QAGraphDependencies) {
   });
 
   graph.addNode('mutation_verifier', async (state: QAAgentState) => {
-    return mutationVerifierNode(state, eventPublisher);
+    return mutationVerifierNode(state, dbClient, eventPublisher);
   });
 
   // Store results in ArangoDB

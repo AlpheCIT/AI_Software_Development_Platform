@@ -8,9 +8,20 @@ const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:30
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type QARunStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed';
-export type AgentName = 'strategist' | 'generator' | 'critic' | 'executor' | 'mutation' | 'product-manager' | 'research-assistant' | 'code-quality-architect';
+export type AgentName = 'strategist' | 'generator' | 'critic' | 'executor' | 'mutation' | 'product-manager' | 'research-assistant' | 'code-quality-architect' | 'self-healer' | 'api-validator' | 'coverage-auditor' | 'ui-ux-analyst';
 export type AgentStatus = 'idle' | 'active' | 'completed' | 'failed' | 'looping';
 export type TestStatus = 'passed' | 'failed' | 'skipped' | 'pending' | 'error';
+
+export interface AgentConversation {
+  runId: string;
+  agent: string;
+  systemPrompt: string;
+  userMessage: string;
+  response: string;
+  tokensUsed?: { input?: number; output?: number };
+  durationMs: number;
+  timestamp: string;
+}
 
 export interface QARunConfig {
   repoUrl: string;
@@ -229,11 +240,73 @@ export interface ResearchInsights {
   monopolyStrategies: MonopolyStrategy[];
 }
 
+// ── New Agent Report Types ────────────────────────────────────────────────
+
+export interface SelfHealingReport {
+  typeMismatches: Array<{ file: string; line: string; expected: string; actual: string; severity: string; fix: string }>;
+  brokenImports: Array<{ file: string; importStatement: string; issue: string; severity: string; fix: string }>;
+  missingDeps: Array<{ package: string; usedIn: string[]; inPackageJson: boolean; fix: string }>;
+  configIssues: Array<{ type: string; description: string; files: string[]; severity: string; fix: string }>;
+  autoFixes: Array<{ title: string; description: string; files: string[]; changes: string; confidence: string; breakingRisk: string }>;
+  healthScore: number;
+  summary: string;
+}
+
+export interface APIValidationReport {
+  endpoints: Array<{ method: string; path: string; file: string; handler: string; hasErrorHandling: boolean; hasInputValidation: boolean; hasAuth: boolean; hasRateLimiting: boolean; issues: string[] }>;
+  missingErrorHandling: Array<{ endpoint: string; file: string; severity: string; fix: string }>;
+  schemaIssues: Array<{ endpoint: string; issue: string; severity: string; fix: string }>;
+  securityGaps: Array<{ type: string; endpoint: string; description: string; severity: string; fix: string }>;
+  apiHealthScore: number;
+  summary: string;
+}
+
+export interface CoverageAuditReport {
+  unexposedBackendFeatures: Array<{ endpoint: string; file: string; description: string; suggestedUILocation: string; priority: string }>;
+  brokenFrontendCalls: Array<{ file: string; call: string; expectedEndpoint: string; issue: string; fix: string }>;
+  orphanedRoutes: Array<{ endpoint: string; file: string; reason: string; recommendation: string }>;
+  dataShapeMismatches: Array<{ endpoint: string; backendShape: string; frontendExpects: string; files: string[]; fix: string }>;
+  missingCrudOperations: Array<{ resource: string; hasCreate: boolean; hasRead: boolean; hasUpdate: boolean; hasDelete: boolean; missingOperations: string[]; priority: string }>;
+  coverageScore: number;
+  summary: string;
+}
+
+export interface UIAuditReport {
+  accessibilityIssues: Array<{ file: string; type: string; element: string; severity: string; wcagCriteria: string; fix: string }>;
+  uxAntiPatterns: Array<{ file: string; pattern: string; description: string; userImpact: string; fix: string }>;
+  componentIssues: Array<{ file: string; component: string; issue: string; severity: string; fix: string }>;
+  userFlowIssues: Array<{ flow: string; issue: string; affectedFiles: string[]; fix: string }>;
+  suggestions: Array<{ title: string; description: string; category: string; effort: string; impact: string }>;
+  accessibilityScore: number;
+  uxScore: number;
+  summary: string;
+}
+
+export interface HealthScores {
+  codeQuality: number | null;
+  selfHealing: number | null;
+  apiHealth: number | null;
+  coverage: number | null;
+  accessibility: number | null;
+  ux: number | null;
+  mutation: number | null;
+}
+
+export interface HealthHistoryEntry {
+  runId: string;
+  date: string;
+  scores: HealthScores;
+}
+
 export interface ProductIntelligenceData {
   roadmap: ProductRoadmap;
   research: ResearchInsights;
   priorities: CombinedPriority[];
   codeQuality?: CodeQualityReport;
+  selfHealing?: SelfHealingReport;
+  apiValidation?: APIValidationReport;
+  coverageAudit?: CoverageAuditReport;
+  uiAudit?: UIAuditReport;
   summary: {
     appDomain: string;
     totalFeatures: number;
@@ -241,6 +314,14 @@ export interface ProductIntelligenceData {
     gameChangerTrends: number;
     monopolyStrategies: number;
     combinedPriorities: number;
+    codeHealthScore: number | null;
+    codeHealthGrade: string | null;
+    totalFindings: number;
+    selfHealingScore: number | null;
+    apiHealthScore: number | null;
+    coverageScore: number | null;
+    accessibilityScore: number | null;
+    uxScore: number | null;
   };
 }
 
@@ -347,19 +428,7 @@ export const qaService = {
     return QA_ENGINE_URL.replace('http', 'ws');
   },
 
-  /**
-   * Get product intelligence data (roadmap, research, priorities) for a run
-   */
-  async getProductIntelligence(runId: string): Promise<ProductIntelligenceData> {
-    const url = `${QA_ENGINE_URL}/qa/product/${runId}`;
-    const response = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch product intelligence: ${response.status}`);
-    }
-    return response.json();
-  },
+  // getProductIntelligence is defined above with the enhanced 8-report version
 
   /**
    * Get the latest completed run (convenience method)
@@ -387,6 +456,72 @@ export const qaService = {
   /**
    * Check git freshness for a repository — whether analyzed commit is up-to-date
    */
+  /**
+   * Send a chat message to an agent and get a contextual response
+   */
+  async chat(runId: string, agent: string, message: string, conversationId?: string): Promise<{
+    conversationId: string;
+    response: string;
+    agent: string;
+    runId: string;
+  }> {
+    const response = await fetch(`${QA_ENGINE_URL}/qa/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId, agent, message, conversationId }),
+    });
+    if (!response.ok) throw new Error(`Chat failed: ${response.status}`);
+    return response.json();
+  },
+
+  /**
+   * Get chat history for a conversation
+   */
+  async getChatHistory(conversationId: string): Promise<{
+    conversationId: string;
+    messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: string }>;
+    total: number;
+  }> {
+    const response = await fetch(`${QA_ENGINE_URL}/qa/chat/${conversationId}`);
+    if (!response.ok) return { conversationId, messages: [], total: 0 };
+    return response.json();
+  },
+
+  /**
+   * Get agent conversations for a run (the actual LLM prompts/responses)
+   */
+  async getConversations(runId: string, agent?: string): Promise<{
+    conversations: AgentConversation[];
+    total: number;
+  }> {
+    const params = agent ? `?agent=${agent}` : '';
+    const response = await fetch(`${QA_ENGINE_URL}/qa/conversations/${runId}${params}`);
+    if (!response.ok) return { conversations: [], total: 0 };
+    return response.json();
+  },
+
+  /**
+   * Get full product intelligence (all 8 reports) for a run
+   */
+  async getProductIntelligence(runId: string): Promise<ProductIntelligenceData> {
+    const response = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`);
+    if (!response.ok) throw new Error(`Product intelligence not available: ${response.status}`);
+    return response.json();
+  },
+
+  /**
+   * Get health score history across runs for a repository
+   */
+  async getHealthHistory(repositoryId: string): Promise<{
+    repositoryId: string;
+    history: HealthHistoryEntry[];
+    total: number;
+  }> {
+    const response = await fetch(`${QA_ENGINE_URL}/qa/product/health-history/${repositoryId}`);
+    if (!response.ok) return { repositoryId, history: [], total: 0 };
+    return response.json();
+  },
+
   async getFreshness(repositoryId: string): Promise<{
     repositoryId: string;
     lastAnalyzedCommit: string | null;

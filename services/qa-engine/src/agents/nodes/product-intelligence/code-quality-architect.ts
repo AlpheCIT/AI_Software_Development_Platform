@@ -1,6 +1,7 @@
-import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../../config';
+import { persistConversation } from '../../persist-conversation';
+import { throttledInvoke, createModel } from '../../llm-throttle';
 
 const CODE_QUALITY_SYSTEM_PROMPT = `You are a world-class Software Architect and Technical Debt specialist — the kind of engineer who gets called in to rescue codebases at companies like Google, Stripe, and Netflix. You have an encyclopedic knowledge of design patterns, SOLID principles, and clean code practices across every language and framework.
 
@@ -290,6 +291,7 @@ export async function codeQualityArchitectNode(
   codeEntities: any[],
   repoUrl: string,
   runId: string,
+  dbClient?: any,
   eventPublisher?: any
 ): Promise<CodeQualityReport> {
   console.log(`[CodeQualityArchitect] Auditing ${repoUrl} for code quality and refactoring opportunities`);
@@ -379,16 +381,9 @@ export async function codeQualityArchitectNode(
     message: `Analyzed ${codeFiles.length} files, ${totalLines} lines. Found ${longFunctions.length} long functions, ${largeFiles.length} large files, ${todoCount} TODOs, ${anyCount} 'any' types`,
   });
 
-  const model = new ChatAnthropic({
-    modelName: qaConfig.anthropic.model,
-    anthropicApiKey: qaConfig.anthropic.apiKey,
-    temperature: 0.3,
-    maxTokens: 8192,
-  });
+  const model = createModel({ temperature: 0.3, maxTokens: 8192 });
 
-  const response = await model.invoke([
-    new SystemMessage(CODE_QUALITY_SYSTEM_PROMPT),
-    new HumanMessage(`Perform a comprehensive code quality audit of this repository.
+  const userMessage = `Perform a comprehensive code quality audit of this repository.
 
 ## Repository
 URL: ${repoUrl}
@@ -442,8 +437,28 @@ Based on this comprehensive analysis:
 
 Be specific — reference actual files and code patterns. Every finding must have an actionable fix.
 
-Respond with ONLY valid JSON, no markdown fencing.`),
-  ]);
+Respond with ONLY valid JSON, no markdown fencing.`;
+
+  const startMs = Date.now();
+  const response = await throttledInvoke(model, [
+    new SystemMessage(CODE_QUALITY_SYSTEM_PROMPT),
+    new HumanMessage(userMessage),
+  ], 'code-quality-architect', eventPublisher, runId);
+  const durationMs = Date.now() - startMs;
+
+  const cqResponseText = typeof response.content === 'string' ? response.content : '';
+  if (dbClient) {
+    persistConversation(dbClient, {
+      runId,
+      agent: 'code-quality-architect',
+      systemPrompt: CODE_QUALITY_SYSTEM_PROMPT,
+      userMessage,
+      response: cqResponseText,
+      tokensUsed: { input: (response as any).usage_metadata?.input_tokens, output: (response as any).usage_metadata?.output_tokens },
+      durationMs,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   let report: CodeQualityReport;
   try {

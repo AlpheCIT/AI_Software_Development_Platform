@@ -33,6 +33,7 @@ import {
   Wrap,
   WrapItem,
   Progress,
+  Input,
   useColorModeValue,
 } from '@chakra-ui/react';
 import {
@@ -924,6 +925,43 @@ const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
         mx="auto"
       >
         <ReportHeader data={data} />
+
+        {/* Data Quality Caveats */}
+        <Box
+          my={4} p={4}
+          bg={cardBg === 'white' ? 'yellow.50' : 'yellow.900'}
+          border="1px solid"
+          borderColor={borderColor}
+          borderRadius="md"
+        >
+          <Text fontWeight="bold" fontSize="sm" mb={2}>Report Confidence</Text>
+          <VStack align="start" spacing={1} fontSize="xs">
+            {data?.summary?.codeHealthScore !== null && data?.summary?.codeHealthScore !== undefined && (
+              <HStack>
+                <Text>{data.summary.codeHealthScore >= 80 ? '✅' : data.summary.codeHealthScore >= 60 ? '⚠️' : '🔴'}</Text>
+                <Text>
+                  Code Health: Grade {data?.codeQuality?.overallHealth?.grade || 'N/A'} ({data.summary.codeHealthScore}/100).
+                  {data.summary.codeHealthScore < 60 && ' Roadmap items are gated on stabilization. Fix tests and tech debt first.'}
+                  {data.summary.codeHealthScore >= 80 && ' Healthy foundation — feature recommendations are reliable.'}
+                  {data.summary.codeHealthScore >= 60 && data.summary.codeHealthScore < 80 && ' Some tech debt should be addressed alongside new features.'}
+                </Text>
+              </HStack>
+            )}
+            <HStack>
+              <Text>⚠️</Text>
+              <Text>Test Accuracy: Generated tests were syntax-checked only. Full Jest/Vitest execution requires project configuration and dependencies.</Text>
+            </HStack>
+            <HStack>
+              <Text>✅</Text>
+              <Text>Code Analysis: Full access to {data?.summary?.totalFeatures ? 'complete' : 'available'} codebase with entity extraction.</Text>
+            </HStack>
+            <HStack>
+              <Text>ℹ️</Text>
+              <Text>AI-Generated: All findings, roadmaps, and recommendations are AI-generated and should be reviewed by a human before implementation.</Text>
+            </HStack>
+          </VStack>
+        </Box>
+
         <ExecutiveSummary data={data} />
         <Divider my={4} />
         <DeveloperActionItems data={data} />
@@ -937,6 +975,10 @@ const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
         <StrategicRecommendations data={data} />
         <Divider my={4} />
         <DocumentationGaps data={data} />
+
+        {/* Interactive Chat — ask about this report */}
+        <Divider my={4} />
+        <ReportChat runId={runId} />
 
         {/* Footer */}
         <Divider my={4} />
@@ -953,6 +995,163 @@ const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
           .cumulative-report { padding: 0 !important; }
         }
       `}</style>
+    </Box>
+  );
+};
+
+// ── Report Chat Component ──────────────────────────────────────────────────
+
+const ReportChat: React.FC<{ runId: string }> = ({ runId }) => {
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const chatBg = useColorModeValue('gray.50', 'gray.800');
+
+  React.useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  async function sendMessage() {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+    setLoading(true);
+
+    try {
+      const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+      const resp = await fetch(`${QA_ENGINE_URL}/qa/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          runId,
+          agent: 'product-manager',
+          message: userMsg,
+          conversationId,
+        }),
+      });
+      const data = await resp.json();
+      setConversationId(data.conversationId);
+      setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Failed to get response. Please try again.' }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!isExpanded) {
+    return (
+      <Box
+        p={4}
+        border="1px dashed"
+        borderColor="blue.300"
+        borderRadius="lg"
+        textAlign="center"
+        cursor="pointer"
+        _hover={{ bg: 'blue.50', borderColor: 'blue.400' }}
+        onClick={() => setIsExpanded(true)}
+        className="no-print"
+      >
+        <HStack justify="center" spacing={2}>
+          <Text fontSize="lg">💬</Text>
+          <Text fontWeight="bold" color="blue.600">Ask About This Report</Text>
+        </HStack>
+        <Text fontSize="sm" color="gray.500" mt={1}>
+          Click to ask follow-up questions about the analysis, get clarification, or request deeper insights
+        </Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box className="no-print" border="1px solid" borderColor={borderColor} borderRadius="lg" overflow="hidden">
+      <HStack px={4} py={2} bg="blue.500" color="white" justify="space-between">
+        <Text fontWeight="bold" fontSize="sm">Ask About This Report</Text>
+        <Box cursor="pointer" onClick={() => setIsExpanded(false)} _hover={{ opacity: 0.8 }}>
+          <Text fontSize="xs">Minimize</Text>
+        </Box>
+      </HStack>
+
+      <Box maxH="300px" overflowY="auto" p={3} bg={chatBg}>
+        <VStack spacing={3} align="stretch">
+          {messages.length === 0 && (
+            <VStack spacing={2} py={3}>
+              <Text fontSize="sm" color="gray.500">
+                Ask anything about this report — ROI analysis, implementation order, developer assignments, etc.
+              </Text>
+              <VStack spacing={1} w="full">
+                {[
+                  'What should we prioritize this sprint?',
+                  'Which findings have the highest ROI?',
+                  'Summarize the critical issues for my standup',
+                ].map((q, i) => (
+                  <Box
+                    key={i}
+                    w="full" px={3} py={1.5}
+                    border="1px solid" borderColor={borderColor} borderRadius="md"
+                    cursor="pointer" fontSize="xs" color="gray.600"
+                    _hover={{ bg: 'blue.50', borderColor: 'blue.200' }}
+                    onClick={() => setInput(q)}
+                  >
+                    {q}
+                  </Box>
+                ))}
+              </VStack>
+            </VStack>
+          )}
+
+          {messages.map((msg, i) => (
+            <Box
+              key={i}
+              alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'}
+              maxW="85%"
+              px={3} py={2} borderRadius="lg"
+              bg={msg.role === 'user' ? 'blue.500' : useColorModeValue('gray.100', 'gray.700')}
+              color={msg.role === 'user' ? 'white' : 'inherit'}
+              fontSize="sm"
+              whiteSpace="pre-wrap"
+            >
+              {msg.content}
+            </Box>
+          ))}
+
+          {loading && (
+            <HStack spacing={1} px={2}>
+              {[0, 1, 2].map(i => (
+                <Box key={i} w="6px" h="6px" borderRadius="full" bg="gray.400"
+                  style={{ animation: `pulse 0.6s infinite ${i * 0.15}s` }}
+                />
+              ))}
+            </HStack>
+          )}
+          <div ref={messagesEndRef} />
+        </VStack>
+      </Box>
+
+      <HStack px={3} py={2} borderTop="1px solid" borderColor={borderColor}>
+        <Input
+          size="sm" placeholder="Ask about this report..."
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') sendMessage(); }}
+          isDisabled={loading}
+          borderRadius="full"
+        />
+        <Button
+          size="sm" colorScheme="blue" borderRadius="full"
+          onClick={sendMessage}
+          isDisabled={!input.trim() || loading}
+          isLoading={loading}
+        >
+          Send
+        </Button>
+      </HStack>
     </Box>
   );
 };

@@ -1,8 +1,9 @@
-import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { QAAgentState, GeneratedTest } from '../state';
 import { qaConfig } from '../../config';
 import { v4 as uuidv4 } from 'uuid';
+import { persistConversation } from '../persist-conversation';
+import { throttledInvoke, createModel } from '../llm-throttle';
 
 const GENERATOR_SYSTEM_PROMPT = `You are an expert test engineer generating high-quality, executable test code.
 
@@ -33,6 +34,7 @@ prioritize addressing those gaps in your generated tests.`;
 
 export async function testGeneratorNode(
   state: QAAgentState,
+  dbClient?: any,
   eventPublisher?: any
 ): Promise<Partial<QAAgentState>> {
   console.log(`[Generator] Creating tests (iteration ${state.iteration + 1})`);
@@ -82,16 +84,28 @@ ${state.mutationResult.survivors.slice(0, 10).map(s =>
   ).join('\n')}`;
   }
 
-  const model = new ChatAnthropic({
-    modelName: qaConfig.anthropic.model,
-    anthropicApiKey: qaConfig.anthropic.apiKey,
-    temperature: 0.4,
-    maxTokens: 16384, // Increased — test JSON arrays can be large
+  // Emit what files are being targeted
+  for (let i = 0; i < Math.min(highRiskFiles.length, 5); i++) {
+    eventPublisher?.emit('qa:agent.streaming', {
+      runId: state.runId,
+      agent: 'generator',
+      text: `Building test context for ${highRiskFiles[i].filePath}`,
+      currentFile: highRiskFiles[i].filePath,
+      fileIndex: i + 1,
+      fileTotal: highRiskFiles.length,
+    });
+  }
+
+  eventPublisher?.emit('qa:agent.progress', {
+    runId: state.runId,
+    agent: 'generator',
+    progress: 30,
+    message: `Generating tests for ${highRiskFiles.length} high-risk files (iteration ${state.iteration + 1})`,
   });
 
-  const response = await model.invoke([
-    new SystemMessage(GENERATOR_SYSTEM_PROMPT),
-    new HumanMessage(`Generate tests for this codebase.
+  const model = createModel({ temperature: 0.4, maxTokens: 16384 });
+
+  const userMessage = `Generate tests for this codebase.
 
 ## Test Strategy
 Focus areas: ${strategy.focusAreas.join(', ')}
@@ -104,8 +118,28 @@ ${codeContext}
 ${feedbackContext}
 ${mutationContext}
 
-Respond with ONLY a valid JSON array, no markdown fencing.`),
-  ]);
+Respond with ONLY a valid JSON array, no markdown fencing.`;
+
+  const startMs = Date.now();
+  const response = await throttledInvoke(model, [
+    new SystemMessage(GENERATOR_SYSTEM_PROMPT),
+    new HumanMessage(userMessage),
+  ], 'generator', eventPublisher, state.runId);
+  const durationMs = Date.now() - startMs;
+
+  const responseText = typeof response.content === 'string' ? response.content : '';
+  if (dbClient) {
+    persistConversation(dbClient, {
+      runId: state.runId,
+      agent: 'generator',
+      systemPrompt: GENERATOR_SYSTEM_PROMPT,
+      userMessage,
+      response: responseText,
+      tokensUsed: { input: (response as any).usage_metadata?.input_tokens, output: (response as any).usage_metadata?.output_tokens },
+      durationMs,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   let tests: GeneratedTest[];
   try {

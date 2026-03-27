@@ -3,7 +3,7 @@
  * The showstopper component: shows 5 agents working in sequence with animated transitions
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   VStack,
@@ -14,6 +14,8 @@ import {
   Icon,
   useColorModeValue,
   Flex,
+  Collapse,
+  Tooltip,
 } from '@chakra-ui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -30,8 +32,14 @@ import {
   RotateCcw,
   Briefcase,
   Search,
+  Wrench,
+  Shield,
+  Layers,
 } from 'lucide-react';
 import type { AgentState, AgentName } from '../../services/qaService';
+import type { AgentStreamingState } from '../../hooks/useAgentStream';
+import AgentConversationPanel from './AgentConversationPanel';
+import LiveReasoningStream from './LiveReasoningStream';
 
 const MotionBox = motion(Box);
 const MotionFlex = motion(Flex);
@@ -99,6 +107,30 @@ const AGENT_CONFIG: Record<string, AgentConfig> = {
     icon: Code,
     color: 'yellow',
     description: 'Audits code quality, finds smells, duplication, and refactoring opportunities',
+  },
+  'self-healer': {
+    label: 'Self-Healer',
+    icon: Wrench,
+    color: 'pink',
+    description: 'Detects cross-file type mismatches, broken imports, and config issues',
+  },
+  'api-validator': {
+    label: 'API Validator',
+    icon: Shield,
+    color: 'orange',
+    description: 'Validates API endpoints for security, error handling, and completeness',
+  },
+  'coverage-auditor': {
+    label: 'Coverage Auditor',
+    icon: Layers,
+    color: 'linkedin',
+    description: 'Cross-references backend APIs with frontend consumers to find gaps',
+  },
+  'ui-ux-analyst': {
+    label: 'UI/UX Analyst',
+    icon: MessageSquare,
+    color: 'purple',
+    description: 'Audits accessibility, UX patterns, and user flow quality',
   },
 };
 
@@ -326,11 +358,37 @@ const AgentRow: React.FC<AgentRowProps> = ({ agent, config, isActive }) => {
 
 // ── Main Pipeline Component ────────────────────────────────────────────────
 
+// ── Typing Indicator ──────────────────────────────────────────────────────
+
+const TypingIndicator: React.FC = () => (
+  <HStack spacing={1} px={1}>
+    {[0, 1, 2].map(i => (
+      <MotionBox
+        key={i}
+        w="4px"
+        h="4px"
+        borderRadius="full"
+        bg="gray.400"
+        animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
+        transition={{
+          duration: 0.6,
+          repeat: Infinity,
+          delay: i * 0.15,
+          ease: 'easeInOut',
+        }}
+      />
+    ))}
+  </HStack>
+);
+
 interface AgentPipelineProps {
   agents: AgentState[];
+  runId?: string;
+  streamingState?: AgentStreamingState | null;
 }
 
-const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents }) => {
+const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents, runId, streamingState }) => {
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const headerColor = useColorModeValue('gray.700', 'gray.200');
@@ -339,6 +397,7 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents }) => {
   const allAgents: string[] = [
     'repo-ingester', 'strategist', 'generator', 'critic', 'executor', 'mutation',
     'product-manager', 'research-assistant', 'code-quality-architect',
+    'self-healer', 'api-validator', 'coverage-auditor', 'ui-ux-analyst',
   ];
 
   const getAgent = (name: string): AgentState => {
@@ -399,16 +458,40 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents }) => {
           const statusColor = agent.status === 'completed' ? 'green' : agent.status === 'active' ? config.color : agent.status === 'failed' ? 'red' : agent.status === 'looping' ? 'orange' : 'gray';
           const AgentIcon = config.icon;
 
+          const isExpanded = expandedAgent === name;
+          const isClickable = agent.status !== 'idle';
+          const isStreaming = streamingState?.agent === name || streamingState?.agent === (name === 'mutation' ? 'mutation-verifier' : name);
+
+          const tooltipLabel = isActive
+            ? 'Click to watch live reasoning'
+            : agent.status === 'completed'
+            ? 'Click to view conversation & chat'
+            : agent.status === 'idle'
+            ? config.description
+            : `Click to view ${config.label} details`;
+
           return (
-            <MotionBox
+            <Tooltip
               key={name}
+              label={tooltipLabel}
+              placement="top"
+              fontSize="xs"
+              hasArrow
+            >
+            <MotionBox
               layout
               border="1px solid"
-              borderColor={isActive ? `${config.color}.300` : borderColor}
-              bg={isActive ? `${config.color}.50` : cardBg}
+              borderColor={isExpanded ? `${config.color}.500` : isActive ? `${config.color}.300` : borderColor}
+              bg={isExpanded ? `${config.color}.50` : isActive ? `${config.color}.50` : cardBg}
               borderRadius="md"
               p={2}
-              _hover={{ shadow: 'sm' }}
+              cursor={isClickable ? 'pointer' : 'default'}
+              onClick={() => {
+                if (isClickable) {
+                  setExpandedAgent(isExpanded ? null : name);
+                }
+              }}
+              _hover={isClickable ? { shadow: 'md', borderColor: `${config.color}.400` } : { shadow: 'sm' }}
             >
               <HStack spacing={2}>
                 <Flex
@@ -462,6 +545,23 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents }) => {
                       isAnimated
                     />
                   )}
+                  {/* Streaming preview */}
+                  {isActive && isStreaming && streamingState && (
+                    <HStack spacing={1} mt={1}>
+                      <TypingIndicator />
+                      <Text fontSize="2xs" color="gray.500" noOfLines={1} flex={1}>
+                        {streamingState.currentFile
+                          ? `Analyzing ${streamingState.currentFile}${streamingState.fileTotal ? ` (${streamingState.fileIndex}/${streamingState.fileTotal})` : ''}`
+                          : streamingState.text?.substring(0, 60)}
+                      </Text>
+                    </HStack>
+                  )}
+                  {isActive && !isStreaming && (
+                    <HStack spacing={1} mt={1}>
+                      <TypingIndicator />
+                      <Text fontSize="2xs" color="gray.500">Thinking...</Text>
+                    </HStack>
+                  )}
                 </Box>
                 {agent.progress > 0 && isActive && (
                   <Text fontSize="2xs" fontWeight="bold" color={`${config.color}.500`}>
@@ -470,9 +570,54 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents }) => {
                 )}
               </HStack>
             </MotionBox>
+            </Tooltip>
           );
         })}
       </Box>
+
+      {/* Expanded panel — shows live reasoning OR conversation based on agent status */}
+      {expandedAgent && AGENT_CONFIG[expandedAgent] && (() => {
+        const expandedAgentState = getAgent(expandedAgent);
+        const expandedConfig = AGENT_CONFIG[expandedAgent];
+        const backendName = expandedAgent === 'mutation' ? 'mutation-verifier' : expandedAgent;
+        const agentIsActive = expandedAgentState.status === 'active';
+        const agentIsStreaming = streamingState?.agent === backendName || streamingState?.agent === expandedAgent;
+
+        return (
+          <Box mt={3}>
+            {/* Active agent: show live reasoning stream */}
+            {agentIsActive && (
+              <LiveReasoningStream
+                agentName={expandedAgent as any}
+                agentLabel={expandedConfig.label}
+                agentColor={expandedConfig.color}
+                streamingState={agentIsStreaming ? streamingState! : null}
+                streamingBuffer={agentIsStreaming ? (streamingState?.text || '') : ''}
+                isActive={true}
+              />
+            )}
+
+            {/* Completed/failed agent: show conversation panel with chat */}
+            {!agentIsActive && runId && (
+              <AgentConversationPanel
+                runId={runId}
+                agent={backendName}
+                agentLabel={expandedConfig.label}
+                agentColor={expandedConfig.color}
+                onClose={() => setExpandedAgent(null)}
+              />
+            )}
+
+            {/* Idle agent with no runId: just show description */}
+            {!agentIsActive && !runId && (
+              <Box p={4} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md" border="1px solid" borderColor={borderColor}>
+                <Text fontSize="sm" color="gray.500">{expandedConfig.description}</Text>
+                <Text fontSize="xs" color="gray.400" mt={1}>Start a QA run to see this agent in action.</Text>
+              </Box>
+            )}
+          </Box>
+        );
+      })()}
     </Box>
   );
 };
