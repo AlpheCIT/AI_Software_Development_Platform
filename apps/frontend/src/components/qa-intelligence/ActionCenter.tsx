@@ -747,22 +747,44 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
 
   // Fetch product data
   useEffect(() => {
-    if (!runId) return;
     setLoading(true);
     setError(null);
 
     const fetchData = async () => {
       try {
-        const res = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`);
-        if (!res.ok) {
-          if (res.status === 404) {
-            setError('Action Center data not yet available. Agents may still be running.');
-            return;
+        // Try the provided runId first
+        if (runId) {
+          const res = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`);
+          if (res.ok) {
+            const json = await res.json();
+            if (json.roadmap || json.codeQuality) {
+              setData(json);
+              setLoading(false);
+              return;
+            }
           }
-          throw new Error(`Failed to fetch: ${res.status}`);
         }
-        const json = await res.json();
-        setData(json);
+
+        // Fallback: find ANY completed run with product intelligence data
+        const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+        if (runsRes.ok) {
+          const runsData = await runsRes.json();
+          const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+          for (const run of completedRuns) {
+            const rid = run._key || run.runId;
+            const prodRes = await fetch(`${QA_ENGINE_URL}/qa/product/${rid}`);
+            if (prodRes.ok) {
+              const json = await prodRes.json();
+              if (json.roadmap || json.codeQuality) {
+                setData(json);
+                setLoading(false);
+                return;
+              }
+            }
+          }
+        }
+
+        setError('No product intelligence data found. Run a QA analysis to generate insights.');
       } catch (err: any) {
         setError(err.message || 'Failed to load Action Center data');
       } finally {
@@ -771,8 +793,11 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
+    // Only poll if a run is active
+    if (runId) {
+      const interval = setInterval(fetchData, 10000);
+      return () => clearInterval(interval);
+    }
   }, [runId]);
 
   // No run selected
