@@ -159,6 +159,28 @@ function createQAGraph(deps: QAGraphDependencies) {
       });
     }
 
+    // Store wiki data (file list + entities snapshot for the wiki endpoint)
+    if (state.codeFiles.length > 0) {
+      await dbClient.upsertDocument(QA_COLLECTIONS.WIKI_DATA, {
+        _key: `wiki_${state.runId}`,
+        runId: state.runId,
+        repositoryId: state.config.repositoryId,
+        files: state.codeFiles.map((f: any) => ({
+          path: f.path,
+          language: f.language,
+          size: f.size,
+        })),
+        entities: state.codeEntities.map((e: any) => ({
+          name: e.name,
+          type: e.type,
+          file: e.file,
+          signature: e.signature,
+        })),
+        createdAt: new Date().toISOString(),
+      });
+      console.log(`[Persist] Stored wiki data: ${state.codeFiles.length} files, ${state.codeEntities.length} entities`);
+    }
+
     console.log(`[Persist] Stored ${state.generatedTests.length} tests, ${state.testResults.length} results`);
     return {};
   });
