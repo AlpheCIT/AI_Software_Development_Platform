@@ -48,29 +48,16 @@ export async function testStrategistNode(
     step: 'Analyzing codebase for risk areas',
   });
 
-  // Fetch code files from ArangoDB
-  const codeFiles = await dbClient.query(
-    `FOR f IN code_files
-       FILTER f.repositoryId == @repoId
-       LIMIT 200
-       RETURN { path: f.path, language: f.language, size: f.size, content: SUBSTRING(f.content, 0, 2000) }`,
-    { repoId: state.config.repositoryId }
-  );
-
-  // Fetch code entities (functions, classes)
-  const codeEntities = await dbClient.query(
-    `FOR e IN code_entities
-       FILTER e.repositoryId == @repoId
-       LIMIT 500
-       RETURN { name: e.name, type: e.type, file: e.filePath, signature: e.signature }`,
-    { repoId: state.config.repositoryId }
-  );
+  // Use code files and entities already populated by the repo-ingester node.
+  // The ingester either pulled them from ArangoDB or cloned the repo directly.
+  const codeFiles = state.codeFiles;
+  const codeEntities = state.codeEntities;
 
   eventPublisher?.emit('qa:agent.progress', {
     runId: state.runId,
     agent: 'strategist',
     progress: 40,
-    message: `Found ${codeFiles.length} files and ${codeEntities.length} code entities`,
+    message: `Analyzing ${codeFiles.length} files and ${codeEntities.length} code entities (source: ${(state as any).ingestionSource ?? 'unknown'})`,
   });
 
   // Build context for Claude
@@ -152,8 +139,6 @@ Respond with ONLY valid JSON, no markdown fencing.`),
   });
 
   return {
-    codeFiles,
-    codeEntities,
     strategy,
     currentAgent: 'generator',
   };

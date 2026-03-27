@@ -78,9 +78,10 @@ export interface QAAgentState {
   runId: string;
   config: QARunConfig;
 
-  // Code context from ArangoDB (populated by strategist)
+  // Code context (populated by repo-ingester, consumed by strategist + downstream)
   codeFiles: Array<{ path: string; language: string; size: number; content?: string }>;
   codeEntities: Array<{ name: string; type: string; file: string; signature?: string }>;
+  ingestionSource: 'arangodb' | 'git_clone' | 'failed' | 'pending';
 
   // Agent outputs
   strategy: TestStrategy | null;
@@ -108,6 +109,7 @@ export function createInitialState(runId: string, config: QARunConfig): QAAgentS
     config,
     codeFiles: [],
     codeEntities: [],
+    ingestionSource: 'pending',
     strategy: null,
     generatedTests: [],
     criticFeedback: [],

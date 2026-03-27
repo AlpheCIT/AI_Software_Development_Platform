@@ -220,10 +220,10 @@ export const RepositoryIngestionDashboard: React.FC = () => {
             </Text>
           </Box>
           <HStack spacing={2}>
-            <Badge colorScheme={isConnected ? 'green' : 'red'}>
-              {isConnected ? 'Connected' : 'Disconnected'}
+            <Badge colorScheme={isConnected ? 'green' : 'gray'} variant={isConnected ? 'solid' : 'subtle'}>
+              {isConnected ? 'Live' : 'Standalone'}
             </Badge>
-            <Activity size={16} color={isConnected ? 'green' : 'red'} />
+            <Activity size={16} color={isConnected ? 'green' : 'gray'} />
           </HStack>
         </HStack>
 

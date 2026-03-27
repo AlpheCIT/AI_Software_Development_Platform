@@ -71,12 +71,15 @@ export const useWebSocket = (
       });
 
       socketRef.current.on('connect_error', (error) => {
-        console.error(`WebSocket connection error for ${namespace}:`, error);
+        // Only log on first attempt to reduce console noise
+        if (reconnectionAttemptsRef.current === 0) {
+          console.warn(`WebSocket: API gateway not available at ${socketUrl} (this is normal if running standalone)`);
+        }
         setIsConnected(false);
         setIsConnecting(false);
         setError(`Connection failed: ${error.message}`);
-        
-        if (autoConnect) {
+
+        if (autoConnect && reconnectionAttemptsRef.current < maxReconnectionAttempts) {
           handleReconnection();
         }
       });

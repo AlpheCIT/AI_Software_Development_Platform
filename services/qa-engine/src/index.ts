@@ -1,4 +1,6 @@
 import express from 'express';
+import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -9,12 +11,28 @@ import { createProductIntelligenceRouter } from './routes/product-intelligence';
 import { ensureCollections } from './graph/collections';
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = qaConfig.port;
+
+// Socket.IO for real-time agent events to frontend
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    methods: ['GET', 'POST'],
+  },
+});
+
+io.on('connection', (socket) => {
+  console.log(`[WS] Client connected: ${socket.id}`);
+  socket.on('disconnect', () => {
+    console.log(`[WS] Client disconnected: ${socket.id}`);
+  });
+});
 
 // Middleware
 app.use(helmet());
 app.use(cors());
-app.use(morgan('combined'));
+app.use(morgan('short'));
 app.use(express.json({ limit: '10mb' }));
 
 // Initialize database client
@@ -25,12 +43,11 @@ const dbClient = new DatabaseClient({
   password: qaConfig.arango.password,
 });
 
-// Simple event publisher (WebSocket integration)
-// In Phase 1, we log events. Full WebSocket integration comes with frontend.
+// Event publisher — broadcasts to all connected Socket.IO clients
 const eventPublisher = {
   emit: (event: string, data: any) => {
     console.log(`[Event] ${event}:`, JSON.stringify(data).substring(0, 200));
-    // TODO: Phase 2 — forward to WebSocket service for frontend real-time updates
+    io.emit(event, data);
   },
 };
 
@@ -113,8 +130,9 @@ async function start() {
     console.warn('[QA] Could not ensure collections (will be created on first use):', error);
   }
 
-  app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     console.log(`🧠 QA Intelligence Engine running on port ${PORT}`);
+    console.log(`🔌 WebSocket: ws://localhost:${PORT} (Socket.IO)`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
     console.log(`🚀 Start a QA run: POST http://localhost:${PORT}/qa/run`);
