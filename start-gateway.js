@@ -5,7 +5,9 @@
  * Starts just the API Gateway for testing the frontend
  */
 
-const { APIGateway } = require('./src/api/gateway');
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { APIGateway } = require('./src/api/gateway.js');
 
 async function startAPIGateway() {
   try {

@@ -135,8 +135,8 @@ REM Port availability check
 echo %BLUE%🔌 STEP 4: Checking Port Availability...%NC%
 echo ========================================
 
-REM Check port 3000
-netstat -ano | findstr ":3000" >nul 2>nul
+REM Check port 3000 (only listening ports)
+netstat -ano | findstr ":3000" | findstr "LISTENING" >nul 2>nul
 if %ERRORLEVEL% equ 0 (
     echo %YELLOW%⚠️  Port 3000 is already in use. Please stop the service and try again.%NC%
     pause
@@ -144,8 +144,8 @@ if %ERRORLEVEL% equ 0 (
 )
 echo %GREEN%✅ Port 3000 (Frontend) available%NC%
 
-REM Check port 3001
-netstat -ano | findstr ":3001" >nul 2>nul
+REM Check port 3001 (only listening ports)
+netstat -ano | findstr ":3001" | findstr "LISTENING" >nul 2>nul
 if %ERRORLEVEL% equ 0 (
     echo %YELLOW%⚠️  Port 3001 is already in use. Please stop the service and try again.%NC%
     pause
@@ -153,8 +153,8 @@ if %ERRORLEVEL% equ 0 (
 )
 echo %GREEN%✅ Port 3001 (API Gateway) available%NC%
 
-REM Check port 3002
-netstat -ano | findstr ":3002" >nul 2>nul
+REM Check port 3002 (only listening ports)
+netstat -ano | findstr ":3002" | findstr "LISTENING" >nul 2>nul
 if %ERRORLEVEL% equ 0 (
     echo %YELLOW%⚠️  Port 3002 is already in use. Please stop the service and try again.%NC%
     pause

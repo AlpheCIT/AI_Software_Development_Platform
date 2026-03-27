@@ -24,8 +24,8 @@ export const useWebSocket = (
 ): UseWebSocketReturn => {
   const {
     autoConnect = true,
-    reconnectionDelay = 1000,
-    maxReconnectionAttempts = 5
+    reconnectionDelay = 5000,
+    maxReconnectionAttempts = 0  // Don't retry — if gateway is down, stop immediately
   } = options;
 
   const [isConnected, setIsConnected] = useState(false);
@@ -71,12 +71,15 @@ export const useWebSocket = (
       });
 
       socketRef.current.on('connect_error', (error) => {
-        console.error(`WebSocket connection error for ${namespace}:`, error);
+        // Only log on first attempt to reduce console noise
+        if (reconnectionAttemptsRef.current === 0) {
+          console.warn(`WebSocket: API gateway not available at ${socketUrl} (this is normal if running standalone)`);
+        }
         setIsConnected(false);
         setIsConnecting(false);
         setError(`Connection failed: ${error.message}`);
-        
-        if (autoConnect) {
+
+        if (autoConnect && reconnectionAttemptsRef.current < maxReconnectionAttempts) {
           handleReconnection();
         }
       });
@@ -127,8 +130,23 @@ export const useWebSocket = (
   };
 
   useEffect(() => {
+    // Don't attempt WebSocket if API gateway is known to be down
+    if ((window as any).__apiGatewayDown) return;
+
+    // Probe first — only connect if gateway responds
     if (autoConnect) {
-      connect();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1500);
+      fetch(`${API_BASE_URL}/health`, { signal: controller.signal })
+        .then(() => {
+          clearTimeout(timeout);
+          connect();
+        })
+        .catch(() => {
+          clearTimeout(timeout);
+          (window as any).__apiGatewayDown = true;
+          // Don't connect — gateway is unreachable
+        });
     }
 
     return () => {
