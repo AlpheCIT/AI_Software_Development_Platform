@@ -140,7 +140,93 @@ const MainDashboard: React.FC = () => {
               
               {analyticsLoading ? (
                 <Box>Loading analytics...</Box>
+              ) : !analytics ? (
+                <Box bg={cardBg} p={8} borderRadius="lg" border="1px solid" borderColor={borderColor} textAlign="center">
+                  <Text fontSize="lg" color="gray.500" mb={2}>No Analysis Data Available</Text>
+                  <Text fontSize="sm" color="gray.400">
+                    Run a QA analysis from the QA Intelligence tab, or ingest a repository to see real metrics here.
+                  </Text>
+                </Box>
+              ) : (analytics as any)?._source === 'qa-engine' ? (
+                /* QA Engine data — show with honest labels */
+                <Grid templateColumns="repeat(auto-fit, minmax(300px, 1fr))" gap={6}>
+                  <Box key="qa-runs" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
+                    <Text fontSize="lg" fontWeight="bold" mb={4}>QA Test Results</Text>
+                    <VStack align="stretch" spacing={3}>
+                      <HStack justify="space-between">
+                        <Text>Tests Generated:</Text>
+                        <Badge colorScheme="blue">
+                          {(analytics as any)?._qaDetails?.totalTests || 0}
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Tests Passed:</Text>
+                        <Badge colorScheme="green">
+                          {(analytics as any)?._qaDetails?.totalPassed || 0}
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Tests Failed:</Text>
+                        <Badge colorScheme={((analytics as any)?._qaDetails?.totalFailed || 0) > 0 ? 'red' : 'green'} variant={((analytics as any)?._qaDetails?.totalFailed || 0) > 0 ? 'solid' : 'subtle'}>
+                          {(analytics as any)?._qaDetails?.totalFailed || 0}
+                        </Badge>
+                      </HStack>
+                    </VStack>
+                  </Box>
+
+                  <Box key="mutation" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
+                    <Text fontSize="lg" fontWeight="bold" mb={4}>Mutation Analysis</Text>
+                    <VStack align="stretch" spacing={3}>
+                      <HStack justify="space-between">
+                        <Text>Avg Mutation Score:</Text>
+                        <Badge colorScheme={(analytics as any)?._qaDetails?.avgMutationScore >= 80 ? 'green' : 'orange'}>
+                          {(analytics as any)?._qaDetails?.avgMutationScore || 0}%
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Pass Rate:</Text>
+                        <Badge colorScheme="purple">
+                          {analytics?.performance?.testCoverage || 0}%
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Total Iterations:</Text>
+                        <Badge colorScheme="blue">
+                          {(analytics as any)?._qaDetails?.totalIterations || 0}
+                        </Badge>
+                      </HStack>
+                    </VStack>
+                  </Box>
+
+                  <Box key="runs" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
+                    <Text fontSize="lg" fontWeight="bold" mb={4}>Run History</Text>
+                    <VStack align="stretch" spacing={3}>
+                      <HStack justify="space-between">
+                        <Text>Completed Runs:</Text>
+                        <Badge colorScheme="teal">
+                          {(analytics as any)?._qaDetails?.completedRuns || 0}
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Data Source:</Text>
+                        <Badge colorScheme="blue" variant="outline">
+                          QA Engine + ArangoDB
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Last Analyzed:</Text>
+                        <Text fontSize="sm" color="gray.500">
+                          {analytics?.repository?.lastAnalyzed ?
+                            new Date(analytics.repository.lastAnalyzed).toLocaleDateString() :
+                            'Never'
+                          }
+                        </Text>
+                      </HStack>
+                    </VStack>
+                  </Box>
+                </Grid>
               ) : (
+                /* Real MCP analytics data — original labels */
                 <Grid templateColumns="repeat(auto-fit, minmax(300px, 1fr))" gap={6}>
                   <Box key="security" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
                     <Text fontSize="lg" fontWeight="bold" mb={4}>Security Overview</Text>
@@ -208,8 +294,8 @@ const MainDashboard: React.FC = () => {
                       <HStack justify="space-between">
                         <Text>Last Analyzed:</Text>
                         <Text fontSize="sm" color="gray.500">
-                          {analytics?.repository?.lastAnalyzed ? 
-                            new Date(analytics.repository.lastAnalyzed).toLocaleDateString() : 
+                          {analytics?.repository?.lastAnalyzed ?
+                            new Date(analytics.repository.lastAnalyzed).toLocaleDateString() :
                             'Never'
                           }
                         </Text>
