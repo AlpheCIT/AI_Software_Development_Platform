@@ -20,26 +20,29 @@ import {
   Tooltip,
   useBreakpointValue
 } from '@chakra-ui/react';
-import { 
+import {
   Database,
   Activity,
   Settings,
   Menu,
   BarChart3,
   Search,
-  Shield
+  Shield,
+  BookOpen
 } from 'lucide-react';
 
 import RepositoryIngestionDashboard from '../components/ingestion/RepositoryIngestionDashboard';
 import GraphCanvas from '../components/graph/GraphCanvas';
 import InspectorTabs from '../components/graph/inspector/InspectorTabs';
 import QAIntelligenceDashboard from '../components/qa-intelligence/QAIntelligenceDashboard';
+import RepoWiki from '../components/wiki/RepoWiki';
+import { RoleProvider } from '../context/RoleContext';
 import { useMCP } from '../lib/mcp/useMCP';
 import { useIngestionStore } from '../stores/ingestion-store';
 
 const MainDashboard: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics' | 'qa-intelligence'>('ingestion');
+  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics' | 'qa-intelligence' | 'wiki'>('qa-intelligence');
   const { isOpen, onOpen, onClose } = useDisclosure();
   
   const { 
@@ -88,6 +91,13 @@ const MainDashboard: React.FC = () => {
         return (
           <Box height="100%">
             <QAIntelligenceDashboard />
+          </Box>
+        );
+
+      case 'wiki':
+        return (
+          <Box height="100%">
+            <RepoWiki />
           </Box>
         );
 
@@ -328,6 +338,7 @@ const MainDashboard: React.FC = () => {
   };
 
   return (
+    <RoleProvider>
     <Box bg={bgColor} minHeight="100vh">
       {/* Header */}
       <Box 
@@ -406,6 +417,15 @@ const MainDashboard: React.FC = () => {
               leftIcon={<Shield size={16} />}
             >
               QA Intelligence
+            </Button>
+            <Button
+              variant={currentView === 'wiki' ? 'solid' : 'ghost'}
+              colorScheme="orange"
+              size="sm"
+              onClick={() => setCurrentView('wiki')}
+              leftIcon={<BookOpen size={16} />}
+            >
+              Wiki
             </Button>
 
             {isMobile && (
@@ -529,6 +549,7 @@ const MainDashboard: React.FC = () => {
         </DrawerContent>
       </Drawer>
     </Box>
+    </RoleProvider>
   );
 };
 
