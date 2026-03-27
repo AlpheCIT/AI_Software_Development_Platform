@@ -63,6 +63,8 @@ interface AgentDeepDivePanelProps {
   agentLabel: string;
   agentColor: string;
   handoffData?: HandoffInfo;
+  isAgentActive?: boolean;
+  streamingText?: string;
   onClose: () => void;
 }
 
@@ -72,6 +74,8 @@ export default function AgentDeepDivePanel({
   agentLabel,
   agentColor,
   handoffData,
+  isAgentActive,
+  streamingText,
   onClose,
 }: AgentDeepDivePanelProps) {
   const [conversations, setConversations] = useState<AgentConversation[]>([]);
@@ -177,9 +181,23 @@ export default function AgentDeepDivePanel({
             {/* Tab 1: Transcript */}
             <TabPanel p={2} maxH="480px" overflowY="auto">
               {conversations.length === 0 ? (
-                <Text fontSize="sm" color={subtextColor} textAlign="center" py={4}>
-                  No conversation data yet
-                </Text>
+                isAgentActive ? (
+                  <Box bg="gray.900" borderRadius="md" p={3} fontFamily="mono" fontSize="xs" color="green.300" maxH="400px" overflowY="auto">
+                    <HStack mb={2}>
+                      <Box w="6px" h="6px" borderRadius="full" bg="green.400" />
+                      <Text color="green.400" fontWeight="bold">{agentLabel} is thinking...</Text>
+                    </HStack>
+                    {streamingText ? (
+                      <Text whiteSpace="pre-wrap" color="gray.300">{streamingText}<Box as="span" display="inline-block" w="2px" h="14px" bg="green.400" ml={1} animation="blink 1s step-end infinite" /></Text>
+                    ) : (
+                      <Text color="gray.500">Waiting for Claude response...</Text>
+                    )}
+                  </Box>
+                ) : (
+                  <Text fontSize="sm" color={subtextColor} textAlign="center" py={4}>
+                    No conversation data yet. The transcript populates after the agent completes its LLM call.
+                  </Text>
+                )
               ) : (
                 <VStack spacing={3} align="stretch">
                   {conversations.map((conv, idx) => (
