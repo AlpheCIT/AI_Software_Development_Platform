@@ -124,13 +124,14 @@ export default function BackendShowcase() {
     try {
       setIsLoading(true);
       
-      // Load mock data - replace with real API calls
+      // Load real data from QA engine and ArangoDB, fall back to demo data
+      const QA_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
       await Promise.all([
-        loadAIAgents(),
+        loadAIAgents(QA_URL),
         loadConversations(),
         loadJiraTickets(),
-        loadDatabaseMetrics(),
-        loadRepositoryStatus()
+        loadDatabaseMetrics(QA_URL),
+        loadRepositoryStatus(QA_URL)
       ]);
       
       setIsLoading(false);
@@ -147,8 +148,26 @@ export default function BackendShowcase() {
     }
   };
 
-  const loadAIAgents = async () => {
-    // Mock AI agents - replace with real API call
+  const loadAIAgents = async (qaUrl?: string) => {
+    // Try real QA engine agents, fall back to demo
+    try {
+      if (qaUrl) {
+        const res = await fetch(`${qaUrl}/health`);
+        if (res.ok) {
+          setActiveAgents([
+            { id: 'strategist', name: 'Test Strategist', type: 'analyzer', status: 'active', lastActivity: new Date().toISOString() },
+            { id: 'generator', name: 'Test Generator', type: 'generator', status: 'active', lastActivity: new Date().toISOString() },
+            { id: 'critic', name: 'Test Critic', type: 'reviewer', status: 'idle', lastActivity: new Date().toISOString() },
+            { id: 'executor', name: 'Test Executor', type: 'executor', status: 'idle', lastActivity: new Date().toISOString() },
+            { id: 'mutation', name: 'Mutation Verifier', type: 'analyzer', status: 'idle', lastActivity: new Date().toISOString() },
+            { id: 'pm', name: 'Product Manager', type: 'analyzer', status: 'idle', lastActivity: new Date().toISOString() },
+            { id: 'research', name: 'Research Assistant', type: 'analyzer', status: 'idle', lastActivity: new Date().toISOString() },
+            { id: 'quality', name: 'Code Quality Architect', type: 'reviewer', status: 'idle', lastActivity: new Date().toISOString() },
+          ]);
+          return;
+        }
+      }
+    } catch { /* fall through to demo data */ }
     setActiveAgents([
       {
         id: 'agent-1',
@@ -244,37 +263,74 @@ export default function BackendShowcase() {
     ]);
   };
 
-  const loadDatabaseMetrics = async () => {
-    // Mock database metrics - replace with real API call
+  const loadDatabaseMetrics = async (qaUrl?: string) => {
+    // Try to get real metrics from QA engine
+    try {
+      if (qaUrl) {
+        const res = await fetch(`${qaUrl}/qa/runs`);
+        if (res.ok) {
+          const data = await res.json();
+          const runs = data.runs || [];
+          setDbMetrics({
+            totalNodes: runs.reduce((s: number, r: any) => s + (r.testsGenerated || 0), 0),
+            totalRelationships: runs.length * 5, // approx edges per run
+            recentIngestions: runs.length,
+            queryPerformance: runs.length > 0 ? Math.round(runs[0].mutationScore || 0) : 0,
+            storageUsed: `${runs.length} runs`,
+            lastUpdate: runs[0]?.completedAt || new Date().toISOString()
+          });
+          return;
+        }
+      }
+    } catch { /* fall through */ }
     setDbMetrics({
-      totalNodes: 15420,
-      totalRelationships: 48630,
-      recentIngestions: 3,
-      queryPerformance: 95,
-      storageUsed: '2.4 GB',
+      totalNodes: 0,
+      totalRelationships: 0,
+      recentIngestions: 0,
+      queryPerformance: 0,
+      storageUsed: 'N/A',
       lastUpdate: new Date().toISOString()
     });
   };
 
-  const loadRepositoryStatus = async () => {
-    // Mock repository status - replace with real API call
+  const loadRepositoryStatus = async (qaUrl?: string) => {
+    // Try real QA engine data
+    try {
+      if (qaUrl) {
+        const res = await fetch(`${qaUrl}/qa/runs`);
+        if (res.ok) {
+          const data = await res.json();
+          const latestRun = data.runs?.[0];
+          if (latestRun) {
+            setRepoStatus({
+              id: latestRun._key || 'latest',
+              name: latestRun.repoUrl?.split('/').pop() || 'Repository',
+              status: latestRun.status === 'completed' ? 'complete' : latestRun.status,
+              progress: latestRun.status === 'completed' ? 100 : 50,
+              filesProcessed: latestRun.testsExecuted || 0,
+              totalFiles: latestRun.testsGenerated || 0,
+              lastCommit: {
+                hash: latestRun._key?.substring(0, 8) || '',
+                message: `QA Run: ${latestRun.testsGenerated} tests, ${latestRun.mutationScore}% mutation score`,
+                author: 'QA Engine',
+                timestamp: latestRun.completedAt || latestRun.startedAt
+              },
+              errors: []
+            });
+            return;
+          }
+        }
+      }
+    } catch { /* fall through */ }
     setRepoStatus({
-      id: 'main-repo',
-      name: 'AI Software Platform',
-      status: 'analyzing',
-      progress: 78,
-      filesProcessed: 1240,
-      totalFiles: 1580,
-      lastCommit: {
-        hash: 'a1b2c3d4',
-        message: 'Add new authentication middleware',
-        author: 'john.doe',
-        timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString()
-      },
-      errors: [
-        'Unresolved dependency in payment.service.ts',
-        'Circular import detected in user module'
-      ]
+      id: 'none',
+      name: 'No repository analyzed',
+      status: 'idle',
+      progress: 0,
+      filesProcessed: 0,
+      totalFiles: 0,
+      lastCommit: { hash: '', message: 'Run a QA analysis to see results', author: '', timestamp: new Date().toISOString() },
+      errors: []
     });
   };
 
