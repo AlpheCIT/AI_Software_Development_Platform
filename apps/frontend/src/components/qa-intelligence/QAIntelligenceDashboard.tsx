@@ -37,6 +37,7 @@ import {
   BarChart3,
   Target,
   Briefcase,
+  FileText,
 } from 'lucide-react';
 
 import QARunControl from './QARunControl';
@@ -47,6 +48,7 @@ import ActionCenter from './ActionCenter';
 import ActionableSummary from './ActionableSummary';
 import RiskHeatmap from './RiskHeatmap';
 import MutationTrends from './MutationTrends';
+import CumulativeReport from './CumulativeReport';
 import { useQARun } from '../../hooks/useQARun';
 import { useAgentStream } from '../../hooks/useAgentStream';
 
@@ -289,6 +291,12 @@ const QAIntelligenceDashboard: React.FC = () => {
                 <Text>Mutation Trends</Text>
               </HStack>
             </Tab>
+            <Tab>
+              <HStack spacing={1}>
+                <FileText size={14} />
+                <Text>Full Report</Text>
+              </HStack>
+            </Tab>
           </TabList>
 
           <TabPanels>
@@ -300,6 +308,9 @@ const QAIntelligenceDashboard: React.FC = () => {
             </TabPanel>
             <TabPanel px={0}>
               <MutationTrends />
+            </TabPanel>
+            <TabPanel px={0}>
+              <CumulativeReport runId={qaRun.runId} />
             </TabPanel>
           </TabPanels>
         </Tabs>

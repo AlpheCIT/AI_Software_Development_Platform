@@ -28,13 +28,15 @@ import {
   BarChart3,
   Search,
   Shield,
-  BookOpen
+  BookOpen,
+  List,
 } from 'lucide-react';
 
 import RepositoryIngestionDashboard from '../components/ingestion/RepositoryIngestionDashboard';
 import GraphCanvas from '../components/graph/GraphCanvas';
 import InspectorTabs from '../components/graph/inspector/InspectorTabs';
 import QAIntelligenceDashboard from '../components/qa-intelligence/QAIntelligenceDashboard';
+import RunManager from '../components/qa-intelligence/RunManager';
 import RepoWiki from '../components/wiki/RepoWiki';
 import { RoleProvider } from '../context/RoleContext';
 import { useMCP } from '../lib/mcp/useMCP';
@@ -42,7 +44,7 @@ import { useIngestionStore } from '../stores/ingestion-store';
 
 const MainDashboard: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics' | 'qa-intelligence' | 'wiki'>('qa-intelligence');
+  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics' | 'qa-intelligence' | 'wiki' | 'run-manager'>('qa-intelligence');
   const { isOpen, onOpen, onClose } = useDisclosure();
   
   const { 
@@ -98,6 +100,13 @@ const MainDashboard: React.FC = () => {
         return (
           <Box height="100%">
             <RepoWiki />
+          </Box>
+        );
+
+      case 'run-manager':
+        return (
+          <Box height="100%">
+            <RunManager />
           </Box>
         );
 
@@ -417,6 +426,15 @@ const MainDashboard: React.FC = () => {
               leftIcon={<Shield size={16} />}
             >
               QA Intelligence
+            </Button>
+            <Button
+              variant={currentView === 'run-manager' ? 'solid' : 'ghost'}
+              colorScheme="teal"
+              size="sm"
+              onClick={() => setCurrentView('run-manager')}
+              leftIcon={<List size={16} />}
+            >
+              Run Manager
             </Button>
             <Button
               variant={currentView === 'wiki' ? 'solid' : 'ghost'}

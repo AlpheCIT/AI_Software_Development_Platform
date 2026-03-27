@@ -53,6 +53,40 @@ interface CodeFile {
   language: string;
   size: number;
   content?: string;
+  hasDocumentation?: boolean;
+}
+
+/**
+ * Detect whether a file contains documentation (JSDoc, docstrings, comment blocks).
+ */
+function hasDocumentation(content: string, language: string): boolean {
+  if (!content) return false;
+  switch (language) {
+    case 'typescript':
+    case 'javascript':
+    case 'java':
+    case 'csharp':
+    case 'php':
+    case 'vue':
+    case 'svelte':
+      // JSDoc or multi-line comment blocks
+      return /\/\*\*[\s\S]*?\*\//.test(content);
+    case 'python':
+      // Python docstrings (triple quotes)
+      return /"""[\s\S]*?"""/.test(content) || /'''[\s\S]*?'''/.test(content);
+    case 'ruby':
+      // RDoc-style or YARD
+      return /=begin[\s\S]*?=end/.test(content) || /^\s*#\s*@/.test(content);
+    case 'go':
+      // Go convention: comment preceding function
+      return /\/\/\s+\w+\s/.test(content);
+    case 'rust':
+      // Rust doc comments
+      return /\/\/\//.test(content) || /\/\/!/.test(content);
+    default:
+      // Generic: check for block comments
+      return /\/\*\*[\s\S]*?\*\//.test(content) || /"""[\s\S]*?"""/.test(content);
+  }
 }
 
 const LANGUAGE_MAP: Record<string, string> = {
@@ -296,6 +330,21 @@ export async function repoIngesterNode(
     cloneRepo(repoUrl, branch, tmpDir, credentials?.token);
 
     // -------------------------------------------------------------------
+    // 2b. Capture git commit info from the cloned repo
+    // -------------------------------------------------------------------
+    let commitSha = '';
+    let commitMessage = '';
+    let commitDate = '';
+    try {
+      commitSha = execSync('git rev-parse HEAD', { cwd: tmpDir, encoding: 'utf-8' }).trim();
+      commitMessage = execSync('git log -1 --format=%s', { cwd: tmpDir, encoding: 'utf-8' }).trim();
+      commitDate = execSync('git log -1 --format=%ci', { cwd: tmpDir, encoding: 'utf-8' }).trim();
+      console.log(`[RepoIngester] Commit: ${commitSha.slice(0, 8)} — "${commitMessage}" (${commitDate})`);
+    } catch (gitErr: any) {
+      console.warn(`[RepoIngester] Could not read git commit info: ${gitErr.message}`);
+    }
+
+    // -------------------------------------------------------------------
     // 3. Walk the directory tree and read files
     // -------------------------------------------------------------------
     eventPublisher?.emit('qa:agent.progress', {
@@ -342,6 +391,7 @@ export async function repoIngesterNode(
         language,
         size: stat.size,
         content: content ? content.slice(0, 2000) : undefined,
+        hasDocumentation: content ? hasDocumentation(content, language) : undefined,
       });
 
       // -------------------------------------------------------------------
@@ -367,6 +417,9 @@ export async function repoIngesterNode(
       codeFiles,
       codeEntities,
       ingestionSource: 'git_clone',
+      commitSha,
+      commitMessage,
+      commitDate,
     };
   } catch (err: any) {
     console.error(`[RepoIngester] Clone/scan failed: ${err.message}`);

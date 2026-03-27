@@ -79,9 +79,14 @@ export interface QAAgentState {
   config: QARunConfig;
 
   // Code context (populated by repo-ingester, consumed by strategist + downstream)
-  codeFiles: Array<{ path: string; language: string; size: number; content?: string }>;
+  codeFiles: Array<{ path: string; language: string; size: number; content?: string; hasDocumentation?: boolean }>;
   codeEntities: Array<{ name: string; type: string; file: string; signature?: string }>;
   ingestionSource: 'arangodb' | 'git_clone' | 'failed' | 'pending';
+
+  // Git commit info (populated by repo-ingester after cloning)
+  commitSha?: string;
+  commitMessage?: string;
+  commitDate?: string;
 
   // Agent outputs
   strategy: TestStrategy | null;
