@@ -43,6 +43,20 @@ export const qaConfig = {
     model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
   },
 
+  // Rate limiting — prevents hitting API rate limits
+  // Adjust based on your plan: Free=low, Pro=medium, Team/Enterprise=high
+  rateLimit: {
+    // Delay between sequential LLM calls (ms). Higher = slower but safer.
+    // Free tier: 15000 (15s), Pro: 5000 (5s), Team: 2000 (2s), Enterprise: 0
+    delayBetweenCallsMs: parseInt(process.env.LLM_DELAY_MS || '5000', 10),
+    // Max parallel LLM calls. Free: 1, Pro: 2, Team: 3, Enterprise: 4
+    maxParallelCalls: parseInt(process.env.LLM_MAX_PARALLEL || '2', 10),
+    // Retry on rate limit with exponential backoff
+    retryOnRateLimit: process.env.LLM_RETRY_ON_RATE_LIMIT !== 'false',
+    maxRetries: parseInt(process.env.LLM_MAX_RETRIES || '3', 10),
+    retryBaseDelayMs: parseInt(process.env.LLM_RETRY_BASE_DELAY_MS || '10000', 10),
+  },
+
   qa: {
     maxMutationIterations: parseInt(process.env.QA_MAX_MUTATION_ITERATIONS || '3', 10),
     mutationScoreThreshold: parseInt(process.env.QA_MUTATION_SCORE_THRESHOLD || '80', 10),

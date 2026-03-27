@@ -1,12 +1,20 @@
 import { productManagerNode, ProductRoadmap } from './product-manager';
 import { researchAssistantNode, ResearchInsights } from './research-assistant';
 import { codeQualityArchitectNode, CodeQualityReport } from './code-quality-architect';
+import { selfHealerNode, SelfHealingReport } from '../self-healer';
+import { apiValidatorNode, APIValidationReport } from '../api-validator';
+import { coverageAuditorNode, CoverageAuditReport } from '../coverage-auditor';
+import { uiUxAnalystNode, UIAuditReport } from '../ui-ux-analyst';
 import { QA_COLLECTIONS } from '../../../graph/collections';
 
 export interface ProductIntelligenceResult {
   roadmap: ProductRoadmap;
   research: ResearchInsights;
   codeQuality: CodeQualityReport;
+  selfHealing?: SelfHealingReport;
+  apiValidation?: APIValidationReport;
+  coverageAudit?: CoverageAuditReport;
+  uiAudit?: UIAuditReport;
   combinedPriorities: CombinedPriority[];
 }
 
@@ -32,39 +40,7 @@ export async function runProductIntelligencePipeline(
 ): Promise<ProductIntelligenceResult> {
   console.log(`[ProductIntelligence] Starting pipeline for ${repoUrl}`);
 
-  // Step 1: Product Manager analyzes the codebase
-  eventPublisher?.emit('qa:agent.progress', {
-    runId,
-    agent: 'product-manager',
-    progress: 0,
-    message: 'Product Manager analyzing codebase for opportunities...',
-  });
-
-  const roadmap = await productManagerNode(
-    codeFiles,
-    codeEntities,
-    repoUrl,
-    runId,
-    eventPublisher
-  );
-
-  // Step 2: Research Assistant takes the PM's analysis and researches trends
-  eventPublisher?.emit('qa:agent.progress', {
-    runId,
-    agent: 'research-assistant',
-    progress: 0,
-    message: 'Research Assistant investigating market trends and competitive landscape...',
-  });
-
-  const research = await researchAssistantNode(
-    roadmap,
-    codeFiles,
-    repoUrl,
-    runId,
-    eventPublisher
-  );
-
-  // Step 3: Code Quality Architect runs in parallel with Research (both depend on PM output)
+  // Step 1: Code Quality Architect runs FIRST so PM gets the health score
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'code-quality-architect',
@@ -77,13 +53,66 @@ export async function runProductIntelligencePipeline(
     codeEntities,
     repoUrl,
     runId,
+    dbClient,
     eventPublisher
   );
 
-  // Step 4: Combine and prioritize
+  // Step 2: Product Manager analyzes the codebase WITH code health context
+  eventPublisher?.emit('qa:agent.progress', {
+    runId,
+    agent: 'product-manager',
+    progress: 0,
+    message: `Product Manager analyzing codebase (Health: ${codeQuality?.overallHealth?.grade || 'N/A'}, ${codeQuality?.overallHealth?.score || 0}/100)...`,
+  });
+
+  const roadmap = await productManagerNode(
+    codeFiles,
+    codeEntities,
+    repoUrl,
+    runId,
+    dbClient,
+    eventPublisher
+  );
+
+  // Step 3: Research Assistant takes the PM's analysis and researches trends
+  eventPublisher?.emit('qa:agent.progress', {
+    runId,
+    agent: 'research-assistant',
+    progress: 0,
+    message: 'Research Assistant investigating market trends and competitive landscape...',
+  });
+
+  const research = await researchAssistantNode(
+    roadmap,
+    codeFiles,
+    repoUrl,
+    runId,
+    dbClient,
+    eventPublisher
+  );
+
+  // Step 4: Run new analysis agents
+  // Uses throttled LLM calls — run sequentially to respect rate limits
+  // The throttle system handles parallel limits internally
+  let selfHealing: SelfHealingReport | undefined;
+  let apiValidation: APIValidationReport | undefined;
+  let coverageAudit: CoverageAuditReport | undefined;
+  let uiAudit: UIAuditReport | undefined;
+
+  try {
+    // Run sequentially to avoid rate limit storms
+    try { selfHealing = await selfHealerNode(codeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[SelfHealer] Failed:', e.message); }
+    try { apiValidation = await apiValidatorNode(codeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[APIValidator] Failed:', e.message); }
+    try { coverageAudit = await coverageAuditorNode(codeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[CoverageAuditor] Failed:', e.message); }
+    try { uiAudit = await uiUxAnalystNode(codeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[UIUXAnalyst] Failed:', e.message); }
+  } catch (error: any) {
+    console.error('[ProductIntelligence] New agents failed:', error.message);
+  }
+
+  // Step 5: Combine and prioritize
   const combinedPriorities = buildCombinedPriorities(roadmap, research);
 
-  // Step 5: Persist to ArangoDB
+  // Step 6: Persist to ArangoDB
   await persistProductIntelligence(
     dbClient,
     repositoryId,
@@ -107,7 +136,46 @@ export async function runProductIntelligencePipeline(
     },
   });
 
-  return { roadmap, research, codeQuality, combinedPriorities };
+  // Persist new agent results
+  if (selfHealing) {
+    try {
+      await dbClient.upsertDocument('qa_self_healing_reports', {
+        _key: `selfheal_${runId}`,
+        repositoryId, runId, ...selfHealing,
+        createdAt: new Date().toISOString(),
+      });
+    } catch { /* non-fatal */ }
+  }
+  if (apiValidation) {
+    try {
+      await dbClient.upsertDocument('qa_api_validation_reports', {
+        _key: `apivalidation_${runId}`,
+        repositoryId, runId, ...apiValidation,
+        createdAt: new Date().toISOString(),
+      });
+    } catch { /* non-fatal */ }
+  }
+  if (coverageAudit) {
+    try {
+      await dbClient.upsertDocument('qa_coverage_audit_reports', {
+        _key: `coverage_${runId}`,
+        repositoryId, runId, ...coverageAudit,
+        createdAt: new Date().toISOString(),
+      });
+    } catch { /* non-fatal */ }
+  }
+
+  if (uiAudit) {
+    try {
+      await dbClient.upsertDocument('qa_ui_audit_reports', {
+        _key: `uiaudit_${runId}`,
+        repositoryId, runId, ...uiAudit,
+        createdAt: new Date().toISOString(),
+      });
+    } catch { /* non-fatal */ }
+  }
+
+  return { roadmap, research, codeQuality, selfHealing, apiValidation, coverageAudit, uiAudit, combinedPriorities };
 }
 
 function buildCombinedPriorities(

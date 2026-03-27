@@ -21,6 +21,10 @@ export const AGENT_COLORS: Record<AgentName, string> = {
   'product-manager': 'teal',
   'research-assistant': 'cyan',
   'code-quality-architect': 'yellow',
+  'self-healer': 'pink',
+  'api-validator': 'orange',
+  'coverage-auditor': 'linkedin',
+  'ui-ux-analyst': 'purple',
 };
 
 export const AGENT_LABELS: Record<AgentName, string> = {
@@ -32,13 +36,44 @@ export const AGENT_LABELS: Record<AgentName, string> = {
   'product-manager': 'Product Manager',
   'research-assistant': 'Research Assistant',
   'code-quality-architect': 'Code Quality Architect',
+  'self-healer': 'Self-Healer',
+  'api-validator': 'API Validator',
+  'coverage-auditor': 'Coverage Auditor',
+  'ui-ux-analyst': 'UI/UX Analyst',
 };
 
 // ── Hook Interface ─────────────────────────────────────────────────────────
 
+export interface AgentStreamingState {
+  agent: AgentName;
+  text: string;
+  currentFile?: string;
+  fileIndex?: number;
+  fileTotal?: number;
+}
+
+export interface HandoffInfo {
+  fromAgent: string;
+  toAgent: string;
+  summary: string;
+  detail?: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface TimelineEntry {
+  event: string;
+  agent: string;
+  data: Record<string, unknown>;
+  timestamp: string;
+}
+
 export interface UseAgentStreamReturn {
   logs: AgentLogEntry[];
   activeAgent: AgentName | null;
+  streamingState: AgentStreamingState | null;
+  handoffData: Record<string, HandoffInfo>;
+  streamingBuffer: string;
+  agentTimeline: TimelineEntry[];
   isConnected: boolean;
   connectionError: string | null;
   clearLogs: () => void;
@@ -49,11 +84,19 @@ export interface UseAgentStreamReturn {
 export function useAgentStream(runId: string | null): UseAgentStreamReturn {
   const [logs, setLogs] = useState<AgentLogEntry[]>([]);
   const [activeAgent, setActiveAgent] = useState<AgentName | null>(null);
+  const [streamingState, setStreamingState] = useState<AgentStreamingState | null>(null);
+  const [handoffData, setHandoffData] = useState<Record<string, HandoffInfo>>({});
+  const [agentTimeline, setAgentTimeline] = useState<TimelineEntry[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const logIdCounter = useRef(0);
+  const streamingBufferRef = useRef<string>('');
+
+  const addTimelineEntry = useCallback((event: string, agent: string, data: Record<string, unknown> = {}) => {
+    setAgentTimeline(prev => [...prev, { event, agent, data, timestamp: new Date().toISOString() }]);
+  }, []);
 
   const addLogEntry = useCallback((agent: AgentName, message: string, level: AgentLogEntry['level'] = 'info', data?: Record<string, unknown>) => {
     logIdCounter.current += 1;
@@ -131,18 +174,16 @@ export function useAgentStream(runId: string | null): UseAgentStreamReturn {
 
       // ── Agent Events ─────────────────────────────────────────────────
 
-      socket.on('qa:agent.started', (data: { agent: AgentName; message: string }) => {
+      socket.on('qa:agent.started', (data: { agent: AgentName; message: string; step?: string }) => {
         setActiveAgent(data.agent);
+        streamingBufferRef.current = ''; // Reset buffer for new agent
         addLogEntry(data.agent, data.message || `${AGENT_LABELS[data.agent]} started`, 'info');
+        addTimelineEntry('agent.started', data.agent, data as any);
       });
 
       socket.on('qa:agent.progress', (data: { agent: AgentName; message: string; progress: number; data?: Record<string, unknown> }) => {
         setActiveAgent(data.agent);
         addLogEntry(data.agent, data.message, 'info', data.data);
-      });
-
-      socket.on('qa:agent.completed', (data: { agent: AgentName; message: string }) => {
-        addLogEntry(data.agent, data.message || `${AGENT_LABELS[data.agent]} completed`, 'info');
       });
 
       socket.on('qa:agent.failed', (data: { agent: AgentName; message: string; error: string }) => {
@@ -151,6 +192,62 @@ export function useAgentStream(runId: string | null): UseAgentStreamReturn {
 
       socket.on('qa:agent.loop', (data: { from: AgentName; to: AgentName; reason: string; iteration: number }) => {
         addLogEntry(data.from, `Loop back to ${AGENT_LABELS[data.to]}: ${data.reason} (iteration ${data.iteration})`, 'warn');
+        addTimelineEntry('agent.loop', data.from, data as any);
+      });
+
+      // Streaming events — partial LLM output
+      socket.on('qa:agent.streaming', (data: { agent: AgentName; text: string; currentFile?: string; fileIndex?: number; fileTotal?: number; streamType?: string }) => {
+        // Accumulate streaming buffer
+        if (data.text) {
+          streamingBufferRef.current += data.text.length > streamingBufferRef.current.length
+            ? data.text.substring(streamingBufferRef.current.length) // delta from full text
+            : data.text; // treat as append
+        }
+        setStreamingState({
+          agent: data.agent,
+          text: data.text,
+          currentFile: data.currentFile,
+          fileIndex: data.fileIndex,
+          fileTotal: data.fileTotal,
+        });
+        addTimelineEntry('agent.streaming', data.agent, data as any);
+      });
+
+      socket.on('qa:agent.completed', (data: { agent: AgentName; message: string; result?: Record<string, unknown> }) => {
+        setStreamingState(null);
+        streamingBufferRef.current = '';
+        addLogEntry(data.agent, data.message || `${AGENT_LABELS[data.agent]} completed`, 'info');
+        addTimelineEntry('agent.completed', data.agent, data as any);
+
+        // Build handoff data from completion results
+        if (data.result) {
+          const summaryParts: string[] = [];
+          const r = data.result;
+          if (r.riskAreasCount) summaryParts.push(`${r.riskAreasCount} risk areas`);
+          if (r.testsGenerated) summaryParts.push(`${r.testsGenerated} tests generated`);
+          if (r.reviewed) summaryParts.push(`${r.approved}/${r.reviewed} approved`);
+          if (r.total) summaryParts.push(`${r.passed} passed, ${r.failed} failed`);
+          if (r.score !== undefined) summaryParts.push(`mutation score: ${r.score}%`);
+          if (r.totalFeatures) summaryParts.push(`${r.totalFeatures} features`);
+          if (r.trendsFound) summaryParts.push(`${r.trendsFound} trends`);
+          if (r.healthScore !== undefined) summaryParts.push(`health: ${r.healthScore}/100`);
+          if (r.endpointsFound) summaryParts.push(`${r.endpointsFound} endpoints`);
+          if (r.coverageScore !== undefined) summaryParts.push(`coverage: ${r.coverageScore}%`);
+          if (r.accessibilityScore !== undefined) summaryParts.push(`a11y: ${r.accessibilityScore}/100`);
+
+          if (summaryParts.length > 0) {
+            setHandoffData(prev => ({
+              ...prev,
+              [data.agent]: {
+                fromAgent: data.agent,
+                toAgent: 'next',
+                summary: summaryParts.join(', '),
+                detail: r,
+                timestamp: new Date().toISOString(),
+              },
+            }));
+          }
+        }
       });
 
       // ── Test Events ──────────────────────────────────────────────────
@@ -195,6 +292,10 @@ export function useAgentStream(runId: string | null): UseAgentStreamReturn {
   return {
     logs,
     activeAgent,
+    streamingState,
+    handoffData,
+    streamingBuffer: streamingBufferRef.current,
+    agentTimeline,
     isConnected,
     connectionError,
     clearLogs,

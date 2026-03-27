@@ -50,6 +50,15 @@ export async function executorNode(
       name: test.name,
     });
 
+    eventPublisher?.emit('qa:agent.streaming', {
+      runId: state.runId,
+      agent: 'executor',
+      text: `Running ${test.name}`,
+      currentFile: test.targetFile,
+      fileIndex: i + 1,
+      fileTotal: testsToRun.length,
+    });
+
     const testFilePath = join(tmpDir, `${test.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.test.ts`);
     const startTime = Date.now();
 
@@ -157,7 +166,8 @@ export async function executorNode(
   const failed = results.filter(r => r.status === 'failed').length;
   const skipped = results.filter(r => r.status === 'skipped').length;
 
-  console.log(`[Executor] Results: ${passed} passed, ${failed} failed, ${skipped} skipped`);
+  console.log(`[Executor] Results: ${passed} syntax-valid, ${failed} failed, ${skipped} need project context`);
+  console.log(`[Executor] Note: Tests are validated via TypeScript compilation check. Full Jest execution requires the target project's dependencies and runtime environment.`);
 
   eventPublisher?.emit('qa:agent.completed', {
     runId: state.runId,

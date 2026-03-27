@@ -221,6 +221,33 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
   });
 
   /**
+   * GET /qa/conversations/:runId
+   * Get all agent conversations for a run
+   */
+  router.get('/conversations/:runId', async (req: Request, res: Response) => {
+    try {
+      const { runId } = req.params;
+      const agent = req.query.agent as string | undefined;
+
+      let query = `FOR c IN ${QA_COLLECTIONS.AGENT_CONVERSATIONS}
+                     FILTER c.runId == @runId`;
+      const bindVars: any = { runId };
+
+      if (agent) {
+        query += ` FILTER c.agent == @agent`;
+        bindVars.agent = agent;
+      }
+
+      query += ` SORT c.timestamp ASC RETURN c`;
+
+      const conversations = await dbClient.query(query, bindVars);
+      res.json({ conversations, total: conversations.length });
+    } catch (error: any) {
+      res.json({ conversations: [], total: 0 });
+    }
+  });
+
+  /**
    * GET /qa/freshness/:repositoryId
    * Check if the analyzed commit is still up-to-date with the remote
    */
