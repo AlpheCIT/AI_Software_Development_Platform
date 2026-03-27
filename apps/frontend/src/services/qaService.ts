@@ -8,7 +8,7 @@ const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:30
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type QARunStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed';
-export type AgentName = 'strategist' | 'generator' | 'critic' | 'executor' | 'mutation' | 'product-manager' | 'research-assistant';
+export type AgentName = 'strategist' | 'generator' | 'critic' | 'executor' | 'mutation' | 'product-manager' | 'research-assistant' | 'code-quality-architect';
 export type AgentStatus = 'idle' | 'active' | 'completed' | 'failed' | 'looping';
 export type TestStatus = 'passed' | 'failed' | 'skipped' | 'pending' | 'error';
 

@@ -20,6 +20,7 @@ export const AGENT_COLORS: Record<AgentName, string> = {
   mutation: 'red',
   'product-manager': 'teal',
   'research-assistant': 'cyan',
+  'code-quality-architect': 'yellow',
 };
 
 export const AGENT_LABELS: Record<AgentName, string> = {
@@ -30,6 +31,7 @@ export const AGENT_LABELS: Record<AgentName, string> = {
   mutation: 'Mutation Verifier',
   'product-manager': 'Product Manager',
   'research-assistant': 'Research Assistant',
+  'code-quality-architect': 'Code Quality Architect',
 };
 
 // ── Hook Interface ─────────────────────────────────────────────────────────

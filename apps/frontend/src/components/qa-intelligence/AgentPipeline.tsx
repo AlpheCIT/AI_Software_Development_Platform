@@ -88,6 +88,12 @@ const AGENT_CONFIG: Record<AgentName, AgentConfig> = {
     color: 'cyan',
     description: 'Researches trends and competitive landscape',
   },
+  'code-quality-architect': {
+    label: 'Code Quality Architect',
+    icon: Code,
+    color: 'yellow',
+    description: 'Audits code quality, finds smells, duplication, and refactoring opportunities',
+  },
 };
 
 const STATUS_ICONS: Record<string, React.ElementType> = {
