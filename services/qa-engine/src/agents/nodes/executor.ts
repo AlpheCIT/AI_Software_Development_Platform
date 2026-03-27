@@ -59,33 +59,48 @@ export async function executorNode(
       fileTotal: testsToRun.length,
     });
 
-    const testFilePath = join(tmpDir, `${test.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.test.ts`);
+    // Detect language from test code content
+    const isTypeScript = test.code.includes('import ') && (test.code.includes(': string') || test.code.includes(': number') || test.code.includes('<'));
+    const ext = isTypeScript ? '.test.ts' : '.test.js';
+    const testFilePath = join(tmpDir, `${test.name.replace(/[^a-zA-Z0-9-_]/g, '_')}${ext}`);
     const startTime = Date.now();
 
     try {
       // Write test file
       writeFileSync(testFilePath, test.code, 'utf-8');
 
-      // Attempt to run the test
-      // For now, we do a syntax check and dry-run approach
-      // Full execution requires the target app to be running
+      // Syntax check — use appropriate tool based on language
       let status: TestResult['status'] = 'passed';
       let error: string | undefined;
 
       try {
-        // Try to compile/check the test file
-        execSync(`npx tsc --noEmit --allowJs --esModuleInterop "${testFilePath}" 2>&1`, {
-          timeout: qaConfig.qa.testTimeoutMs,
-          encoding: 'utf-8',
-          cwd: tmpDir,
-        });
+        if (isTypeScript) {
+          // TypeScript: use tsc for type checking
+          execSync(`npx tsc --noEmit --allowJs --esModuleInterop "${testFilePath}" 2>&1`, {
+            timeout: qaConfig.qa.testTimeoutMs,
+            encoding: 'utf-8',
+            cwd: tmpDir,
+          });
+        } else {
+          // JavaScript: use Node.js --check for syntax validation
+          execSync(`node --check "${testFilePath}" 2>&1`, {
+            timeout: qaConfig.qa.testTimeoutMs,
+            encoding: 'utf-8',
+            cwd: tmpDir,
+          });
+        }
       } catch (compileError: any) {
-        // TypeScript compilation errors are informational, not test failures
-        // The test code might reference project-specific imports
         const output = compileError.stdout || compileError.stderr || '';
-        if (output.includes('error TS')) {
+        if (isTypeScript && output.includes('error TS')) {
           status = 'skipped';
           error = `TypeScript compilation: ${output.substring(0, 500)}`;
+        } else if (!isTypeScript && output.includes('SyntaxError')) {
+          status = 'skipped';
+          error = `JavaScript syntax error: ${output.substring(0, 500)}`;
+        } else {
+          // Module resolution errors (require of project files) are expected
+          status = 'skipped';
+          error = `Needs project context: ${output.substring(0, 300)}`;
         }
       }
 

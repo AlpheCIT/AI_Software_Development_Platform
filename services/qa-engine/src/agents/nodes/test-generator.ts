@@ -7,14 +7,19 @@ import { throttledInvoke, createModel } from '../llm-throttle';
 
 const GENERATOR_SYSTEM_PROMPT = `You are an expert test engineer generating high-quality, executable test code.
 
+CRITICAL: Match the project's language. You will be told whether the project uses JavaScript or TypeScript.
+- For JavaScript projects: generate plain .js tests using require() and module.exports — NO TypeScript syntax, NO type annotations, NO import/export statements
+- For TypeScript projects: generate .ts tests using import/export
+
 Rules:
 1. Generate REAL, RUNNABLE test code — not pseudocode
 2. Each test must have meaningful assertions that verify behavior, not just "doesn't crash"
 3. Include edge cases, error paths, and boundary conditions
 4. Use descriptive test names that explain what is being verified
-5. For unit tests: use Jest/Vitest syntax
+5. For unit tests: use Jest syntax (describe/it/expect)
 6. For E2E tests: use Playwright syntax
 7. For API tests: use supertest or direct fetch
+8. Match the project language EXACTLY — if it's JavaScript, write JavaScript tests
 
 Output format — respond with ONLY a JSON array:
 [
@@ -105,7 +110,18 @@ ${state.mutationResult.survivors.slice(0, 10).map(s =>
 
   const model = createModel({ temperature: 0.4, maxTokens: 16384 });
 
+  // Detect project language from code files
+  const jsFiles = state.codeFiles.filter(f => f.language === 'javascript' || f.path?.endsWith('.js') || f.path?.endsWith('.jsx'));
+  const tsFiles = state.codeFiles.filter(f => f.language === 'typescript' || f.path?.endsWith('.ts') || f.path?.endsWith('.tsx'));
+  const projectLanguage = tsFiles.length > jsFiles.length ? 'TypeScript' : 'JavaScript';
+  const fileExtension = projectLanguage === 'TypeScript' ? '.ts' : '.js';
+
   const userMessage = `Generate tests for this codebase.
+
+## IMPORTANT: Project Language
+This project uses **${projectLanguage}** (${jsFiles.length} JS files, ${tsFiles.length} TS files).
+Generate ALL test code in **${projectLanguage}** with ${projectLanguage === 'JavaScript' ? 'require()/module.exports (CommonJS)' : 'import/export (ESM)'} syntax.
+Use file extension: ${fileExtension}
 
 ## Test Strategy
 Focus areas: ${strategy.focusAreas.join(', ')}
