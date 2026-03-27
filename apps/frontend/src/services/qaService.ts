@@ -284,40 +284,55 @@ export const qaService = {
    * Start a new QA run against a repository
    */
   async startRun(config: QARunConfig): Promise<{ runId: string }> {
-    return apiRequest<{ runId: string }>('/api/v1/qa/runs', {
+    const response = await fetch(`${QA_ENGINE_URL}/qa/run`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     });
+    if (!response.ok) throw new Error(`QA Engine request failed: ${response.status}`);
+    return response.json();
   },
 
   /**
    * Get the current status of a QA run
    */
   async getRunStatus(runId: string): Promise<QARun> {
-    return apiRequest<QARun>(`/api/v1/qa/runs/${runId}`);
+    const response = await fetch(`${QA_ENGINE_URL}/qa/runs/${runId}`);
+    if (!response.ok) throw new Error(`QA Engine request failed: ${response.status}`);
+    const data = await response.json();
+    return { ...data, id: data._key || data.runId || runId, runId: data._key || data.runId || runId };
   },
 
   /**
    * Get test results for a completed run
    */
   async getResults(runId: string): Promise<{ tests: TestResult[]; mutation: MutationResult }> {
-    return apiRequest<{ tests: TestResult[]; mutation: MutationResult }>(
-      `/api/v1/qa/runs/${runId}/results`
-    );
+    const response = await fetch(`${QA_ENGINE_URL}/qa/results/${runId}`);
+    if (!response.ok) throw new Error(`QA Engine request failed: ${response.status}`);
+    return response.json();
   },
 
   /**
    * List recent QA runs
    */
   async listRuns(limit: number = 20): Promise<QARun[]> {
-    return apiRequest<QARun[]>(`/api/v1/qa/runs?limit=${limit}`);
+    // Call QA engine directly (not through API gateway)
+    const response = await fetch(`${QA_ENGINE_URL}/qa/runs?limit=${limit}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    // Map ArangoDB _key to id for frontend consistency
+    return (data.runs || []).map((r: any) => ({
+      ...r,
+      id: r._key || r.runId || r.id,
+      runId: r._key || r.runId || r.id,
+    }));
   },
 
   /**
    * Cancel a running QA run
    */
   async cancelRun(runId: string): Promise<void> {
-    await apiRequest<void>(`/api/v1/qa/runs/${runId}/cancel`, { method: 'POST' });
+    await fetch(`${QA_ENGINE_URL}/qa/runs/${runId}/cancel`, { method: 'POST' });
   },
 
   /**
