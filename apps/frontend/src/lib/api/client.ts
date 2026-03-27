@@ -71,18 +71,18 @@ class ApiClient {
   }
 
   private setupInterceptors() {
-    // Request interceptor for authentication and logging
+    // Request interceptor — skip requests entirely when gateway is known to be down
     this.client.interceptors.request.use(
       (config) => {
+        // If gateway is known to be unreachable, reject immediately without making the network call
+        if ((window as any).__apiGatewayDown) {
+          return Promise.reject(new axios.Cancel('API gateway offline — skipping request'));
+        }
+
         // Add authentication token if available
         const token = localStorage.getItem('auth_token');
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
-        }
-
-        // Log request in development (suppress when gateway is known to be down)
-        if (import.meta.env.MODE === 'development' && !(window as any).__apiGatewayDown) {
-          console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`, config.data);
         }
 
         return config;
