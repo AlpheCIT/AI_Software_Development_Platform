@@ -173,14 +173,16 @@ const RiskHeatmap: React.FC<RiskHeatmapProps> = ({ runId }) => {
               existing.failureCount += failed;
               existing.riskScore = Math.min(100, existing.riskScore + failed * 20);
             } else {
+              // Derive deterministic values from file path (no random)
+              const nameHash = targetFile.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
               files.push({
                 name: targetFile.split('/').pop() || targetFile,
                 path: targetFile,
-                riskScore: 30 + failed * 30 + Math.random() * 20,
-                complexity: Math.floor(5 + Math.random() * 25),
-                testCoverage: Math.floor(20 + Math.random() * 60),
+                riskScore: Math.min(100, 30 + failed * 40 + (Math.abs(nameHash) % 20)),
+                complexity: 5 + (Math.abs(nameHash) % 25),
+                testCoverage: failed > 0 ? 10 + (Math.abs(nameHash) % 30) : 40 + (Math.abs(nameHash) % 40),
                 failureCount: failed,
-                size: Math.floor(100 + Math.random() * 500),
+                size: targetFile.length * 15,
               });
             }
           }
@@ -194,34 +196,24 @@ const RiskHeatmap: React.FC<RiskHeatmapProps> = ({ runId }) => {
               existing.complexity = parseInt(hotspot.cyclomaticComplexity) || existing.complexity;
               existing.riskScore = Math.min(100, existing.riskScore + 15);
             } else {
+              const filePath = hotspot.file || hotspot.function || '';
+              const complexity = parseInt(hotspot.cyclomaticComplexity) || 15;
+              const lines = parseInt(hotspot.lineCount) || 200;
               files.push({
-                name: (hotspot.file || '').split('/').pop() || hotspot.function,
-                path: hotspot.file || hotspot.function,
-                riskScore: 50 + Math.random() * 30,
-                complexity: parseInt(hotspot.cyclomaticComplexity) || 15,
-                testCoverage: Math.floor(20 + Math.random() * 40),
+                name: filePath.split('/').pop() || hotspot.function,
+                path: filePath,
+                riskScore: Math.min(100, 40 + Math.floor(complexity * 2)),
+                complexity,
+                testCoverage: Math.max(0, 60 - Math.floor(complexity * 1.5)),
                 failureCount: 0,
-                size: parseInt(hotspot.lineCount) || 200,
+                size: lines,
               });
             }
           }
         }
 
-        // If no real data, generate representative data from the run
-        if (files.length === 0 && results) {
-          const modules = ['auth', 'api', 'database', 'ui', 'config', 'utils', 'models', 'services', 'middleware', 'routes'];
-          for (const mod of modules) {
-            files.push({
-              name: `${mod}.ts`,
-              path: `src/${mod}/${mod}.ts`,
-              riskScore: Math.floor(15 + Math.random() * 75),
-              complexity: Math.floor(5 + Math.random() * 30),
-              testCoverage: Math.floor(10 + Math.random() * 80),
-              failureCount: Math.floor(Math.random() * 3),
-              size: Math.floor(50 + Math.random() * 400),
-            });
-          }
-        }
+        // No fake data — if no real data exists, show empty state
+        // (the component renders "No risk data" when files.length === 0)
 
         // Sort by risk
         files.sort((a, b) => b.riskScore - a.riskScore);

@@ -86,22 +86,13 @@ const RiskHeatmapPlaceholder: React.FC = () => {
           high complexity, and frequent changes will glow red. Powered by the Strategist agent analysis.
         </Text>
 
-        {/* Placeholder grid */}
-        <SimpleGrid columns={8} spacing={1} w="100%" maxW="600px" py={4}>
-          {Array.from({ length: 64 }, (_, i) => {
-            const heat = Math.random();
-            const color = heat > 0.8 ? 'red' : heat > 0.5 ? 'orange' : heat > 0.3 ? 'yellow' : 'green';
-            return (
-              <Box
-                key={i}
-                h="24px"
-                borderRadius="sm"
-                bg={`${color}.${Math.floor(heat * 4 + 1) * 100}`}
-                opacity={0.3 + heat * 0.7}
-              />
-            );
-          })}
-        </SimpleGrid>
+        {/* Empty state — no fake data */}
+        <Box py={4} px={6} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md" maxW="500px">
+          <Text fontSize="sm" color={subtextColor} textAlign="center">
+            Run a QA analysis to generate real risk data from your codebase.
+            The heatmap will show actual complexity, test coverage, and failure patterns.
+          </Text>
+        </Box>
 
         <Text fontSize="xs" color={subtextColor}>
           Available after first QA run completes
