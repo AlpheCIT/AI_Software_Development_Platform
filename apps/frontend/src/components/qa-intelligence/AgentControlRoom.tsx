@@ -109,6 +109,12 @@ export default function AgentControlRoom({
                 agentLabel={selectedAgentMeta.label}
                 agentColor={selectedAgentMeta.color}
                 handoffData={handoffData[selectedAgent]}
+                isAgentActive={activeAgent === selectedAgent || activeAgent === selectedAgentBackendName}
+                streamingText={
+                  (activeAgent === selectedAgent || activeAgent === selectedAgentBackendName)
+                    ? streamingBuffer
+                    : undefined
+                }
                 onClose={() => setSelectedAgent(null)}
               />
             </Box>
