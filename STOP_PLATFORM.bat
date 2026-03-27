@@ -30,24 +30,24 @@ REM Kill services on specific ports
 echo.
 echo %BLUE%Freeing up ports...%NC%
 
-REM Port 3000 (Frontend)
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3000" 2^>nul') do (
+REM Port 3000 (Frontend) - only kill listening processes
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3000" ^| findstr "LISTENING" 2^>nul') do (
     taskkill /PID %%a /F >nul 2>nul
     if not errorlevel 1 (
         echo %GREEN%✅ Port 3000 freed (Frontend)%NC%
     )
 )
 
-REM Port 3001 (API Gateway)
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3001" 2^>nul') do (
+REM Port 3001 (API Gateway) - only kill listening processes
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3001" ^| findstr "LISTENING" 2^>nul') do (
     taskkill /PID %%a /F >nul 2>nul
     if not errorlevel 1 (
         echo %GREEN%✅ Port 3001 freed (API Gateway)%NC%
     )
 )
 
-REM Port 3002 (MCP Server)
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3002" 2^>nul') do (
+REM Port 3002 (MCP Server) - only kill listening processes
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3002" ^| findstr "LISTENING" 2^>nul') do (
     taskkill /PID %%a /F >nul 2>nul
     if not errorlevel 1 (
         echo %GREEN%✅ Port 3002 freed (MCP Server)%NC%
@@ -57,22 +57,22 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3002" 2^>nul') do (
 echo.
 echo %BLUE%Checking service status...%NC%
 
-REM Verify ports are free
-netstat -ano | findstr ":3000" >nul 2>nul
+REM Verify ports are free (check only listening ports)
+netstat -ano | findstr ":3000" | findstr "LISTENING" >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo %GREEN%✅ Port 3000 is free%NC%
 ) else (
     echo %YELLOW%⚠️  Port 3000 may still be in use%NC%
 )
 
-netstat -ano | findstr ":3001" >nul 2>nul
+netstat -ano | findstr ":3001" | findstr "LISTENING" >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo %GREEN%✅ Port 3001 is free%NC%
 ) else (
     echo %YELLOW%⚠️  Port 3001 may still be in use%NC%
 )
 
-netstat -ano | findstr ":3002" >nul 2>nul
+netstat -ano | findstr ":3002" | findstr "LISTENING" >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo %GREEN%✅ Port 3002 is free%NC%
 ) else (

@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-  port: parseInt(process.env.JIRA_SERVICE_PORT || '3005'),
+  port: parseInt(process.env.JIRA_SERVICE_PORT || '3007'),
   host: process.env.JIRA_SERVICE_HOST || '0.0.0.0',
   
   jira: {
@@ -26,7 +26,7 @@ export const config = {
 
   webhook: {
     secret: process.env.JIRA_WEBHOOK_SECRET || 'your-webhook-secret',
-    url: process.env.JIRA_WEBHOOK_URL || 'http://localhost:3005/webhook/jira'
+    url: process.env.JIRA_WEBHOOK_URL || 'http://localhost:3007/webhook/jira'
   },
 
   logging: {

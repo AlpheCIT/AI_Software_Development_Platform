@@ -20,24 +20,31 @@ import {
   Tooltip,
   useBreakpointValue
 } from '@chakra-ui/react';
-import { 
-  Database, 
-  Activity, 
-  Settings, 
+import {
+  Database,
+  Activity,
+  Settings,
   Menu,
   BarChart3,
-  Search
+  Search,
+  Shield,
+  BookOpen,
+  List,
 } from 'lucide-react';
 
 import RepositoryIngestionDashboard from '../components/ingestion/RepositoryIngestionDashboard';
 import GraphCanvas from '../components/graph/GraphCanvas';
 import InspectorTabs from '../components/graph/inspector/InspectorTabs';
+import QAIntelligenceDashboard from '../components/qa-intelligence/QAIntelligenceDashboard';
+import RunManager from '../components/qa-intelligence/RunManager';
+import RepoWiki from '../components/wiki/RepoWiki';
+import { RoleProvider } from '../context/RoleContext';
 import { useMCP } from '../lib/mcp/useMCP';
 import { useIngestionStore } from '../stores/ingestion-store';
 
 const MainDashboard: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics'>('ingestion');
+  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics' | 'qa-intelligence' | 'wiki' | 'run-manager'>('qa-intelligence');
   const { isOpen, onOpen, onClose } = useDisclosure();
   
   const { 
@@ -82,6 +89,27 @@ const MainDashboard: React.FC = () => {
 
   const renderMainContent = () => {
     switch (currentView) {
+      case 'qa-intelligence':
+        return (
+          <Box height="100%">
+            <QAIntelligenceDashboard />
+          </Box>
+        );
+
+      case 'wiki':
+        return (
+          <Box height="100%">
+            <RepoWiki />
+          </Box>
+        );
+
+      case 'run-manager':
+        return (
+          <Box height="100%">
+            <RunManager />
+          </Box>
+        );
+
       case 'ingestion':
         return (
           <Box height="100%">
@@ -125,13 +153,113 @@ const MainDashboard: React.FC = () => {
         return (
           <Box height="100%" p={6}>
             <VStack spacing={6} align="stretch">
-              <Text fontSize="2xl" fontWeight="bold">
-                Repository Analytics
-              </Text>
+              <VStack align="start" spacing={1}>
+                <Text fontSize="2xl" fontWeight="bold">
+                  Repository Analytics
+                </Text>
+                {(analytics as any)?._qaDetails?.repoUrl && (
+                  <HStack spacing={2} fontSize="sm" color="gray.500">
+                    <Database size={14} />
+                    <Text fontWeight="medium" color="gray.700">
+                      {(analytics as any)._qaDetails.repoName}
+                    </Text>
+                    <Text>({(analytics as any)._qaDetails.branch})</Text>
+                    <Badge colorScheme="blue" variant="outline" fontSize="xs">
+                      {(analytics as any)._qaDetails.repoUrl}
+                    </Badge>
+                  </HStack>
+                )}
+              </VStack>
               
               {analyticsLoading ? (
                 <Box>Loading analytics...</Box>
+              ) : !analytics ? (
+                <Box bg={cardBg} p={8} borderRadius="lg" border="1px solid" borderColor={borderColor} textAlign="center">
+                  <Text fontSize="lg" color="gray.500" mb={2}>No Analysis Data Available</Text>
+                  <Text fontSize="sm" color="gray.400">
+                    Run a QA analysis from the QA Intelligence tab, or ingest a repository to see real metrics here.
+                  </Text>
+                </Box>
+              ) : (analytics as any)?._source === 'qa-engine' ? (
+                /* QA Engine data — show with honest labels */
+                <Grid templateColumns="repeat(auto-fit, minmax(300px, 1fr))" gap={6}>
+                  <Box key="qa-runs" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
+                    <Text fontSize="lg" fontWeight="bold" mb={4}>QA Test Results</Text>
+                    <VStack align="stretch" spacing={3}>
+                      <HStack justify="space-between">
+                        <Text>Tests Generated:</Text>
+                        <Badge colorScheme="blue">
+                          {(analytics as any)?._qaDetails?.totalTests || 0}
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Tests Passed:</Text>
+                        <Badge colorScheme="green">
+                          {(analytics as any)?._qaDetails?.totalPassed || 0}
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Tests Failed:</Text>
+                        <Badge colorScheme={((analytics as any)?._qaDetails?.totalFailed || 0) > 0 ? 'red' : 'green'} variant={((analytics as any)?._qaDetails?.totalFailed || 0) > 0 ? 'solid' : 'subtle'}>
+                          {(analytics as any)?._qaDetails?.totalFailed || 0}
+                        </Badge>
+                      </HStack>
+                    </VStack>
+                  </Box>
+
+                  <Box key="mutation" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
+                    <Text fontSize="lg" fontWeight="bold" mb={4}>Mutation Analysis</Text>
+                    <VStack align="stretch" spacing={3}>
+                      <HStack justify="space-between">
+                        <Text>Avg Mutation Score:</Text>
+                        <Badge colorScheme={(analytics as any)?._qaDetails?.avgMutationScore >= 80 ? 'green' : 'orange'}>
+                          {(analytics as any)?._qaDetails?.avgMutationScore || 0}%
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Pass Rate:</Text>
+                        <Badge colorScheme="purple">
+                          {analytics?.performance?.testCoverage || 0}%
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Total Iterations:</Text>
+                        <Badge colorScheme="blue">
+                          {(analytics as any)?._qaDetails?.totalIterations || 0}
+                        </Badge>
+                      </HStack>
+                    </VStack>
+                  </Box>
+
+                  <Box key="runs" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
+                    <Text fontSize="lg" fontWeight="bold" mb={4}>Run History</Text>
+                    <VStack align="stretch" spacing={3}>
+                      <HStack justify="space-between">
+                        <Text>Completed Runs:</Text>
+                        <Badge colorScheme="teal">
+                          {(analytics as any)?._qaDetails?.completedRuns || 0}
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Repository:</Text>
+                        <Badge colorScheme="blue" variant="outline">
+                          {(analytics as any)?._qaDetails?.repoName || 'Unknown'} ({(analytics as any)?._qaDetails?.branch || '—'})
+                        </Badge>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text>Last Analyzed:</Text>
+                        <Text fontSize="sm" color="gray.500">
+                          {analytics?.repository?.lastAnalyzed ?
+                            new Date(analytics.repository.lastAnalyzed).toLocaleDateString() :
+                            'Never'
+                          }
+                        </Text>
+                      </HStack>
+                    </VStack>
+                  </Box>
+                </Grid>
               ) : (
+                /* Real MCP analytics data — original labels */
                 <Grid templateColumns="repeat(auto-fit, minmax(300px, 1fr))" gap={6}>
                   <Box key="security" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
                     <Text fontSize="lg" fontWeight="bold" mb={4}>Security Overview</Text>
@@ -199,8 +327,8 @@ const MainDashboard: React.FC = () => {
                       <HStack justify="space-between">
                         <Text>Last Analyzed:</Text>
                         <Text fontSize="sm" color="gray.500">
-                          {analytics?.repository?.lastAnalyzed ? 
-                            new Date(analytics.repository.lastAnalyzed).toLocaleDateString() : 
+                          {analytics?.repository?.lastAnalyzed ?
+                            new Date(analytics.repository.lastAnalyzed).toLocaleDateString() :
                             'Never'
                           }
                         </Text>
@@ -219,6 +347,7 @@ const MainDashboard: React.FC = () => {
   };
 
   return (
+    <RoleProvider>
     <Box bg={bgColor} minHeight="100vh">
       {/* Header */}
       <Box 
@@ -289,7 +418,34 @@ const MainDashboard: React.FC = () => {
             >
               Analytics
             </Button>
-            
+            <Button
+              variant={currentView === 'qa-intelligence' ? 'solid' : 'ghost'}
+              colorScheme="purple"
+              size="sm"
+              onClick={() => setCurrentView('qa-intelligence')}
+              leftIcon={<Shield size={16} />}
+            >
+              QA Intelligence
+            </Button>
+            <Button
+              variant={currentView === 'run-manager' ? 'solid' : 'ghost'}
+              colorScheme="teal"
+              size="sm"
+              onClick={() => setCurrentView('run-manager')}
+              leftIcon={<List size={16} />}
+            >
+              Run Manager
+            </Button>
+            <Button
+              variant={currentView === 'wiki' ? 'solid' : 'ghost'}
+              colorScheme="orange"
+              size="sm"
+              onClick={() => setCurrentView('wiki')}
+              leftIcon={<BookOpen size={16} />}
+            >
+              Wiki
+            </Button>
+
             {isMobile && (
               <IconButton
                 aria-label="Menu"
@@ -411,6 +567,7 @@ const MainDashboard: React.FC = () => {
         </DrawerContent>
       </Drawer>
     </Box>
+    </RoleProvider>
   );
 };
 

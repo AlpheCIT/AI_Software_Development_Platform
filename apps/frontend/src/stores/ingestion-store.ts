@@ -187,7 +187,34 @@ export const useIngestionStore = create<IngestionState>()(
         name: 'ingestion-store',
         partialize: (state) => ({
           jobHistory: state.jobHistory.slice(0, 10) // Only persist recent history
-        })
+        }),
+        onRehydrate: () => {
+          // Clean up stale/zombie jobs on app startup
+          return (state) => {
+            if (!state) return;
+            const MAX_RUNNING_AGE_MS = 30 * 60 * 1000; // 30 minutes max
+            const now = Date.now();
+
+            // Clear stale currentJob
+            if (state.currentJob && state.currentJob.status === 'running') {
+              const startTime = new Date(state.currentJob.startTime).getTime();
+              if (now - startTime > MAX_RUNNING_AGE_MS) {
+                state.currentJob = null;
+              }
+            }
+
+            // Mark stale running jobs in history as failed
+            state.jobHistory = state.jobHistory.map(job => {
+              if (job.status === 'running') {
+                const startTime = new Date(job.startTime).getTime();
+                if (now - startTime > MAX_RUNNING_AGE_MS) {
+                  return { ...job, status: 'failed' as const, error: 'Job timed out (stale)', endTime: new Date() };
+                }
+              }
+              return job;
+            });
+          };
+        }
       }
     ),
     {
