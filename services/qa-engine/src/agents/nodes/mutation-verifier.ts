@@ -1,7 +1,8 @@
-import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { QAAgentState, MutationResult } from '../state';
 import { qaConfig } from '../../config';
+import { persistConversation } from '../persist-conversation';
+import { throttledInvoke, createModel } from '../llm-throttle';
 
 const MUTATION_ANALYSIS_PROMPT = `You are a mutation testing expert. Analyze the generated tests and identify potential surviving mutants.
 
@@ -34,6 +35,7 @@ The score should be (killed / totalMutants * 100).`;
 
 export async function mutationVerifierNode(
   state: QAAgentState,
+  dbClient?: any,
   eventPublisher?: any
 ): Promise<Partial<QAAgentState>> {
   console.log(`[MutationVerifier] Analyzing test quality (iteration ${state.iteration + 1})`);
@@ -76,16 +78,9 @@ export async function mutationVerifierNode(
     .map(t => `### ${t.name} (targets: ${t.targetFile})\n\`\`\`\n${t.code}\n\`\`\``)
     .join('\n\n');
 
-  const model = new ChatAnthropic({
-    modelName: qaConfig.anthropic.model,
-    anthropicApiKey: qaConfig.anthropic.apiKey,
-    temperature: 0.2,
-    maxTokens: 4096,
-  });
+  const model = createModel({ temperature: 0.2, maxTokens: 4096 });
 
-  const response = await model.invoke([
-    new SystemMessage(MUTATION_ANALYSIS_PROMPT),
-    new HumanMessage(`Analyze mutation resilience.
+  const userMessage = `Analyze mutation resilience.
 
 ## Source Code
 ${sourceCode}
@@ -94,8 +89,28 @@ ${sourceCode}
 ${testCode}
 
 Identify mutations that would survive these tests. Be thorough.
-Respond with ONLY valid JSON, no markdown fencing.`),
-  ]);
+Respond with ONLY valid JSON, no markdown fencing.`;
+
+  const startMs = Date.now();
+  const response = await throttledInvoke(model, [
+    new SystemMessage(MUTATION_ANALYSIS_PROMPT),
+    new HumanMessage(userMessage),
+  ], 'mutation-verifier', eventPublisher, state.runId);
+  const durationMs = Date.now() - startMs;
+
+  const responseText = typeof response.content === 'string' ? response.content : '';
+  if (dbClient) {
+    persistConversation(dbClient, {
+      runId: state.runId,
+      agent: 'mutation-verifier',
+      systemPrompt: MUTATION_ANALYSIS_PROMPT,
+      userMessage,
+      response: responseText,
+      tokensUsed: { input: (response as any).usage_metadata?.input_tokens, output: (response as any).usage_metadata?.output_tokens },
+      durationMs,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   let mutationResult: MutationResult;
   try {

@@ -12,6 +12,8 @@ export const QA_COLLECTIONS = {
   AGENT_EFFECTIVENESS: 'qa_agent_effectiveness',
   BUG_ARCHETYPES: 'qa_bug_archetypes',
   WIKI_DATA: 'qa_wiki_data',
+  AGENT_CONVERSATIONS: 'qa_agent_conversations',
+  CHAT_CONVERSATIONS: 'qa_chat_conversations',
 
   // Edge collections
   TESTS_FILE: 'qa_tests_file',
@@ -38,6 +40,8 @@ export const DOCUMENT_COLLECTIONS = [
   QA_COLLECTIONS.AGENT_EFFECTIVENESS,
   QA_COLLECTIONS.BUG_ARCHETYPES,
   QA_COLLECTIONS.WIKI_DATA,
+  QA_COLLECTIONS.AGENT_CONVERSATIONS,
+  QA_COLLECTIONS.CHAT_CONVERSATIONS,
 ];
 
 export const EDGE_COLLECTIONS = [

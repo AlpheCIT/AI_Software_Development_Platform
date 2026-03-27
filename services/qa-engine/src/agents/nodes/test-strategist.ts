@@ -1,7 +1,8 @@
-import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { QAAgentState, RiskArea, TestStrategy } from '../state';
 import { qaConfig } from '../../config';
+import { persistConversation } from '../persist-conversation';
+import { throttledInvoke, createModel } from '../llm-throttle';
 
 const STRATEGIST_SYSTEM_PROMPT = `You are a senior QA architect analyzing a codebase to create a comprehensive test strategy.
 
@@ -56,8 +57,18 @@ export async function testStrategistNode(
   eventPublisher?.emit('qa:agent.progress', {
     runId: state.runId,
     agent: 'strategist',
-    progress: 40,
+    progress: 20,
     message: `Analyzing ${codeFiles.length} files and ${codeEntities.length} code entities (source: ${(state as any).ingestionSource ?? 'unknown'})`,
+  });
+
+  // Emit streaming state so frontend shows what's being analyzed
+  eventPublisher?.emit('qa:agent.streaming', {
+    runId: state.runId,
+    agent: 'strategist',
+    text: 'Building codebase context...',
+    currentFile: codeFiles[0]?.path,
+    fileIndex: 1,
+    fileTotal: codeFiles.length,
   });
 
   // Build context for Claude
@@ -77,17 +88,10 @@ export async function testStrategistNode(
     .map((f: any) => `### ${f.path}\n\`\`\`${f.language}\n${f.content}\n\`\`\``)
     .join('\n\n');
 
-  // Call Claude for strategy
-  const model = new ChatAnthropic({
-    modelName: qaConfig.anthropic.model,
-    anthropicApiKey: qaConfig.anthropic.apiKey,
-    temperature: 0.3,
-    maxTokens: 4096,
-  });
+  // Call Claude for strategy (throttled)
+  const model = createModel({ temperature: 0.3, maxTokens: 4096 });
 
-  const response = await model.invoke([
-    new SystemMessage(STRATEGIST_SYSTEM_PROMPT),
-    new HumanMessage(`Analyze this codebase and create a test strategy.
+  const userMessage = `Analyze this codebase and create a test strategy.
 
 ## Repository
 URL: ${state.config.repoUrl}
@@ -104,8 +108,40 @@ ${entitiesSummary}
 ## Sample Code
 ${sampleCode}
 
-Respond with ONLY valid JSON, no markdown fencing.`),
-  ]);
+Respond with ONLY valid JSON, no markdown fencing.`;
+
+  eventPublisher?.emit('qa:agent.streaming', {
+    runId: state.runId,
+    agent: 'strategist',
+    text: 'Sending to Claude for risk analysis...',
+  });
+
+  eventPublisher?.emit('qa:agent.progress', {
+    runId: state.runId,
+    agent: 'strategist',
+    progress: 50,
+    message: 'Claude analyzing codebase for risk areas...',
+  });
+
+  const startMs = Date.now();
+  const response = await throttledInvoke(
+    model,
+    [new SystemMessage(STRATEGIST_SYSTEM_PROMPT), new HumanMessage(userMessage)],
+    'strategist', eventPublisher, state.runId
+  );
+  const durationMs = Date.now() - startMs;
+
+  const responseText = typeof response.content === 'string' ? response.content : '';
+  persistConversation(dbClient, {
+    runId: state.runId,
+    agent: 'strategist',
+    systemPrompt: STRATEGIST_SYSTEM_PROMPT,
+    userMessage,
+    response: responseText,
+    tokensUsed: { input: (response as any).usage_metadata?.input_tokens, output: (response as any).usage_metadata?.output_tokens },
+    durationMs,
+    timestamp: new Date().toISOString(),
+  });
 
   let strategy: TestStrategy;
   try {

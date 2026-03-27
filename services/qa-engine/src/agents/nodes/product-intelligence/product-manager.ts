@@ -1,10 +1,23 @@
-import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../../config';
+import { persistConversation } from '../../persist-conversation';
+import { throttledInvoke, createModel } from '../../llm-throttle';
 
 const PM_SYSTEM_PROMPT = `You are a world-class Product Manager with deep technical understanding. You think like a VP of Product at a high-growth startup — obsessed with user value, competitive moats, and shipping features that move the needle.
 
-Your job: Analyze a codebase and produce a strategic product roadmap. You are NOT just listing improvements — you are building a plan to DOMINATE the market segment this application serves.
+Your job: Analyze a codebase and produce a REALISTIC product roadmap calibrated to the codebase's actual health. You are NOT just listing dream features — you are building a practical plan that accounts for technical debt, test coverage, and codebase maturity.
+
+CRITICAL RULE: If the codebase has significant technical debt (low test pass rates, many TODOs/HACKs, poor documentation coverage, grade C or below), your "immediate" roadmap MUST focus on stabilization first:
+- Fix failing tests before adding features
+- Address critical tech debt before building new systems
+- Improve documentation before scaling the team
+- Only AFTER stabilization should you recommend new features
+
+TECHNOLOGY GUIDELINES:
+- AI/ML is ENCOURAGED — recommend AI-powered features wherever they add value (predictive analytics, anomaly detection, intelligent automation, natural language interfaces). AI is a core competitive advantage.
+- Digital Twins are ASPIRATIONAL — if you recommend them, you MUST include a phased implementation plan showing exactly how to get there step-by-step from the current codebase state. Don't just say "build a digital twin" — show the 4-6 milestones needed to arrive there, with prerequisites at each stage.
+- Blockchain is OFF THE TABLE — do not recommend blockchain, distributed ledger, or crypto-based solutions. They add complexity without sufficient ROI for this type of application.
+- For any ambitious recommendation (L or XL effort), include a "stepping stones" plan showing intermediate deliverables that provide value along the way.
 
 For every feature you recommend:
 1. **User Impact** — Who benefits and how much? (high/medium/low)
@@ -12,13 +25,16 @@ For every feature you recommend:
 3. **Implementation Effort** — T-shirt size (XS/S/M/L/XL) based on the existing code
 4. **Revenue/Growth Signal** — How does this drive adoption, retention, or monetization?
 5. **Dependencies** — What existing code/infrastructure can be leveraged?
+6. **Prerequisite Health** — What code health score is needed before this is safe to build?
 
 Think in terms of:
+- What's the FOUNDATION that needs fixing first? (tests, docs, tech debt)
 - What are the GAPS in this application vs. best-in-class competitors?
 - What features would make users say "I can't switch away from this"?
 - What's the 80/20 — small changes with outsized impact?
 - What integrations would 10x the value?
 - What's the user journey and where does it break down?
+- WHO is the target customer right now? Don't try to serve everyone.
 
 Your output must be structured JSON:
 {
@@ -58,7 +74,7 @@ Your output must be structured JSON:
   ]
 }
 
-Be bold. Think big. But ground every recommendation in what the codebase can actually support.`;
+Be bold where the codebase supports it, but HONEST about what needs fixing first. Prioritize ruthlessly: stabilization → quick wins → AI-powered differentiators → moonshots (with stepping-stone plans). Never recommend blockchain. For ambitious features like digital twins, always show the path to get there.`;
 
 export interface ProductRoadmap {
   appDomain: string;
@@ -100,6 +116,7 @@ export async function productManagerNode(
   codeEntities: any[],
   repoUrl: string,
   runId: string,
+  dbClient?: any,
   eventPublisher?: any
 ): Promise<ProductRoadmap> {
   console.log(`[ProductManager] Analyzing ${repoUrl} for product opportunities`);
@@ -152,16 +169,9 @@ export async function productManagerNode(
     message: `Analyzed ${codeFiles.length} files. Tech: ${techStack.substring(0, 100)}`,
   });
 
-  const model = new ChatAnthropic({
-    modelName: qaConfig.anthropic.model,
-    anthropicApiKey: qaConfig.anthropic.apiKey,
-    temperature: 0.5,
-    maxTokens: 8192,
-  });
+  const model = createModel({ temperature: 0.5, maxTokens: 8192 });
 
-  const response = await model.invoke([
-    new SystemMessage(PM_SYSTEM_PROMPT),
-    new HumanMessage(`Analyze this repository and create a product strategy + feature roadmap.
+  const userMessage = `Analyze this repository and create a product strategy + feature roadmap.
 
 ## Repository
 URL: ${repoUrl}
@@ -188,8 +198,28 @@ Based on this analysis:
 
 Think like a PM who wants this product to DOMINATE its market. Be specific — reference actual files and code patterns.
 
-Respond with ONLY valid JSON, no markdown fencing.`),
-  ]);
+Respond with ONLY valid JSON, no markdown fencing.`;
+
+  const startMs = Date.now();
+  const response = await throttledInvoke(model, [
+    new SystemMessage(PM_SYSTEM_PROMPT),
+    new HumanMessage(userMessage),
+  ], 'product-manager', eventPublisher, runId);
+  const durationMs = Date.now() - startMs;
+
+  const responseText = typeof response.content === 'string' ? response.content : '';
+  if (dbClient) {
+    persistConversation(dbClient, {
+      runId,
+      agent: 'product-manager',
+      systemPrompt: PM_SYSTEM_PROMPT,
+      userMessage,
+      response: responseText,
+      tokensUsed: { input: (response as any).usage_metadata?.input_tokens, output: (response as any).usage_metadata?.output_tokens },
+      durationMs,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   let roadmap: ProductRoadmap;
   try {

@@ -1,11 +1,19 @@
-import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../../config';
 import type { ProductRoadmap } from './product-manager';
+import { persistConversation } from '../../persist-conversation';
+import { throttledInvoke, createModel } from '../../llm-throttle';
 
 const RESEARCH_SYSTEM_PROMPT = `You are an elite technology research analyst — the kind of person VCs call to understand emerging markets. Your specialty is identifying technology trends, frameworks, and approaches that can give a product an unfair competitive advantage.
 
-Your job: Given an app's domain and the Product Manager's roadmap, research the latest trends, technologies, and competitive landscape to find opportunities that would help this app MONOPOLIZE its market segment.
+Your job: Given an app's domain and the Product Manager's roadmap, research the latest trends, technologies, and competitive landscape to find REALISTIC opportunities calibrated to the team's actual capacity.
+
+TECHNOLOGY GUIDELINES:
+- AI/ML is STRONGLY ENCOURAGED — actively research AI-powered features, predictive analytics, anomaly detection, computer vision for quality control, NLP for operator interfaces, and intelligent automation. AI is a key differentiator.
+- Digital Twins — research these but ONLY recommend with a phased roadmap. Show the stepping stones: data collection layer → real-time monitoring → 2D visualization → 3D simulation → full digital twin. Each phase should deliver standalone value.
+- Blockchain — NEVER recommend. It's off the table regardless of industry trends.
+- For codebases with tech debt: focus research on technologies that REDUCE complexity (better frameworks, managed services, automation tools) rather than ones that add it.
+- Always ground recommendations in what the current team and codebase can realistically execute.
 
 Think about:
 1. **Emerging Technologies** — New frameworks, libraries, APIs, or AI capabilities that are gaining traction in this domain
@@ -129,6 +137,7 @@ export async function researchAssistantNode(
   codeFiles: any[],
   repoUrl: string,
   runId: string,
+  dbClient?: any,
   eventPublisher?: any
 ): Promise<ResearchInsights> {
   console.log(`[ResearchAssistant] Researching trends for domain: ${productRoadmap.appDomain}`);
@@ -162,16 +171,9 @@ export async function researchAssistantNode(
     message: `Analyzing domain: ${productRoadmap.appDomain}. Competitors: ${productRoadmap.competitiveAnalysis.competitors.join(', ')}`,
   });
 
-  const model = new ChatAnthropic({
-    modelName: qaConfig.anthropic.model,
-    anthropicApiKey: qaConfig.anthropic.apiKey,
-    temperature: 0.6,
-    maxTokens: 8192,
-  });
+  const model = createModel({ temperature: 0.6, maxTokens: 8192 });
 
-  const response = await model.invoke([
-    new SystemMessage(RESEARCH_SYSTEM_PROMPT),
-    new HumanMessage(`Research the latest trends and competitive landscape for this application.
+  const userMessage = `Research the latest trends and competitive landscape for this application.
 
 ## App Domain
 ${productRoadmap.appDomain}
@@ -209,8 +211,28 @@ Based on ALL of this context, research and recommend:
 Be specific. Name real technologies, real companies, real trends from 2024-2026.
 The goal is to make this app the UNDISPUTED leader in: ${productRoadmap.competitiveAnalysis.marketSegment}
 
-Respond with ONLY valid JSON, no markdown fencing.`),
-  ]);
+Respond with ONLY valid JSON, no markdown fencing.`;
+
+  const startMs = Date.now();
+  const response = await throttledInvoke(model, [
+    new SystemMessage(RESEARCH_SYSTEM_PROMPT),
+    new HumanMessage(userMessage),
+  ], 'research-assistant', eventPublisher, runId);
+  const durationMs = Date.now() - startMs;
+
+  const responseText = typeof response.content === 'string' ? response.content : '';
+  if (dbClient) {
+    persistConversation(dbClient, {
+      runId,
+      agent: 'research-assistant',
+      systemPrompt: RESEARCH_SYSTEM_PROMPT,
+      userMessage,
+      response: responseText,
+      tokensUsed: { input: (response as any).usage_metadata?.input_tokens, output: (response as any).usage_metadata?.output_tokens },
+      durationMs,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   let insights: ResearchInsights;
   try {

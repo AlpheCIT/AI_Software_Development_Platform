@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { io, type Socket } from 'socket.io-client';
 import {
   qaService,
   type QARun,
@@ -17,11 +18,19 @@ import {
 // ── Default States ─────────────────────────────────────────────────────────
 
 const DEFAULT_AGENTS: AgentState[] = [
-  { name: 'strategist', status: 'idle', progress: 0, message: 'Waiting to analyze repository...' },
-  { name: 'generator', status: 'idle', progress: 0, message: 'Waiting for strategy...' },
-  { name: 'critic', status: 'idle', progress: 0, message: 'Waiting for generated tests...' },
-  { name: 'executor', status: 'idle', progress: 0, message: 'Waiting to execute tests...' },
-  { name: 'mutation', status: 'idle', progress: 0, message: 'Waiting for test execution...' },
+  { name: 'repo-ingester', status: 'idle', progress: 0, message: 'Clones repository and extracts code files' },
+  { name: 'strategist', status: 'idle', progress: 0, message: 'Analyzes codebase and plans test strategy' },
+  { name: 'generator', status: 'idle', progress: 0, message: 'Generates test cases from strategy' },
+  { name: 'critic', status: 'idle', progress: 0, message: 'Reviews and critiques test quality' },
+  { name: 'executor', status: 'idle', progress: 0, message: 'Runs tests and collects results' },
+  { name: 'mutation', status: 'idle', progress: 0, message: 'Applies mutations to verify test strength' },
+  { name: 'product-manager', status: 'idle', progress: 0, message: 'Analyzes features and builds product roadmap' },
+  { name: 'research-assistant', status: 'idle', progress: 0, message: 'Researches trends and competitive landscape' },
+  { name: 'code-quality-architect', status: 'idle', progress: 0, message: 'Audits code quality and refactoring opportunities' },
+  { name: 'self-healer', status: 'idle', progress: 0, message: 'Detects cross-file type mismatches and broken imports' },
+  { name: 'api-validator', status: 'idle', progress: 0, message: 'Validates API endpoints for security and completeness' },
+  { name: 'coverage-auditor', status: 'idle', progress: 0, message: 'Cross-references backend APIs with frontend consumers' },
+  { name: 'ui-ux-analyst', status: 'idle', progress: 0, message: 'Audits accessibility, UX patterns, and user flows' },
 ];
 
 const DEFAULT_MUTATION: MutationResult = {
@@ -210,6 +219,41 @@ export function useQARun(): UseQARunReturn {
     setCompletedAt(null);
     setError(null);
   }, [stopPolling]);
+
+  // ── Socket.IO: Run lifecycle events only ──────────────────────────────
+  // Agent-level updates come from useAgentStream (merged in dashboard)
+  // This only handles run.completed and run.failed for fast status updates
+
+  useEffect(() => {
+    if (!runId || status === 'idle' || status === 'completed' || status === 'failed') return;
+
+    const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+    let socket: Socket | null = null;
+
+    try {
+      socket = io(QA_ENGINE_URL, { transports: ['websocket', 'polling'] });
+
+      socket.on('qa:run.completed', (data: any) => {
+        setStatus('completed');
+        setCompletedAt(new Date().toISOString());
+        stopPolling();
+        // Refresh final data
+        if (runId) pollStatus(runId);
+      });
+
+      socket.on('qa:run.failed', (data: any) => {
+        setStatus('failed');
+        setError(data.error || 'Run failed');
+        stopPolling();
+      });
+    } catch (err) {
+      console.warn('Socket.IO not available for run lifecycle events');
+    }
+
+    return () => {
+      if (socket) socket.disconnect();
+    };
+  }, [runId, status, stopPolling, pollStatus]);
 
   // ── Cleanup ────────────────────────────────────────────────────────────
 
