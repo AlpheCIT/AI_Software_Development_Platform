@@ -320,11 +320,16 @@ export const qaService = {
     const response = await fetch(`${QA_ENGINE_URL}/qa/runs?limit=${limit}`);
     if (!response.ok) return [];
     const data = await response.json();
-    // Map ArangoDB _key to id for frontend consistency
+    // Map ArangoDB fields to frontend QARun interface
     return (data.runs || []).map((r: any) => ({
       ...r,
       id: r._key || r.runId || r.id,
       runId: r._key || r.runId || r.id,
+      totalTests: r.testsGenerated || r.totalTests || 0,
+      passedTests: r.testsPassed || r.passedTests || 0,
+      failedTests: r.testsFailed || r.failedTests || 0,
+      skippedTests: r.testsExecuted ? (r.testsExecuted - (r.testsPassed || 0) - (r.testsFailed || 0)) : 0,
+      mutation: r.mutationScore != null ? { score: r.mutationScore, killed: 0, survived: 0, total: 0 } : undefined,
     }));
   },
 
