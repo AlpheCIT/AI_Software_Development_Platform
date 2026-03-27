@@ -44,6 +44,8 @@ import AgentPipeline from './AgentPipeline';
 import AgentLogStream from './AgentLogStream';
 import TestResultsPanel from './TestResultsPanel';
 import ProductIntelligencePanel from './ProductIntelligencePanel';
+import RiskHeatmap from './RiskHeatmap';
+import MutationTrends from './MutationTrends';
 import { useQARun } from '../../hooks/useQARun';
 import { useAgentStream } from '../../hooks/useAgentStream';
 
@@ -287,10 +289,10 @@ const QAIntelligenceDashboard: React.FC = () => {
               <ProductIntelligencePanel runId={qaRun.runId} />
             </TabPanel>
             <TabPanel px={0}>
-              <RiskHeatmapPlaceholder />
+              <RiskHeatmap runId={qaRun.runId} />
             </TabPanel>
             <TabPanel px={0}>
-              <MutationTrendsPlaceholder />
+              <MutationTrends />
             </TabPanel>
           </TabPanels>
         </Tabs>
