@@ -230,37 +230,43 @@ const QAIntelligenceDashboard: React.FC = () => {
           onRefresh={qaRun.refreshStatus}
         />
 
-        {/* Main Content: Pipeline (left) + Results (right) */}
-        <Grid
-          templateColumns={{ base: '1fr', lg: '3fr 2fr' }}
-          gap={4}
-          minH="500px"
-        >
-          {/* Left Panel: Agent Pipeline + Log Stream */}
-          <GridItem>
-            <VStack spacing={4} align="stretch" height="100%">
-              <AgentPipeline agents={qaRun.agents} />
-              <AgentLogStream
-                logs={agentStream.logs}
-                onClear={agentStream.clearLogs}
-                maxHeight="250px"
+        {/* Agent Pipeline — only show when running, collapse when idle */}
+        {qaRun.isRunning ? (
+          <Grid
+            templateColumns={{ base: '1fr', lg: '3fr 2fr' }}
+            gap={4}
+            minH="400px"
+          >
+            <GridItem>
+              <VStack spacing={4} align="stretch" height="100%">
+                <AgentPipeline agents={qaRun.agents} />
+                <AgentLogStream
+                  logs={agentStream.logs}
+                  onClear={agentStream.clearLogs}
+                  maxHeight="250px"
+                />
+              </VStack>
+            </GridItem>
+            <GridItem>
+              <TestResultsPanel
+                testResults={qaRun.testResults}
+                mutation={qaRun.mutation}
+                totalTests={qaRun.totalTests}
+                passedTests={qaRun.passedTests}
+                failedTests={qaRun.failedTests}
+                skippedTests={qaRun.skippedTests}
+                isRunning={qaRun.isRunning}
               />
-            </VStack>
-          </GridItem>
-
-          {/* Right Panel: Test Results */}
-          <GridItem>
-            <TestResultsPanel
-              testResults={qaRun.testResults}
-              mutation={qaRun.mutation}
-              totalTests={qaRun.totalTests}
-              passedTests={qaRun.passedTests}
-              failedTests={qaRun.failedTests}
-              skippedTests={qaRun.skippedTests}
-              isRunning={qaRun.isRunning}
-            />
-          </GridItem>
-        </Grid>
+            </GridItem>
+          </Grid>
+        ) : agentStream.logs.length > 0 ? (
+          /* Show log stream if there are entries from a past run */
+          <AgentLogStream
+            logs={agentStream.logs}
+            onClear={agentStream.clearLogs}
+            maxHeight="150px"
+          />
+        ) : null}
 
         {/* Bottom Intelligence Tabs */}
         <Tabs variant="enclosed" colorScheme="blue" size="sm">
