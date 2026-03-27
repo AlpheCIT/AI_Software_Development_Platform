@@ -44,6 +44,7 @@ import {
   Bell,
   Heart,
   Play,
+  Brain,
 } from 'lucide-react';
 
 import QARunControl from './QARunControl';
@@ -62,6 +63,7 @@ import RunReplayPlayer from './RunReplayPlayer';
 import NotificationBell from './NotificationBell';
 import AgentReportsTab from './AgentReportsTab';
 import AgentDebateView from './AgentDebateView';
+import LearningsPanel from './LearningsPanel';
 import { useQARun } from '../../hooks/useQARun';
 import { useAgentStream } from '../../hooks/useAgentStream';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -429,6 +431,12 @@ const QAIntelligenceDashboard: React.FC = () => {
                 <Text>Agent Reports</Text>
               </HStack>
             </Tab>
+            <Tab>
+              <HStack spacing={1}>
+                <Brain size={14} />
+                <Text>AI Learnings</Text>
+              </HStack>
+            </Tab>
           </TabList>
 
           <TabPanels>
@@ -449,6 +457,9 @@ const QAIntelligenceDashboard: React.FC = () => {
             </TabPanel>
             <TabPanel px={0}>
               <AgentReportsTab runId={qaRun.runId || undefined} />
+            </TabPanel>
+            <TabPanel px={0}>
+              <LearningsPanel repositoryId={qaRun.runId || undefined} />
             </TabPanel>
           </TabPanels>
         </Tabs>

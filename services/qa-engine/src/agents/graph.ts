@@ -7,6 +7,7 @@ import { executorNode } from './nodes/executor';
 import { mutationVerifierNode } from './nodes/mutation-verifier';
 import { repoIngesterNode } from './nodes/repo-ingester';
 import { runProductIntelligencePipeline } from './nodes/product-intelligence/pipeline';
+import { extractLearnings } from './nodes/learning-extractor';
 import { QA_COLLECTIONS } from '../graph/collections';
 
 interface QAGraphDependencies {
@@ -205,6 +206,14 @@ function createQAGraph(deps: QAGraphDependencies) {
         eventPublisher
       );
       console.log(`[ProductIntelligence] Complete — ${result.combinedPriorities.length} priorities identified`);
+
+      // Extract learnings from this run for the "AI learns over time" feature
+      await extractLearnings(state.runId, state.config.repositoryId, {
+        codeQuality: result.codeQuality,
+        testResults: state.testResults,
+        mutationResult: state.mutationResult,
+        criticFeedback: state.criticFeedback,
+      }, dbClient);
     } catch (error: any) {
       console.error(`[ProductIntelligence] Failed:`, error.message);
       // Non-fatal — QA results are already persisted

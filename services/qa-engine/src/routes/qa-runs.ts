@@ -221,6 +221,57 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
   });
 
   /**
+   * GET /qa/learnings/:idOrRunId
+   * Get accumulated learnings and bug archetypes
+   * Accepts either a repositoryId or a runId (will look up the repo from the run)
+   */
+  router.get('/learnings/:idOrRunId', async (req: Request, res: Response) => {
+    try {
+      let repositoryId = req.params.idOrRunId;
+
+      // If it doesn't look like a repositoryId (repo_...), try looking up from run
+      if (!repositoryId.startsWith('repo_')) {
+        try {
+          const run = await dbClient.getDocument(QA_COLLECTIONS.RUNS, repositoryId);
+          if (run?.repositoryId) repositoryId = run.repositoryId;
+        } catch { /* use as-is */ }
+      }
+
+      const [learnings, archetypes] = await Promise.all([
+        dbClient.query(
+          `FOR l IN ${QA_COLLECTIONS.LEARNINGS}
+             FILTER l.repositoryId == @repoId
+             SORT l.frequency DESC
+             LIMIT 50
+             RETURN l`,
+          { repoId: repositoryId }
+        ).catch(() => []),
+        dbClient.query(
+          `FOR a IN ${QA_COLLECTIONS.BUG_ARCHETYPES}
+             FILTER a.repositoryId == @repoId
+             SORT a.occurrences DESC
+             LIMIT 30
+             RETURN a`,
+          { repoId: repositoryId }
+        ).catch(() => []),
+      ]);
+
+      res.json({
+        learnings,
+        archetypes,
+        summary: {
+          totalLearnings: learnings.length,
+          totalArchetypes: archetypes.length,
+          topCategory: learnings[0]?.category || null,
+          highSeverityArchetypes: archetypes.filter((a: any) => a.severity === 'high').length,
+        },
+      });
+    } catch (error: any) {
+      res.json({ learnings: [], archetypes: [], summary: { totalLearnings: 0, totalArchetypes: 0 } });
+    }
+  });
+
+  /**
    * GET /qa/conversations/:runId
    * Get all agent conversations for a run
    */
