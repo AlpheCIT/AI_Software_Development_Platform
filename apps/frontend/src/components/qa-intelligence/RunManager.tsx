@@ -108,6 +108,10 @@ const AGENT_NAMES = [
   { key: 'product-manager', label: 'PM', icon: Briefcase },
   { key: 'research-assistant', label: 'Research', icon: Search },
   { key: 'code-quality-architect', label: 'Code Quality', icon: Shield },
+  { key: 'self-healer', label: 'Self-Heal', icon: Shield },
+  { key: 'api-validator', label: 'API Valid', icon: Shield },
+  { key: 'coverage-auditor', label: 'Coverage', icon: Search },
+  { key: 'ui-ux-analyst', label: 'UI/UX', icon: Search },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -224,10 +228,13 @@ function getAgentsFromRun(run: RunData): Set<string> {
       }
     });
   }
-  // If no agent info but run is completed, assume core agents ran
+  // If no agent info but run is completed, assume all pipeline agents ran
   if (agents.size === 0 && run.status === 'completed') {
     ['ingester', 'strategist', 'generator', 'critic', 'executor'].forEach(a => agents.add(a));
     if ((run.mutationScore ?? run.mutation?.score ?? 0) > 0) agents.add('mutation');
+    // Product intelligence agents run after QA pipeline
+    ['product-manager', 'research-assistant', 'code-quality-architect',
+     'self-healer', 'api-validator', 'coverage-auditor', 'ui-ux-analyst'].forEach(a => agents.add(a));
   }
   return agents;
 }

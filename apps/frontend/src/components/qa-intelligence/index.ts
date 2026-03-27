@@ -30,3 +30,4 @@ export { default as APIValidatorPanel } from './APIValidatorPanel';
 export { default as CoverageAuditorPanel } from './CoverageAuditorPanel';
 export { default as UIUXAnalystPanel } from './UIUXAnalystPanel';
 export { default as AgentReportsTab } from './AgentReportsTab';
+export { default as LearningsPanel } from './LearningsPanel';
