@@ -45,7 +45,13 @@ interface AgentConfig {
   description: string;
 }
 
-const AGENT_CONFIG: Record<AgentName, AgentConfig> = {
+const AGENT_CONFIG: Record<string, AgentConfig> = {
+  'repo-ingester': {
+    label: 'Repo Ingester',
+    icon: Code,
+    color: 'gray',
+    description: 'Clones repository and extracts code files + entities',
+  },
   strategist: {
     label: 'Strategist',
     icon: Brain,
@@ -329,19 +335,26 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents }) => {
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const headerColor = useColorModeValue('gray.700', 'gray.200');
 
-  // Use the canonical order
-  const orderedAgents: AgentName[] = ['strategist', 'generator', 'critic', 'executor', 'mutation'];
+  // All 9 agents in pipeline order
+  const allAgents: string[] = [
+    'repo-ingester', 'strategist', 'generator', 'critic', 'executor', 'mutation',
+    'product-manager', 'research-assistant', 'code-quality-architect',
+  ];
 
-  const getAgent = (name: AgentName): AgentState => {
+  const getAgent = (name: string): AgentState => {
     return (
       agents.find((a) => a.name === name) || {
         name,
         status: 'idle',
         progress: 0,
-        message: AGENT_CONFIG[name].description,
+        message: AGENT_CONFIG[name]?.description || '',
       }
     );
   };
+
+  const activeCount = allAgents.filter(n => getAgent(n).status === 'active').length;
+  const completedCount = allAgents.filter(n => getAgent(n).status === 'completed').length;
+  const anyRunning = activeCount > 0;
 
   return (
     <Box
@@ -349,40 +362,117 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents }) => {
       border="1px solid"
       borderColor={borderColor}
       borderRadius="lg"
-      p={4}
-      height="100%"
+      p={3}
     >
-      <HStack mb={4} spacing={2}>
-        <Brain size={18} />
-        <Text fontSize="md" fontWeight="bold" color={headerColor}>
+      <HStack mb={3} spacing={2}>
+        <Brain size={16} />
+        <Text fontSize="sm" fontWeight="bold" color={headerColor}>
           Agent Pipeline
         </Text>
         <Badge colorScheme="purple" variant="subtle" fontSize="2xs">
-          5 Agents
+          {allAgents.length} Agents
         </Badge>
+        {completedCount > 0 && (
+          <Badge colorScheme="green" variant="subtle" fontSize="2xs">
+            {completedCount} done
+          </Badge>
+        )}
+        {activeCount > 0 && (
+          <Badge colorScheme="blue" variant="solid" fontSize="2xs">
+            {activeCount} active
+          </Badge>
+        )}
       </HStack>
 
-      <VStack spacing={0} align="stretch">
-        {orderedAgents.map((name, index) => {
+      {/* Compact grid — 3 columns on desktop, 2 on tablet, 1 on mobile */}
+      <Box
+        display="grid"
+        gridTemplateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }}
+        gap={2}
+      >
+        {allAgents.map((name) => {
           const agent = getAgent(name);
           const config = AGENT_CONFIG[name];
+          if (!config) return null;
           const isActive = agent.status === 'active';
+          const StatusIcon = STATUS_ICONS[agent.status] || Circle;
+          const statusColor = agent.status === 'completed' ? 'green' : agent.status === 'active' ? config.color : agent.status === 'failed' ? 'red' : agent.status === 'looping' ? 'orange' : 'gray';
+          const AgentIcon = config.icon;
 
           return (
-            <React.Fragment key={name}>
-              <AgentRow agent={agent} config={config} isActive={isActive} />
-              {index < orderedAgents.length - 1 && (
-                <PipelineConnector
-                  isActive={
-                    agent.status === 'completed' ||
-                    getAgent(orderedAgents[index + 1]).status === 'active'
-                  }
-                />
-              )}
-            </React.Fragment>
+            <MotionBox
+              key={name}
+              layout
+              border="1px solid"
+              borderColor={isActive ? `${config.color}.300` : borderColor}
+              bg={isActive ? `${config.color}.50` : cardBg}
+              borderRadius="md"
+              p={2}
+              _hover={{ shadow: 'sm' }}
+            >
+              <HStack spacing={2}>
+                <Flex
+                  w="28px"
+                  h="28px"
+                  borderRadius="md"
+                  bg={`${config.color}.100`}
+                  align="center"
+                  justify="center"
+                  flexShrink={0}
+                >
+                  {isActive ? (
+                    <PulsingDot color={config.color} />
+                  ) : (
+                    <AgentIcon size={14} />
+                  )}
+                </Flex>
+                <Box flex={1} minW={0}>
+                  <HStack spacing={1}>
+                    <Text fontSize="xs" fontWeight="bold" noOfLines={1}>
+                      {config.label}
+                    </Text>
+                    <Badge
+                      colorScheme={statusColor}
+                      variant={isActive ? 'solid' : 'subtle'}
+                      fontSize="2xs"
+                      px={1}
+                      borderRadius="full"
+                    >
+                      {isActive ? (
+                        <MotionBox
+                          animate={{ rotate: [0, 360] }}
+                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                          display="inline-flex"
+                        >
+                          <StatusIcon size={8} />
+                        </MotionBox>
+                      ) : (
+                        <StatusIcon size={8} />
+                      )}
+                    </Badge>
+                  </HStack>
+                  {isActive && agent.progress > 0 && (
+                    <Progress
+                      value={agent.progress}
+                      size="xs"
+                      colorScheme={config.color}
+                      borderRadius="full"
+                      mt={1}
+                      hasStripe
+                      isAnimated
+                    />
+                  )}
+                </Box>
+                {agent.progress > 0 && isActive && (
+                  <Text fontSize="2xs" fontWeight="bold" color={`${config.color}.500`}>
+                    {Math.round(agent.progress)}%
+                  </Text>
+                )}
+              </HStack>
+            </MotionBox>
           );
         })}
-      </VStack>
+      </Box>
     </Box>
   );
 };

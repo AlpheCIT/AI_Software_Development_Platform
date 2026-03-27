@@ -232,22 +232,18 @@ const QAIntelligenceDashboard: React.FC = () => {
           onRefresh={qaRun.refreshStatus}
         />
 
-        {/* Agent Pipeline — only show when running, collapse when idle */}
-        {qaRun.isRunning ? (
-          <Grid
-            templateColumns={{ base: '1fr', lg: '3fr 2fr' }}
-            gap={4}
-            minH="400px"
-          >
+        {/* Compact Agent Pipeline — always visible, expands when running */}
+        <AgentPipeline agents={qaRun.agents} />
+
+        {/* Show test results + log stream when running */}
+        {qaRun.isRunning && (
+          <Grid templateColumns={{ base: '1fr', lg: '3fr 2fr' }} gap={4}>
             <GridItem>
-              <VStack spacing={4} align="stretch" height="100%">
-                <AgentPipeline agents={qaRun.agents} />
-                <AgentLogStream
-                  logs={agentStream.logs}
-                  onClear={agentStream.clearLogs}
-                  maxHeight="250px"
-                />
-              </VStack>
+              <AgentLogStream
+                logs={agentStream.logs}
+                onClear={agentStream.clearLogs}
+                maxHeight="200px"
+              />
             </GridItem>
             <GridItem>
               <TestResultsPanel
@@ -261,14 +257,14 @@ const QAIntelligenceDashboard: React.FC = () => {
               />
             </GridItem>
           </Grid>
-        ) : agentStream.logs.length > 0 ? (
-          /* Show log stream if there are entries from a past run */
+        )}
+        {!qaRun.isRunning && agentStream.logs.length > 0 && (
           <AgentLogStream
             logs={agentStream.logs}
             onClear={agentStream.clearLogs}
-            maxHeight="150px"
+            maxHeight="120px"
           />
-        ) : null}
+        )}
 
         {/* Bottom Intelligence Tabs */}
         <Tabs variant="enclosed" colorScheme="blue" size="sm">
