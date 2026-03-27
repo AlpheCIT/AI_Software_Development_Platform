@@ -80,8 +80,8 @@ class ApiClient {
           config.headers.Authorization = `Bearer ${token}`;
         }
 
-        // Log request in development
-        if (import.meta.env.MODE === 'development') {
+        // Log request in development (suppress when gateway is known to be down)
+        if (import.meta.env.MODE === 'development' && !(window as any).__apiGatewayDown) {
           console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`, config.data);
         }
 
@@ -115,8 +115,11 @@ class ApiClient {
             // Could trigger a redirect to login here
           }
         } else if (error.request) {
-          // Network error
-          console.error('Network Error:', error.request);
+          // Network error — suppress repeated logs when gateway is unreachable
+          if (!(window as any).__apiGatewayDown) {
+            console.warn('API gateway unreachable at', error.config?.baseURL || 'unknown', '— running in standalone mode');
+            (window as any).__apiGatewayDown = true;
+          }
         } else {
           // Other error
           console.error('API Client Error:', error.message);
