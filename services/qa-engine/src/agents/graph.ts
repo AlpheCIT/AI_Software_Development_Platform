@@ -5,6 +5,7 @@ import { testGeneratorNode } from './nodes/test-generator';
 import { criticNode } from './nodes/critic';
 import { executorNode } from './nodes/executor';
 import { mutationVerifierNode } from './nodes/mutation-verifier';
+import { repoIngesterNode } from './nodes/repo-ingester';
 import { runProductIntelligencePipeline } from './nodes/product-intelligence/pipeline';
 import { QA_COLLECTIONS } from '../graph/collections';
 
@@ -22,6 +23,7 @@ function createQAGraph(deps: QAGraphDependencies) {
       config: { value: (a: any, b?: any) => b ?? a, default: () => ({}) },
       codeFiles: { value: (a: any[], b?: any[]) => b ?? a, default: () => [] },
       codeEntities: { value: (a: any[], b?: any[]) => b ?? a, default: () => [] },
+      ingestionSource: { value: (a: string, b?: string) => b ?? a, default: () => 'pending' },
       strategy: { value: (a: any, b?: any) => b ?? a, default: () => null },
       generatedTests: { value: (a: any[], b?: any[]) => b ?? a, default: () => [] },
       criticFeedback: { value: (a: any[], b?: any[]) => b ?? a, default: () => [] },
@@ -38,7 +40,11 @@ function createQAGraph(deps: QAGraphDependencies) {
     },
   });
 
-  // Add nodes
+  // Add nodes — repo_ingester runs first to populate codeFiles / codeEntities
+  graph.addNode('repo_ingester', async (state: QAAgentState) => {
+    return repoIngesterNode(state, dbClient, eventPublisher);
+  });
+
   graph.addNode('strategist', async (state: QAAgentState) => {
     return testStrategistNode(state, dbClient, eventPublisher);
   });
@@ -178,9 +184,10 @@ function createQAGraph(deps: QAGraphDependencies) {
     return {};
   });
 
-  // Define edges
-  graph.setEntryPoint('strategist');
+  // Define edges — ingester is the first node
+  graph.setEntryPoint('repo_ingester');
 
+  graph.addEdge('repo_ingester', 'strategist');
   graph.addEdge('strategist', 'generator');
 
   graph.addEdge('generator', 'critic');
