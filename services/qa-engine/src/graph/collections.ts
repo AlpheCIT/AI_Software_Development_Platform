@@ -59,23 +59,43 @@ export const EDGE_COLLECTIONS = [
 export async function ensureCollections(dbClient: any): Promise<void> {
   console.log('[QA] Ensuring ArangoDB collections exist...');
 
-  for (const name of DOCUMENT_COLLECTIONS) {
+  // Also ensure product intelligence and new agent report collections
+  const ALL_COLLECTIONS = [
+    ...DOCUMENT_COLLECTIONS,
+    'qa_product_roadmaps', 'qa_research_insights', 'qa_product_priorities',
+    'qa_code_quality_reports', 'qa_self_healing_reports', 'qa_api_validation_reports',
+    'qa_coverage_audit_reports', 'qa_ui_audit_reports',
+  ];
+
+  let created = 0;
+  for (const name of ALL_COLLECTIONS) {
     try {
-      await dbClient.query(
-        `RETURN LENGTH(FOR c IN _collections FILTER c.name == @name RETURN 1)`,
-        { name }
-      );
-      // Try to create - will be ignored if exists
-      await dbClient.query(
-        `LET exists = LENGTH(FOR c IN _collections FILTER c.name == @name RETURN 1)
-         FILTER exists == 0
-         RETURN null`,
-        { name }
-      );
-    } catch {
-      // Collection might already exist, that's fine
+      // Use the database client's raw connection to create collection
+      await dbClient.query(`RETURN IS_DOCUMENT(DOCUMENT("${name}/___test___"))`);
+    } catch (err: any) {
+      // Collection doesn't exist — try to create it via HTTP
+      try {
+        const { Database } = require('arangojs');
+        const config = require('../config').qaConfig;
+        const db = new Database({
+          url: config.arango.url,
+          databaseName: config.arango.database,
+          auth: { username: config.arango.username, password: config.arango.password },
+        });
+        const coll = db.collection(name);
+        if (!(await coll.exists())) {
+          await coll.create();
+          created++;
+          console.log(`[QA] Created collection: ${name}`);
+        }
+      } catch {
+        // Silently skip — collection might already exist
+      }
     }
   }
 
-  console.log(`[QA] ${DOCUMENT_COLLECTIONS.length} document + ${EDGE_COLLECTIONS.length} edge collections ready`);
+  if (created > 0) {
+    console.log(`[QA] Created ${created} new collections`);
+  }
+  console.log(`[QA] ${ALL_COLLECTIONS.length} document + ${EDGE_COLLECTIONS.length} edge collections ready`);
 }
