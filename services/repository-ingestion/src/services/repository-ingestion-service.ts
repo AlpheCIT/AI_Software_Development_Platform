@@ -10,6 +10,7 @@ import { DependencyExtractor, ExtractedDependency } from '../extractors/dependen
 import { EndpointExtractor } from '../extractors/endpoint-extractor';
 import { FrameworkDetector } from '../analyzers/framework-detector';
 import { DocCoverageAnalyzer } from '../analyzers/doc-coverage-analyzer';
+import { SecretScanner } from '../analyzers/secret-scanner';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
@@ -55,6 +56,7 @@ export class RepositoryIngestionService {
   private endpointExtractor: EndpointExtractor;
   private frameworkDetector: FrameworkDetector;
   private docCoverageAnalyzer: DocCoverageAnalyzer;
+  private secretScanner: SecretScanner;
 
   constructor(
     private db: Database,
@@ -70,6 +72,7 @@ export class RepositoryIngestionService {
     this.endpointExtractor = new EndpointExtractor();
     this.frameworkDetector = new FrameworkDetector();
     this.docCoverageAnalyzer = new DocCoverageAnalyzer();
+    this.secretScanner = new SecretScanner();
   }
 
   async ingestRepository(url: string, branch: string = 'main', options: IngestionOptions = {}): Promise<string> {
@@ -163,6 +166,35 @@ export class RepositoryIngestionService {
 
     await this.db.collection('repositories').save(repository);
     this.updateJobStatus(jobId, 'running', undefined, 15, 'Repository record created');
+
+    // === SECRET SCANNING (runs first -- highest priority) ===
+    this.updateJobStatus(jobId, 'running', undefined, 16, 'Scanning for exposed secrets');
+    let secretsFound = 0;
+    try {
+      const secretResult = await this.secretScanner.scan(directoryPath, repositoryId);
+      secretsFound = secretResult.summary.totalSecretsFound;
+      if (secretResult.secrets.length > 0) {
+        const secretsCollection = this.db.collection('security_findings');
+        try { await secretsCollection.create(); } catch (e) { /* already exists */ }
+        for (const secret of secretResult.secrets) {
+          try {
+            await secretsCollection.save({
+              ...secret,
+              type: 'exposed_secret',
+              category: secret.type,
+              source: 'secret_scanner'
+            });
+          } catch (e) { /* skip duplicates */ }
+        }
+      }
+      if (secretsFound > 0) {
+        logger.warn(`SECRET SCANNER: Found ${secretsFound} exposed secrets in repository (${secretResult.summary.bySeverity.critical} critical)`);
+      } else {
+        logger.info('Secret scan: No exposed secrets found');
+      }
+    } catch (error) {
+      logger.error('Secret scanning failed:', error);
+    }
 
     // Discover files
     const files = await this.discoverFiles(directoryPath, options);
@@ -347,6 +379,7 @@ export class RepositoryIngestionService {
         relationshipsCreated: totalRelationships,
         dependenciesFound: dependencies.length,
         frameworksDetected: detectedFrameworks.length,
+        secretsFound,
       }
     });
 

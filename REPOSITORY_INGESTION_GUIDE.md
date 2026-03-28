@@ -72,12 +72,12 @@ open http://localhost:8002/docs
 1. Open http://localhost:8529 in your browser
 2. Login with:
    - Username: `root`
-   - Password: `openSesame` (or your configured password)
+   - Password: `<your-arango-password>` (or your configured password)
 
 ### **Check Current Collections**
 ```bash
 # List all collections via API
-curl -u root:openSesame http://localhost:8529/_api/collection
+curl -u root:<your-arango-password> http://localhost:8529/_api/collection
 
 # Or check in web interface:
 # Go to Collections tab to see your 79+ collections
@@ -341,7 +341,7 @@ done
 tasklist | findstr node
 
 # Check ArangoDB memory usage
-curl -u root:openSesame http://localhost:8529/_api/engine/stats
+curl -u root:<your-arango-password> http://localhost:8529/_api/engine/stats
 ```
 
 ---
@@ -364,7 +364,7 @@ DEBUG=* npm start
 ### **ArangoDB Connection Issues**
 ```bash
 # Test ArangoDB connection
-curl -u root:openSesame http://localhost:8529/_api/version
+curl -u root:<your-arango-password> http://localhost:8529/_api/version
 
 # Check ArangoDB logs
 # Windows: Check Event Viewer or ArangoDB installation logs

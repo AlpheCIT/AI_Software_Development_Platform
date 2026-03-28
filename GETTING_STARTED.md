@@ -35,7 +35,7 @@ By the end of this guide, you'll have:
    sudo apt-get install arangodb3
    
    # Or use Docker
-   docker run -p 8529:8529 -e ARANGO_ROOT_PASSWORD=openSesame arangodb:3.11
+   docker run -p 8529:8529 -e ARANGO_ROOT_PASSWORD=<your-arango-password> arangodb:3.11
    ```
    
    📥 [Download ArangoDB](https://www.arangodb.com/download/)
@@ -75,7 +75,7 @@ Edit the `.env` file with your settings:
 # Database configuration
 ARANGO_URL=http://localhost:8529
 ARANGODB_USER=root
-ARANGO_PASSWORD=openSesame
+ARANGO_PASSWORD=<your-arango-password>
 
 # API configuration
 PORT=3001
@@ -440,7 +440,7 @@ When you're ready to deploy to production:
 ```bash
 # Set production environment
 export NODE_ENV=production
-export ARANGO_PASSWORD=openSesame
+export ARANGO_PASSWORD=<your-arango-password>
 ```
 
 ### 2. Security Considerations

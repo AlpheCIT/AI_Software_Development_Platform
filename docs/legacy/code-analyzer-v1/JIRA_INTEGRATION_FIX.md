@@ -191,7 +191,7 @@ POST /api/jira/create-ai-analysis-ticket
 # Jira Configuration
 JIRA_SERVER_URL=https://alphavirtusai.atlassian.net
 JIRA_USERNAME=richard@alphavirtusai.com
-JIRA_API_TOKEN=***REMOVED***
+JIRA_API_TOKEN=<your-jira-api-token>
 JIRA_PROJECT_KEY=SCRUM
 ```
 

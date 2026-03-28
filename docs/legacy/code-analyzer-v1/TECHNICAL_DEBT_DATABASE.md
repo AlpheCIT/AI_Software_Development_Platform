@@ -101,7 +101,7 @@ Stores actionable recommendations with tracking status.
 ARANGO_HOST=localhost          # ArangoDB server host
 ARANGO_PORT=8529              # ArangoDB server port  
 ARANGO_USER=root          # Database username
-ARANGO_PASSWORD=openSesame # Database password (required)
+ARANGO_PASSWORD=<your-arango-password> # Database password (required)
 ARANGO_DATABASE=ARANGO_AISDP_DB # Database name
 ```
 

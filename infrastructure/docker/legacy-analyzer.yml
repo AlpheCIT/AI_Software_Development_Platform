@@ -118,7 +118,7 @@ services:
       - ARANGO_HOST=arangodb
       - ARANGO_PORT=8529
       - ARANGO_USER=root
-      - ARANGO_PASSWORD=openSesame
+      - ARANGO_PASSWORD=${ARANGO_PASSWORD:?ARANGO_PASSWORD must be set in .env}
       - ARANGO_DATABASE=ARANGO_AISDP_DB
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODEL=nomic-embed-text:latest  # Added :latest to match what's available

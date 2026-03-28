@@ -157,7 +157,7 @@ Create `.env` files for configuration:
 ARANGO_HOST=localhost
 ARANGO_PORT=8529
 ARANGO_USER=root
-ARANGO_PASSWORD=openSesame
+ARANGO_PASSWORD=<your-arango-password>
 ARANGO_DATABASE=ARANGO_AISDP_DB
 OLLAMA_BASE_URL=http://localhost:11434
 ```

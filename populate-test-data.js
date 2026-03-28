@@ -11,7 +11,7 @@ const db = new Database({
   databaseName: process.env.ARANGO_DATABASE || 'ARANGO_AISDP_DB',
   auth: {
     username: process.env.ARANGO_USERNAME || 'root',
-    password: process.env.ARANGO_PASSWORD || 'openSesame'
+    password: process.env.ARANGO_PASSWORD || ''
   }
 });
 

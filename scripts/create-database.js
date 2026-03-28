@@ -15,7 +15,7 @@ async function createDatabase() {
     // Determine environment and set appropriate defaults
     const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev' || !process.env.NODE_ENV;
     const defaultPort = process.env.ARANGO_PORT || (isDev ? '8530' : '8529');
-    const defaultPassword = process.env.ARANGO_PASSWORD || (isDev ? 'rootpassword' : 'openSesame');
+    const defaultPassword = process.env.ARANGO_PASSWORD || '';
     
     const config = {
       url: process.env.ARANGO_URL || `http://${process.env.ARANGO_HOST || 'localhost'}:${defaultPort}`,

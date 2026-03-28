@@ -46,7 +46,7 @@ net start ArangoDB
 ### 3. **Verify ArangoDB**
 Open: http://localhost:8529
 - Should show ArangoDB web interface
-- Default login: root/openSesame
+- Default login: root/<your-arango-password>
 
 ### 4. **Setup Database**
 ```bash

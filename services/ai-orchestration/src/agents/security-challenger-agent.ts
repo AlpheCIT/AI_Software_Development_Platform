@@ -72,6 +72,26 @@ export class SecurityChallengerAgent extends EnhancedBaseA2AAgent {
       const falsePositives: Finding[] = [];
 
       for (const finding of findingsToVerify) {
+        // Secret scanner findings are pre-verified -- high confidence patterns
+        if (finding.source === 'secret_scanner' || finding.type === 'exposed_secret') {
+          const autoResult: VerificationResult = {
+            findingId: finding.id,
+            verified: true,
+            evidence: 'Detected by dedicated secret scanner with pattern matching',
+            adjustedConfidence: 0.95,
+            mitigationsFound: [],
+            challengerAgent: this.id
+          };
+          verificationResults.push(autoResult);
+          verifiedFindings.push({
+            ...finding,
+            verificationStatus: 'verified',
+            verificationEvidence: autoResult.evidence,
+            confidence: 0.95,
+          });
+          continue;
+        }
+
         const result = this.verifyFinding(finding, sourceFiles);
         verificationResults.push(result);
 

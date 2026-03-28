@@ -49,7 +49,7 @@ class RealDataAPIGateway {
         url: process.env.ARANGO_URL || 'http://localhost:8529',
         databaseName: process.env.ARANGO_DATABASE || 'ARANGO_AISDP_DB',
         username: process.env.ARANGO_USERNAME || 'root',
-        password: process.env.ARANGO_PASSWORD || 'openSesame'
+        password: process.env.ARANGO_PASSWORD || ''
       });
       
       if (!this.dbManager.isConnected) {

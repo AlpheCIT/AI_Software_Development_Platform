@@ -144,7 +144,7 @@ Option 1 - Download and install:
   https://www.arangodb.com/download/
 
 Option 2 - Use Docker:
-  docker run -d -p 8529:8529 -e ARANGO_ROOT_PASSWORD=openSesame arangodb:3.11
+  docker run -d -p 8529:8529 -e ARANGO_ROOT_PASSWORD=<your-arango-password> arangodb:3.11
 
 Option 3 - Windows service:
   net start ArangoDB
@@ -199,7 +199,7 @@ Then visit http://localhost:8529 to verify it's running.
     } catch (error) {
       throw new Error(`Database setup failed. Please check:
 1. ArangoDB is running on http://localhost:8529
-2. Default credentials are working (root/openSesame)
+2. Default credentials are working (root/<your-arango-password>)
 3. No firewall is blocking the connection`);
     }
   }

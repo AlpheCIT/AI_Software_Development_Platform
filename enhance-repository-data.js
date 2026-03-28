@@ -10,7 +10,7 @@ const { Database } = require('arangojs');
 const db = new Database({
   url: 'http://localhost:8529',
   databaseName: 'ai_code_management',
-  auth: { username: 'root', password: 'openSesame' }
+  auth: { username: 'root', password: process.env.ARANGO_PASSWORD || '' }
 });
 
 // Security vulnerability types and descriptions

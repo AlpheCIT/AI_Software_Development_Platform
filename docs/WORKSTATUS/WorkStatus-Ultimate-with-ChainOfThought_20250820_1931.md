@@ -268,7 +268,7 @@ node unified-ai-intelligence-platform-complete.js
 ARANGO_URL=http://192.168.1.82:8529
 ARANGO_DATABASE=ARANGO_AISDP_DB
 ARANGO_USER=root
-ARANGO_PASSWORD=openSesame
+ARANGO_PASSWORD=<your-arango-password>
 
 # Optional AWS Bedrock (will use local fallback if not configured):
 AWS_ACCESS_KEY_ID=your_aws_access_key
