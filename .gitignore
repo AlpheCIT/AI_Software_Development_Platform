@@ -158,3 +158,8 @@ venv.bak/
 .vscode/launch.json
 .vscode/extensions.json
 .vscode/tasks.json
+
+# QA Engine repo cache
+.qa-repo-cache/
+services/qa-engine/.qa-repo-cache/
+services/qa-engine/.env

@@ -117,7 +117,8 @@ export async function productManagerNode(
   repoUrl: string,
   runId: string,
   dbClient?: any,
-  eventPublisher?: any
+  eventPublisher?: any,
+  codeQualityReport?: any
 ): Promise<ProductRoadmap> {
   console.log(`[ProductManager] Analyzing ${repoUrl} for product opportunities`);
 
@@ -179,6 +180,20 @@ Total files: ${codeFiles.length}
 Total code entities: ${codeEntities.length}
 Tech stack: ${techStack}
 Has auth: ${hasAuth} | Has API: ${hasAPI} | Has DB: ${hasDB} | Has UI: ${hasUI} | Has Tests: ${hasTests}
+
+## CODE HEALTH ASSESSMENT (from Code Quality Architect)
+${codeQualityReport ? `
+Grade: ${codeQualityReport.overallHealth?.grade || 'N/A'} (${codeQualityReport.overallHealth?.score || 0}/100)
+Tech Debt: ${codeQualityReport.overallHealth?.techDebtHours || 'Unknown'} hours estimated
+Code Smells: ${codeQualityReport.codeSmells?.length || 0} found (${(codeQualityReport.codeSmells || []).filter((s: any) => s.severity === 'critical').length} critical)
+Architecture Issues: ${codeQualityReport.architectureIssues?.length || 0}
+Duplication Hotspots: ${codeQualityReport.duplicationHotspots?.length || 0}
+Dead Code: ${codeQualityReport.deadCode?.length || 0} items
+Documentation Coverage: ${codeQualityReport.documentationCoverage?.coveragePercent || 0}%
+Quick Wins Available: ${codeQualityReport.refactoringRoadmap?.quickWins?.length || 0}
+
+IMPORTANT: Factor this health assessment into your roadmap. A Grade ${codeQualityReport.overallHealth?.grade || '?'} codebase needs stabilization before aggressive feature development.
+` : 'Code quality data not available — recommend running Code Quality Architect first.'}
 
 ## Directory Structure
 ${directoryStructure}

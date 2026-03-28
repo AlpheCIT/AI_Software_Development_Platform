@@ -315,9 +315,13 @@ export async function repoIngesterNode(
   }
 
   // -----------------------------------------------------------------------
-  // 2. Clone the repo to a temp directory
+  // 2. Clone or fetch the repo (persistent cache to avoid re-cloning)
   // -----------------------------------------------------------------------
-  const tmpDir = path.join(os.tmpdir(), `qa-ingest-${state.runId}`);
+  // Use persistent cache dir so subsequent runs of the same repo just do `git fetch`
+  const cacheBaseDir = path.join(process.cwd(), '.qa-repo-cache');
+  const repoHash = repositoryId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cachedDir = path.join(cacheBaseDir, repoHash);
+  const tmpDir = cachedDir; // Use cache dir instead of temp
 
   try {
     eventPublisher?.emit('qa:agent.progress', {
@@ -327,7 +331,26 @@ export async function repoIngesterNode(
       message: 'Cloning repository...',
     });
 
-    cloneRepo(repoUrl, branch, tmpDir, credentials?.token);
+    // Check if we already have a cached clone of this repo
+    const isGitRepo = fs.existsSync(path.join(cachedDir, '.git'));
+    if (isGitRepo) {
+      // Fetch latest changes instead of re-cloning
+      console.log(`[RepoIngester] Cache hit! Fetching latest for ${repoUrl}...`);
+      try {
+        execSync(`git fetch origin ${branch} --depth 1`, { cwd: cachedDir, stdio: 'pipe', timeout: 60_000 });
+        execSync(`git checkout FETCH_HEAD`, { cwd: cachedDir, stdio: 'pipe', timeout: 30_000 });
+        console.log(`[RepoIngester] Updated cached repo (fetch instead of clone)`);
+      } catch (fetchErr: any) {
+        console.warn(`[RepoIngester] Fetch failed, re-cloning: ${fetchErr.message}`);
+        fs.rmSync(cachedDir, { recursive: true, force: true });
+        if (!fs.existsSync(cacheBaseDir)) fs.mkdirSync(cacheBaseDir, { recursive: true });
+        cloneRepo(repoUrl, branch, cachedDir, credentials?.token);
+      }
+    } else {
+      // First time — full clone
+      if (!fs.existsSync(cacheBaseDir)) fs.mkdirSync(cacheBaseDir, { recursive: true });
+      cloneRepo(repoUrl, branch, cachedDir, credentials?.token);
+    }
 
     // -------------------------------------------------------------------
     // 2b. Capture git commit info from the cloned repo
@@ -438,14 +461,7 @@ export async function repoIngesterNode(
       errors: [...state.errors, `Repo ingestion failed: ${err.message}`],
     };
   } finally {
-    // -------------------------------------------------------------------
-    // 5. Cleanup temp directory
-    // -------------------------------------------------------------------
-    try {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      console.log(`[RepoIngester] Cleaned up temp dir: ${tmpDir}`);
-    } catch {
-      console.warn(`[RepoIngester] Could not clean up temp dir: ${tmpDir}`);
-    }
+    // Repo cache is kept for subsequent runs (no cleanup)
+    console.log(`[RepoIngester] Repo cached at: ${cachedDir} (will be reused on next run)`);
   }
 }
