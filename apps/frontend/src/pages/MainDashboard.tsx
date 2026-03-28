@@ -185,83 +185,99 @@ const MainDashboard: React.FC = () => {
                   </Text>
                 </Box>
               ) : (analytics as any)?._source === 'qa-engine' ? (
-                /* QA Engine data — show with honest labels */
-                <Grid templateColumns="repeat(auto-fit, minmax(300px, 1fr))" gap={6}>
-                  <Box key="qa-runs" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
-                    <Text fontSize="lg" fontWeight="bold" mb={4}>QA Test Results</Text>
-                    <VStack align="stretch" spacing={3}>
-                      <HStack justify="space-between">
-                        <Text>Tests Generated:</Text>
-                        <Badge colorScheme="blue">
-                          {(analytics as any)?._qaDetails?.totalTests || 0}
-                        </Badge>
-                      </HStack>
-                      <HStack justify="space-between">
-                        <Text>Tests Passed:</Text>
-                        <Badge colorScheme="green">
-                          {(analytics as any)?._qaDetails?.totalPassed || 0}
-                        </Badge>
-                      </HStack>
-                      <HStack justify="space-between">
-                        <Text>Tests Failed:</Text>
-                        <Badge colorScheme={((analytics as any)?._qaDetails?.totalFailed || 0) > 0 ? 'red' : 'green'} variant={((analytics as any)?._qaDetails?.totalFailed || 0) > 0 ? 'solid' : 'subtle'}>
-                          {(analytics as any)?._qaDetails?.totalFailed || 0}
-                        </Badge>
-                      </HStack>
-                    </VStack>
-                  </Box>
+                /* QA Engine data — rich analytics from all runs */
+                <VStack spacing={6} align="stretch">
+                  {/* Summary Cards */}
+                  <Grid templateColumns="repeat(auto-fit, minmax(180px, 1fr))" gap={4}>
+                    <Box bg={cardBg} p={4} borderRadius="lg" border="1px solid" borderColor={borderColor} textAlign="center">
+                      <Text fontSize="3xl" fontWeight="bold" color="blue.500">{(analytics as any)?._qaDetails?.totalTests || 0}</Text>
+                      <Text fontSize="xs" color="gray.500">Tests Generated</Text>
+                    </Box>
+                    <Box bg={cardBg} p={4} borderRadius="lg" border="1px solid" borderColor={borderColor} textAlign="center">
+                      <Text fontSize="3xl" fontWeight="bold" color="green.500">{(analytics as any)?._qaDetails?.totalPassed || 0}</Text>
+                      <Text fontSize="xs" color="gray.500">Tests Passed</Text>
+                    </Box>
+                    <Box bg={cardBg} p={4} borderRadius="lg" border="1px solid" borderColor={borderColor} textAlign="center">
+                      <Text fontSize="3xl" fontWeight="bold" color={(analytics as any)?._qaDetails?.avgMutationScore >= 80 ? 'green.500' : 'orange.500'}>{(analytics as any)?._qaDetails?.avgMutationScore || 0}%</Text>
+                      <Text fontSize="xs" color="gray.500">Avg Mutation Score</Text>
+                    </Box>
+                    <Box bg={cardBg} p={4} borderRadius="lg" border="1px solid" borderColor={borderColor} textAlign="center">
+                      <Text fontSize="3xl" fontWeight="bold" color="teal.500">{(analytics as any)?._qaDetails?.completedRuns || 0}</Text>
+                      <Text fontSize="xs" color="gray.500">Completed Runs</Text>
+                    </Box>
+                    <Box bg={cardBg} p={4} borderRadius="lg" border="1px solid" borderColor={borderColor} textAlign="center">
+                      <Text fontSize="3xl" fontWeight="bold" color="purple.500">{(analytics as any)?._qaDetails?.totalIterations || 0}</Text>
+                      <Text fontSize="xs" color="gray.500">Total Iterations</Text>
+                    </Box>
+                    <Box bg={cardBg} p={4} borderRadius="lg" border="1px solid" borderColor={borderColor} textAlign="center">
+                      <Text fontSize="sm" fontWeight="bold" color="blue.600">{(analytics as any)?._qaDetails?.repoName || 'Unknown'}</Text>
+                      <Text fontSize="xs" color="gray.500">{(analytics as any)?._qaDetails?.branch || '—'} branch</Text>
+                    </Box>
+                  </Grid>
 
-                  <Box key="mutation" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
-                    <Text fontSize="lg" fontWeight="bold" mb={4}>Mutation Analysis</Text>
-                    <VStack align="stretch" spacing={3}>
-                      <HStack justify="space-between">
-                        <Text>Avg Mutation Score:</Text>
-                        <Badge colorScheme={(analytics as any)?._qaDetails?.avgMutationScore >= 80 ? 'green' : 'orange'}>
-                          {(analytics as any)?._qaDetails?.avgMutationScore || 0}%
-                        </Badge>
+                  {/* Mutation Score Trend */}
+                  {(analytics as any)?._qaDetails?.runs?.length > 1 && (
+                    <Box bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
+                      <Text fontSize="lg" fontWeight="bold" mb={4}>Mutation Score Trend</Text>
+                      <HStack spacing={2} align="flex-end" h="120px">
+                        {((analytics as any)?._qaDetails?.runs || []).map((run: any, i: number) => {
+                          const score = run.mutationScore || 0;
+                          const color = score >= 80 ? 'green' : score >= 60 ? 'yellow' : 'red';
+                          return (
+                            <Tooltip key={i} label={`Run ${i + 1}: ${score}% (${run.tests} tests, ${new Date(run.date).toLocaleDateString()})`}>
+                              <Box
+                                flex={1}
+                                bg={`${color}.400`}
+                                h={`${Math.max(score, 5)}%`}
+                                borderRadius="sm"
+                                minH="4px"
+                                transition="all 0.3s"
+                                _hover={{ opacity: 0.8 }}
+                              />
+                            </Tooltip>
+                          );
+                        })}
                       </HStack>
-                      <HStack justify="space-between">
-                        <Text>Pass Rate:</Text>
-                        <Badge colorScheme="purple">
-                          {analytics?.performance?.testCoverage || 0}%
-                        </Badge>
+                      <HStack justify="space-between" mt={2}>
+                        <Text fontSize="2xs" color="gray.400">Run 1</Text>
+                        <Text fontSize="2xs" color="gray.400">Run {(analytics as any)?._qaDetails?.runs?.length}</Text>
                       </HStack>
-                      <HStack justify="space-between">
-                        <Text>Total Iterations:</Text>
-                        <Badge colorScheme="blue">
-                          {(analytics as any)?._qaDetails?.totalIterations || 0}
-                        </Badge>
-                      </HStack>
-                    </VStack>
-                  </Box>
+                    </Box>
+                  )}
 
-                  <Box key="runs" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
-                    <Text fontSize="lg" fontWeight="bold" mb={4}>Run History</Text>
-                    <VStack align="stretch" spacing={3}>
-                      <HStack justify="space-between">
-                        <Text>Completed Runs:</Text>
-                        <Badge colorScheme="teal">
-                          {(analytics as any)?._qaDetails?.completedRuns || 0}
-                        </Badge>
-                      </HStack>
-                      <HStack justify="space-between">
-                        <Text>Repository:</Text>
-                        <Badge colorScheme="blue" variant="outline">
-                          {(analytics as any)?._qaDetails?.repoName || 'Unknown'} ({(analytics as any)?._qaDetails?.branch || '—'})
-                        </Badge>
-                      </HStack>
-                      <HStack justify="space-between">
-                        <Text>Last Analyzed:</Text>
-                        <Text fontSize="sm" color="gray.500">
-                          {analytics?.repository?.lastAnalyzed ?
-                            new Date(analytics.repository.lastAnalyzed).toLocaleDateString() :
-                            'Never'
-                          }
-                        </Text>
-                      </HStack>
-                    </VStack>
+                  {/* Per-Run Breakdown Table */}
+                  <Box bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
+                    <Text fontSize="lg" fontWeight="bold" mb={4}>Run-by-Run Breakdown</Text>
+                    <Box overflowX="auto">
+                      <Box as="table" w="full" fontSize="sm">
+                        <Box as="thead">
+                          <Box as="tr" borderBottom="2px solid" borderColor={borderColor}>
+                            <Box as="th" p={2} textAlign="left">Run</Box>
+                            <Box as="th" p={2} textAlign="left">Date</Box>
+                            <Box as="th" p={2} textAlign="right">Tests</Box>
+                            <Box as="th" p={2} textAlign="right">Passed</Box>
+                            <Box as="th" p={2} textAlign="right">Mutation</Box>
+                            <Box as="th" p={2} textAlign="right">Iterations</Box>
+                            <Box as="th" p={2} textAlign="right">Duration</Box>
+                          </Box>
+                        </Box>
+                        <Box as="tbody">
+                          {((analytics as any)?._qaDetails?.runs || []).map((run: any, i: number) => (
+                            <Box as="tr" key={i} borderBottom="1px solid" borderColor={borderColor} _hover={{ bg: bgColor }}>
+                              <Box as="td" p={2} fontFamily="mono" fontSize="xs">{run.id?.substring(0, 8)}</Box>
+                              <Box as="td" p={2}>{new Date(run.date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</Box>
+                              <Box as="td" p={2} textAlign="right"><Badge colorScheme="blue">{run.tests}</Badge></Box>
+                              <Box as="td" p={2} textAlign="right"><Badge colorScheme="green">{run.passed}</Badge></Box>
+                              <Box as="td" p={2} textAlign="right"><Badge colorScheme={run.mutationScore >= 80 ? 'green' : run.mutationScore >= 60 ? 'yellow' : 'red'}>{run.mutationScore}%</Badge></Box>
+                              <Box as="td" p={2} textAlign="right">{run.iterations}</Box>
+                              <Box as="td" p={2} textAlign="right" fontSize="xs" color="gray.500">{run.duration > 60 ? `${Math.floor(run.duration / 60)}m ${run.duration % 60}s` : `${run.duration}s`}</Box>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
+                    </Box>
                   </Box>
-                </Grid>
+                </VStack>
               ) : (
                 /* Real MCP analytics data — original labels */
                 <Grid templateColumns="repeat(auto-fit, minmax(300px, 1fr))" gap={6}>
