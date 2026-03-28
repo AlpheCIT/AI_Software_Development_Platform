@@ -32,7 +32,18 @@
       "Bash(grep -r \"TODO\\\\|FIXME\\\\|XXX\\\\|BUG:\" /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai/apps/frontend/src --include=*.tsx --include=*.ts)",
       "Bash(python3 -c \":*)",
       "Bash(curl -s http://localhost:3005/qa/wiki/d0714b0e-975c-4bfd-848c-806488b5568e)",
-      "Bash(curl -s -X POST http://localhost:3005/qa/run -H \"Content-Type: application/json\" -d '{\"\"repoUrl\"\":\"\"https://github.com/AlpheCIT/MES\"\",\"\"branch\"\":\"\"dev\"\",\"\"config\"\":{\"\"maxTests\"\":10,\"\"testTypes\"\":[\"\"unit\"\",\"\"api\"\"]}}')"
+      "Bash(curl -s -X POST http://localhost:3005/qa/run -H \"Content-Type: application/json\" -d '{\"\"repoUrl\"\":\"\"https://github.com/AlpheCIT/MES\"\",\"\"branch\"\":\"\"dev\"\",\"\"config\"\":{\"\"maxTests\"\":10,\"\"testTypes\"\":[\"\"unit\"\",\"\"api\"\"]}}')",
+      "Bash(curl -s \"http://localhost:3005/qa/runs/08b3583a-38ff-4ec1-a620-a58083f094c5\")",
+      "Bash(curl -s http://localhost:3005/qa/conversations/08b3583a-38ff-4ec1-a620-a58083f094c5)",
+      "Bash(curl -s http://localhost:3005/qa/runs/08b3583a-38ff-4ec1-a620-a58083f094c5)",
+      "Bash(curl -s http://localhost:3005/qa/results/08b3583a-38ff-4ec1-a620-a58083f094c5)",
+      "Bash(curl -s http://localhost:3005/qa/product/08b3583a-38ff-4ec1-a620-a58083f094c5)",
+      "Bash(curl -s http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection/qa_agent_conversations -u root:openSesame)",
+      "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_agent_conversations\"\"}')",
+      "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_chat_conversations\"\"}')",
+      "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_self_healing_reports\"\"}')",
+      "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_api_validation_reports\"\"}')",
+      "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_coverage_audit_reports\"\"}')"
     ]
   }
 }
