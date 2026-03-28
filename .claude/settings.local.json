@@ -43,7 +43,10 @@
       "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_chat_conversations\"\"}')",
       "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_self_healing_reports\"\"}')",
       "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_api_validation_reports\"\"}')",
-      "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_coverage_audit_reports\"\"}')"
+      "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_coverage_audit_reports\"\"}')",
+      "Bash(curl -s http://localhost:3005/qa/runs/0f669b02-2019-4a02-83f6-249de0e1dafb)",
+      "Bash(curl -s http://localhost:3005/qa/conversations/0f669b02-2019-4a02-83f6-249de0e1dafb)",
+      "Bash(curl -s http://localhost:3005/qa/results/0f669b02-2019-4a02-83f6-249de0e1dafb)"
     ]
   }
 }
