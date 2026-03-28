@@ -1,0 +1,76 @@
+{
+  "name": "Synthetic Express App",
+  "description": "Minimal Express app with intentional security and performance issues for testing",
+  "repository": "synthetic-express-test",
+  "groundTruth": {
+    "realIssues": [
+      {
+        "id": "SYN-001",
+        "type": "security",
+        "severity": "high",
+        "title": "SQL injection in user query",
+        "file": "src/routes/users.js",
+        "line": 15,
+        "description": "User input directly concatenated into SQL query string"
+      },
+      {
+        "id": "SYN-002",
+        "type": "security",
+        "severity": "medium",
+        "title": "Hardcoded database password",
+        "file": "src/config/db.js",
+        "line": 5,
+        "description": "Database password hardcoded as string literal"
+      },
+      {
+        "id": "SYN-003",
+        "type": "performance",
+        "severity": "medium",
+        "title": "N+1 query in user list",
+        "file": "src/routes/users.js",
+        "line": 30,
+        "description": "Database query called inside forEach loop"
+      },
+      {
+        "id": "SYN-004",
+        "type": "quality",
+        "severity": "low",
+        "title": "No error handling on database connection",
+        "file": "src/config/db.js",
+        "line": 10,
+        "description": "Database connect call without try/catch"
+      }
+    ],
+    "confirmedFalsePositives": [
+      {
+        "id": "SFP-001",
+        "claimedIssue": "Missing rate limiting",
+        "reality": "Global rate limiter applied in app.js"
+      },
+      {
+        "id": "SFP-002",
+        "claimedIssue": "XSS vulnerability in template",
+        "reality": "Using EJS auto-escaping by default"
+      },
+      {
+        "id": "SFP-003",
+        "claimedIssue": "Missing CORS configuration",
+        "reality": "CORS middleware configured in app.js"
+      }
+    ],
+    "expectedScores": {
+      "oldSystem": {
+        "precision": 0.20,
+        "recall": 0.75,
+        "falsePositiveRate": 0.75,
+        "f1": 0.32
+      },
+      "targetWithDebate": {
+        "precision": 0.85,
+        "recall": 0.80,
+        "falsePositiveRate": 0.08,
+        "f1": 0.82
+      }
+    }
+  }
+}

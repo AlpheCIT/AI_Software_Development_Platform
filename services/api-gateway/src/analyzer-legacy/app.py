@@ -400,10 +400,10 @@ def get_arango_client():
                 logger.info(f"Created edge collection: {collection_name}")
 
         # Create graph if it doesn't exist
-        if not db.has_graph('code_graph'):
+        if not db.has_graph('knowledge_graph'):
             try:
                 db.create_graph(
-                    'code_graph',
+                    'knowledge_graph',
                     edge_definitions=[
                         {
                             'edge_collection': 'relationships',
@@ -412,9 +412,9 @@ def get_arango_client():
                         }
                     ]
                 )
-                logger.info("Created code_graph for AST analysis")
+                logger.info("Created knowledge_graph for AST analysis")
             except Exception as e:
-                logger.warning(f"Failed to create code_graph: {e}")
+                logger.warning(f"Failed to create knowledge_graph: {e}")
 
         return db
     except Exception as e:

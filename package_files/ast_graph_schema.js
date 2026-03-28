@@ -130,7 +130,7 @@ const indexes = [
 // Graph definition for code analysis
 const graphs = [
   {
-    name: 'code_graph',
+    name: 'knowledge_graph',
     edge_definitions: [
       {
         collection: 'relationships',

@@ -226,7 +226,7 @@ docker-compose -f docker-compose-modern.yml up -d --scale fastapi-backend=2
 ARANGO_URL=http://arangodb:8529
 ARANGO_DATABASE=code_analyzer
 ARANGO_USER=root
-ARANGO_PASSWORD=openSesame
+ARANGO_PASSWORD=<your-arango-password>
 
 # AI Services
 OLLAMA_URL=http://ollama:11434

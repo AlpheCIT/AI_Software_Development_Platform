@@ -10,6 +10,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { Database } from 'arangojs';
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
+import { impactAnalysisQuery, hubDetectionQuery, cycleDetectionQuery, riskPropagationQuery, orphanDetectionQuery, criticalPathQuery } from './graph-intelligence-queries.js';
 
 // Load environment variables
 dotenv.config();
@@ -19,10 +20,14 @@ const config = {
   ARANGO_URL: process.env.ARANGO_URL || 'http://192.168.1.82:8529',
   ARANGO_DB: process.env.ARANGO_DB || 'ARANGO_AISDP_DB', 
   ARANGO_USERNAME: process.env.ARANGO_USERNAME || 'root',
-  ARANGO_PASSWORD: process.env.ARANGO_PASSWORD || 'openSesame',
+  ARANGO_PASSWORD: process.env.ARANGO_PASSWORD || '',
   DEFAULT_LIMIT: 100,
   MAX_DOCUMENT_PREVIEW: 50
 };
+
+if (!config.ARANGO_PASSWORD) {
+  console.warn('WARNING: ARANGO_PASSWORD not set in environment. Set it in .env file.');
+}
 
 // Global database connection
 let db: Database;
@@ -1433,8 +1438,168 @@ mcpServer.registerTool('analyze_query_performance', {
   }
 });
 
-// Update success message to reflect the complete 24+ toolset
-const COMPREHENSIVE_TOOLS_COUNT = 24;
+// Tool: Analyze Impact (Blast Radius)
+mcpServer.registerTool('analyze_impact', {
+  description: 'Analyze the impact (blast radius) of a code entity by finding all transitive dependents via graph traversal',
+  inputSchema: {
+    nodeId: z.string().describe('The key of the node to analyze'),
+    collection: z.string().default('code_entities').describe('Collection the node belongs to'),
+    maxDepth: z.number().int().min(1).max(10).default(3).describe('Maximum traversal depth')
+  }
+}, async ({ nodeId, collection, maxDepth }) => {
+  try {
+    const { query, bindVars } = impactAnalysisQuery(nodeId, collection, maxDepth);
+    const cursor = await db.query(query, bindVars);
+    const results = await cursor.all();
+
+    return {
+      content: [{
+        type: 'text',
+        text: `**Impact Analysis (Blast Radius)**\n\nNode: ${nodeId} (${collection})\nMax Depth: ${maxDepth}\nAffected Entities: ${results.length}\n\n${results.length > 0 ? results.map((r: any) => `- **${r.name}** (${r.type}) — distance ${r.distance}, edge: ${r.edgeType}`).join('\n') : 'No dependents found.'}\n\n${JSON.stringify(results, null, 2)}`
+      }]
+    };
+  } catch (error) {
+    return {
+      content: [{ type: 'text', text: `Impact analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}` }]
+    };
+  }
+});
+
+// Tool: Detect Cycles
+mcpServer.registerTool('detect_cycles', {
+  description: 'Detect circular dependencies (cycles) in the code graph',
+  inputSchema: {
+    maxCycleLength: z.number().int().min(2).max(10).default(5).describe('Maximum cycle length to search for'),
+    limit: z.number().int().min(1).max(100).default(20).describe('Maximum number of cycles to return')
+  }
+}, async ({ maxCycleLength, limit }) => {
+  try {
+    const { query, bindVars } = cycleDetectionQuery(maxCycleLength, limit);
+    const cursor = await db.query(query, bindVars);
+    const results = await cursor.all();
+
+    return {
+      content: [{
+        type: 'text',
+        text: `**Cycle Detection**\n\nMax Cycle Length: ${maxCycleLength}\nCycles Found: ${results.length}\n\n${results.length > 0 ? results.map((r: any, i: number) => `**Cycle ${i + 1}** (length ${r.length}): ${(r.cycleNames || r.cycleNodes).join(' -> ')}`).join('\n') : 'No circular dependencies detected.'}\n\n${JSON.stringify(results, null, 2)}`
+      }]
+    };
+  } catch (error) {
+    return {
+      content: [{ type: 'text', text: `Cycle detection failed: ${error instanceof Error ? error.message : 'Unknown error'}` }]
+    };
+  }
+});
+
+// Tool: Find Hub Nodes
+mcpServer.registerTool('find_hub_nodes', {
+  description: 'Find the most highly-connected hub nodes in the code graph (centrality analysis)',
+  inputSchema: {
+    topN: z.number().int().min(1).max(100).default(20).describe('Number of top hub nodes to return')
+  }
+}, async ({ topN }) => {
+  try {
+    const { query, bindVars } = hubDetectionQuery(topN);
+    const cursor = await db.query(query, bindVars);
+    const results = await cursor.all();
+
+    return {
+      content: [{
+        type: 'text',
+        text: `**Hub Node Detection (Centrality)**\n\nTop ${topN} most-connected nodes:\nResults: ${results.length}\n\n${results.length > 0 ? results.map((r: any, i: number) => `${i + 1}. **${r.name}** (${r.type}) — ${r.totalConnections} connections (in: ${r.inDegree}, out: ${r.outDegree})${r.isHub ? ' [HUB]' : ''}`).join('\n') : 'No connected nodes found.'}\n\n${JSON.stringify(results, null, 2)}`
+      }]
+    };
+  } catch (error) {
+    return {
+      content: [{ type: 'text', text: `Hub detection failed: ${error instanceof Error ? error.message : 'Unknown error'}` }]
+    };
+  }
+});
+
+// Tool: Propagate Risk
+mcpServer.registerTool('propagate_risk', {
+  description: 'Propagate security risk through the dependency graph to find blast radius of critical/high findings',
+  inputSchema: {
+    repositoryId: z.string().describe('Repository ID to analyze security findings for'),
+    maxDepth: z.number().int().min(1).max(5).default(3).describe('Maximum propagation depth')
+  }
+}, async ({ repositoryId, maxDepth }) => {
+  try {
+    const { query, bindVars } = riskPropagationQuery(repositoryId, maxDepth);
+    const cursor = await db.query(query, bindVars);
+    const results = await cursor.all();
+
+    const totalAffected = results.reduce((sum: number, r: any) => sum + r.blastRadius, 0);
+
+    return {
+      content: [{
+        type: 'text',
+        text: `**Risk Propagation Analysis**\n\nRepository: ${repositoryId}\nMax Depth: ${maxDepth}\nCritical/High Findings: ${results.length}\nTotal Affected Entities: ${totalAffected}\n\n${results.length > 0 ? results.map((r: any) => `- **${r.title}** [${r.severity}] — blast radius: ${r.blastRadius} entities`).join('\n') : 'No critical/high security findings found.'}\n\n${JSON.stringify(results, null, 2)}`
+      }]
+    };
+  } catch (error) {
+    return {
+      content: [{ type: 'text', text: `Risk propagation failed: ${error instanceof Error ? error.message : 'Unknown error'}` }]
+    };
+  }
+});
+
+// Tool: Find Orphan Code
+mcpServer.registerTool('find_orphan_code', {
+  description: 'Find orphaned code entities with no inbound dependencies (potential dead code)',
+  inputSchema: {
+    repositoryId: z.string().describe('Repository ID to scan for orphan code'),
+    limit: z.number().int().min(1).max(200).default(50).describe('Maximum orphans to return')
+  }
+}, async ({ repositoryId, limit }) => {
+  try {
+    const { query, bindVars } = orphanDetectionQuery(repositoryId, limit);
+    const cursor = await db.query(query, bindVars);
+    const results = await cursor.all();
+
+    return {
+      content: [{
+        type: 'text',
+        text: `**Orphan Code Detection**\n\nRepository: ${repositoryId}\nOrphans Found: ${results.length}\n\n${results.length > 0 ? results.map((r: any) => `- **${r.name}** (${r.type}) in ${r.filePath || 'unknown path'}`).join('\n') : 'No orphaned code entities found.'}\n\n${JSON.stringify(results, null, 2)}`
+      }]
+    };
+  } catch (error) {
+    return {
+      content: [{ type: 'text', text: `Orphan detection failed: ${error instanceof Error ? error.message : 'Unknown error'}` }]
+    };
+  }
+});
+
+// Tool: Find Critical Paths
+mcpServer.registerTool('find_critical_paths', {
+  description: 'Find the shortest path between two nodes in the code graph',
+  inputSchema: {
+    fromCollection: z.string().describe('Source node collection (e.g. code_entities)'),
+    fromKey: z.string().describe('Source node key'),
+    toCollection: z.string().describe('Target node collection (e.g. code_entities)'),
+    toKey: z.string().describe('Target node key')
+  }
+}, async ({ fromCollection, fromKey, toCollection, toKey }) => {
+  try {
+    const { query, bindVars } = criticalPathQuery(fromCollection, fromKey, toCollection, toKey);
+    const cursor = await db.query(query, bindVars);
+    const results = await cursor.all();
+
+    return {
+      content: [{
+        type: 'text',
+        text: `**Critical Path Analysis**\n\nFrom: ${fromCollection}/${fromKey}\nTo: ${toCollection}/${toKey}\nPaths Found: ${results.length}\n\n${results.length > 0 ? results.map((r: any) => `Path (length ${r.length}): ${(r.vertexNames || r.vertices).join(' -> ')}\nEdge types: ${(r.edges || []).join(', ')}`).join('\n\n') : 'No path found between the specified nodes.'}\n\n${JSON.stringify(results, null, 2)}`
+      }]
+    };
+  } catch (error) {
+    return {
+      content: [{ type: 'text', text: `Critical path analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}` }]
+    };
+  }
+});
+
+// Update success message to reflect the complete 30 toolset
+const COMPREHENSIVE_TOOLS_COUNT = 30;
 
 // Main startup function
 async function main(): Promise<void> {
@@ -1455,13 +1620,14 @@ async function main(): Promise<void> {
     if (process.env.NODE_ENV !== 'production') {
       console.error('Modern MCP Server started successfully');
       console.error(`Database: ${config.ARANGO_DB} on ${config.ARANGO_URL}`);
-      console.error('Tools registered: 24+ comprehensive enterprise tools');
+      console.error('Tools registered: 30 comprehensive enterprise tools (incl. graph intelligence)');
       console.error('AI Platform Integration: GraphCanvas, Inspector, Analytics, Search');
       console.error('Claude Desktop: Full database exploration and management suite');
       console.error('Advanced Search: Semantic similarity and vector-based search');
       console.error('Database Management: Create, drop, bulk operations, export utilities');
       console.error('System Tools: Performance analysis, cache management, health monitoring');
-      console.error('Enterprise Ready: 24+ professional tools for production use');
+      console.error('Graph Intelligence: Impact analysis, cycle detection, hub detection, risk propagation');
+      console.error('Enterprise Ready: 30 professional tools for production use');
     }
     
   } catch (error) {

@@ -10,7 +10,7 @@
       console.log(''); set appropriate defaults
       const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev' || !process.env.NODE_ENV;
       const defaultPort = isDev ? process.env.ARANGO_PORT || '8530' : process.env.ARANGO_PORT || '8529';
-      const defaultPassword = isDev ? process.env.ARANGO_PASSWORD || 'rootpassword' : process.env.ARANGO_PASSWORD || 'openSesame';
+      const defaultPassword = process.env.ARANGO_PASSWORD || '';
       
       // Use provided options or environment-based defaults
       const port = options.port || defaultPort;
@@ -222,7 +222,7 @@ program
       // Determine environment and set appropriate defaults
       const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev' || !process.env.NODE_ENV;
       const defaultPort = isDev ? process.env.ARANGO_PORT || '8530' : process.env.ARANGO_PORT || '8529';
-      const defaultPassword = isDev ? process.env.ARANGO_PASSWORD || process.env.ARANGO_PASSWORD || 'rootpassword' : process.env.ARANGO_PASSWORD || process.env.ARANGO_PASSWORD || 'openSesame';
+      const defaultPassword = process.env.ARANGO_PASSWORD || '';
       
       // Use provided options or environment-based defaults
       const port = options.port || defaultPort;

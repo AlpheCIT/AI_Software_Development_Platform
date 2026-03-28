@@ -14,6 +14,22 @@ import {
 import { AgentCoordinationHub } from './orchestrator/agent-coordination-hub.js';
 import { EnhancedSecurityExpertAgent } from './agents/enhanced-security-agent.js';
 import { EnhancedPerformanceExpertAgent } from './agents/enhanced-performance-agent.js';
+import { DocumentationQualityAgent } from './agents/documentation-quality-agent.js';
+import { DependencyAnalysisAgent } from './agents/dependency-analysis-agent.js';
+import { DependencyIntelligenceAgent } from './agents/dependency-intelligence-agent.js';
+import { SecurityChallengerAgent } from './agents/security-challenger-agent.js';
+import { SecuritySynthesizerAgent } from './agents/security-synthesizer-agent.js';
+import { PerformanceChallengerAgent } from './agents/performance-challenger-agent.js';
+import { PerformanceSynthesizerAgent } from './agents/performance-synthesizer-agent.js';
+import { DocumentationDrafterAgent } from './agents/documentation-drafter-agent.js';
+import { DocumentationChallengerAgent } from './agents/documentation-challenger-agent.js';
+import { DocumentationSynthesizerAgent } from './agents/documentation-synthesizer-agent.js';
+import { DependencyChallengerAgent } from './agents/dependency-challenger-agent.js';
+import { DependencySynthesizerAgent } from './agents/dependency-synthesizer-agent.js';
+import { DocQualityChallengerAgent } from './agents/doc-quality-challenger-agent.js';
+import { AutoRemediationAgent } from './agents/auto-remediation-agent.js';
+import { SourceCodeProvider } from './services/source-code-provider.js';
+import { getDebateConfig } from './config/debate-registry.js';
 
 interface OrchestrationConfig {
   port: number;
@@ -34,7 +50,7 @@ interface AnalysisRequestBody {
   analysisType?: string;
   repoId?: string;
   branchId?: string;
-  coordinationType?: 'parallel' | 'sequential' | 'consensus' | 'competitive';
+  coordinationType?: 'parallel' | 'sequential' | 'consensus' | 'competitive' | 'debate';
   domains?: A2AAgentDomain[];
   parameters?: Record<string, any>;
   businessContext?: {
@@ -54,6 +70,7 @@ export class EnhancedAIOrchestrationService {
   private communicationBus: A2ACommunicationBus;
   private coordinationHub: AgentCoordinationHub;
   private agents: Map<string, any> = new Map();
+  private sourceCodeProvider: SourceCodeProvider;
   private isInitialized: boolean = false;
   private config: OrchestrationConfig;
 
@@ -154,6 +171,86 @@ export class EnhancedAIOrchestrationService {
     await performanceAgent.initialize();
     this.agents.set('performance', performanceAgent);
     console.log('⚡ Performance Expert Agent initialized');
+
+    const documentationQualityAgent = new DocumentationQualityAgent(this.communicationBus, this.db);
+    await documentationQualityAgent.initialize();
+    this.agents.set('documentation_quality', documentationQualityAgent);
+    console.log('📝 Documentation Quality Agent initialized');
+
+    const dependencyAnalysisAgent = new DependencyAnalysisAgent(this.communicationBus, this.db);
+    await dependencyAnalysisAgent.initialize();
+    this.agents.set('dependency_analysis', dependencyAnalysisAgent);
+    console.log('📦 Dependency Analysis Agent initialized');
+
+    const dependencyIntelligenceAgent = new DependencyIntelligenceAgent(this.communicationBus, this.db);
+    await dependencyIntelligenceAgent.initialize();
+    this.agents.set('dependency_intelligence', dependencyIntelligenceAgent);
+    console.log('🔬 Dependency Intelligence Agent initialized');
+
+    // Security debate triad (challenger + synthesizer)
+    const secChallenger = new SecurityChallengerAgent(this.communicationBus);
+    await secChallenger.initialize();
+    this.agents.set('security_challenger', secChallenger);
+    console.log('🔒 Security Challenger Agent initialized');
+
+    const secSynthesizer = new SecuritySynthesizerAgent(this.communicationBus);
+    await secSynthesizer.initialize();
+    this.agents.set('security_synthesizer', secSynthesizer);
+    console.log('🔒 Security Synthesizer Agent initialized');
+
+    // Performance debate triad (challenger + synthesizer)
+    const perfChallenger = new PerformanceChallengerAgent(this.communicationBus);
+    await perfChallenger.initialize();
+    this.agents.set('performance_challenger', perfChallenger);
+    console.log('⚡ Performance Challenger Agent initialized');
+
+    const perfSynthesizer = new PerformanceSynthesizerAgent(this.communicationBus);
+    await perfSynthesizer.initialize();
+    this.agents.set('performance_synthesizer', perfSynthesizer);
+    console.log('⚡ Performance Synthesizer Agent initialized');
+
+    // Documentation writer debate triad
+    const docDrafter = new DocumentationDrafterAgent(this.communicationBus, this.db);
+    await docDrafter.initialize();
+    this.agents.set('doc_drafter', docDrafter);
+    console.log('📝 Documentation Drafter Agent initialized');
+
+    const docChallenger = new DocumentationChallengerAgent(this.communicationBus, this.db);
+    await docChallenger.initialize();
+    this.agents.set('doc_challenger', docChallenger);
+    console.log('📝 Documentation Challenger Agent initialized');
+
+    const docSynthesizer = new DocumentationSynthesizerAgent(this.communicationBus, this.db);
+    await docSynthesizer.initialize();
+    this.agents.set('doc_synthesizer', docSynthesizer);
+    console.log('📝 Documentation Synthesizer Agent initialized');
+
+    // Dependency debate triad (challenger + synthesizer)
+    const depChallenger = new DependencyChallengerAgent(this.communicationBus, this.db);
+    await depChallenger.initialize();
+    this.agents.set('dependency_challenger', depChallenger);
+    console.log('📦 Dependency Challenger Agent initialized');
+
+    const depSynthesizer = new DependencySynthesizerAgent(this.communicationBus, this.db);
+    await depSynthesizer.initialize();
+    this.agents.set('dependency_synthesizer', depSynthesizer);
+    console.log('📦 Dependency Synthesizer Agent initialized');
+
+    // Doc quality challenger
+    const dqChallenger = new DocQualityChallengerAgent(this.communicationBus, this.db);
+    await dqChallenger.initialize();
+    this.agents.set('doc_quality_challenger', dqChallenger);
+    console.log('📋 Doc Quality Challenger Agent initialized');
+
+    // Auto-remediation agent -- generates actual code fixes for verified findings
+    const autoRemediation = new AutoRemediationAgent(this.communicationBus);
+    await autoRemediation.initialize();
+    this.agents.set('auto_remediation', autoRemediation);
+    console.log('🔧 Auto-Remediation Agent initialized');
+
+    // Initialize SourceCodeProvider for debate agents
+    this.sourceCodeProvider = new SourceCodeProvider(this.db);
+    console.log('📂 SourceCodeProvider initialized');
 
     console.log(`✅ ${this.agents.size} AI agents successfully initialized`);
   }
@@ -257,6 +354,86 @@ export class EnhancedAIOrchestrationService {
       }
     });
 
+    // Documentation generation via debate triad
+    this.app.post('/generate/documentation', async (request, reply) => {
+      try {
+        const { repositoryId } = request.body as { repositoryId: string };
+        const sourceFiles = await this.sourceCodeProvider.getAllFilesForRepo(repositoryId);
+        const debateConfig = getDebateConfig('documentation');
+
+        const result = await this.coordinationHub.requestComprehensiveAnalysis(repositoryId, {
+          coordinationType: 'debate',
+          targetAgents: ['doc_drafter', 'doc_challenger', 'doc_synthesizer'],
+          timeout: 120000,
+          sourceFiles,
+          debateConfig,
+          enableVerification: true
+        } as any);
+
+        return {
+          success: true,
+          repositoryId,
+          documentation: result.combinedResult,
+          debate_metrics: result.coordinationMetrics,
+          quality_score: result.qualityMetrics
+        };
+      } catch (error) {
+        reply.code(500);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Documentation generation failed'
+        };
+      }
+    });
+
+    // Auto-remediation: takes verified findings and returns code patches
+    this.app.post('/remediate', async (request, reply) => {
+      try {
+        const { verifiedFindings, sourceFiles } = request.body as {
+          verifiedFindings: any[];
+          sourceFiles?: Record<string, string>;
+        };
+
+        if (!verifiedFindings || verifiedFindings.length === 0) {
+          reply.code(400);
+          return { success: false, error: 'verifiedFindings array is required' };
+        }
+
+        const remediationAgent = this.agents.get('auto_remediation');
+        if (!remediationAgent) {
+          reply.code(503);
+          return { success: false, error: 'Auto-remediation agent is not available' };
+        }
+
+        const result = await this.coordinationHub.requestComprehensiveAnalysis('remediation', {
+          coordinationType: 'parallel',
+          targetAgents: ['auto_remediation'],
+          analysisType: 'generate_fixes',
+          timeout: 30000,
+          sourceFiles: sourceFiles ? new Map(Object.entries(sourceFiles)) : new Map(),
+          parameters: { verifiedFindings, sourceFiles: sourceFiles || {} }
+        } as any);
+
+        const patches = result.combinedResult?.rawData?.patches || [];
+
+        return {
+          success: true,
+          patches,
+          summary: {
+            totalFindings: verifiedFindings.length,
+            patchesGenerated: patches.length,
+            breakingChanges: patches.filter((p: any) => p.breakingChange).length
+          }
+        };
+      } catch (error) {
+        reply.code(500);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Remediation failed'
+        };
+      }
+    });
+
     this.app.get('/coordination/history', async (request, reply) => {
       const history = this.coordinationHub.getCoordinationHistory(50);
       return { coordination_history: history };
@@ -285,25 +462,39 @@ export class EnhancedAIOrchestrationService {
   // =====================================================
 
   async performComprehensiveAnalysis(requestBody: AnalysisRequestBody): Promise<any> {
-    const { entityKey, coordinationType = 'parallel', domains, businessContext, timeout = 60000 } = requestBody;
-    
+    const { entityKey, coordinationType = 'debate', domains, businessContext, timeout = 60000 } = requestBody;
+
     console.log(`🧠 Starting comprehensive analysis for entity: ${entityKey}`);
 
+    // Pre-fetch source files for debate agents
+    const sourceFiles = entityKey
+      ? await this.sourceCodeProvider.getFilesForEntity(entityKey, entityKey)
+      : new Map<string, string>();
+
     const targetAgents = domains || [A2AAgentDomain.SECURITY, A2AAgentDomain.PERFORMANCE];
-    const agentIds = targetAgents.map(domain => {
+    const agentIds = targetAgents.flatMap(domain => {
       switch (domain) {
-        case A2AAgentDomain.SECURITY: return 'security';
-        case A2AAgentDomain.PERFORMANCE: return 'performance';
-        default: return null;
+        case A2AAgentDomain.SECURITY: return ['security', 'dependency_intelligence', 'security_challenger', 'security_synthesizer'];
+        case A2AAgentDomain.PERFORMANCE: return ['performance', 'performance_challenger', 'performance_synthesizer'];
+        case A2AAgentDomain.QUALITY: return ['documentation_quality', 'doc_drafter', 'doc_challenger', 'doc_synthesizer', 'doc_quality_challenger'];
+        case A2AAgentDomain.DEPENDENCY: return ['dependency_analysis', 'dependency_challenger', 'dependency_synthesizer'];
+        default: return [];
       }
-    }).filter(id => id !== null) as string[];
+    });
+
+    // Determine debate config from first domain
+    const primaryDomain = targetAgents[0]?.toLowerCase() || 'security';
+    const debateConfig = getDebateConfig(primaryDomain);
 
     const result = await this.coordinationHub.requestComprehensiveAnalysis(entityKey, {
       coordinationType,
       targetAgents: agentIds,
       businessContext,
-      timeout
-    });
+      timeout,
+      sourceFiles,
+      debateConfig,
+      enableVerification: true
+    } as any);
 
     return {
       coordination_id: result.coordinationId,
@@ -367,13 +558,15 @@ export class EnhancedAIOrchestrationService {
     console.log(`🤝 Starting agent collaboration for entity: ${entityKey}`);
 
     const targetAgents = domains || [A2AAgentDomain.SECURITY, A2AAgentDomain.PERFORMANCE];
-    const agentIds = targetAgents.map(domain => {
+    const agentIds = targetAgents.flatMap(domain => {
       switch (domain) {
-        case A2AAgentDomain.SECURITY: return 'security';
-        case A2AAgentDomain.PERFORMANCE: return 'performance';
-        default: return null;
+        case A2AAgentDomain.SECURITY: return ['security', 'dependency_intelligence'];
+        case A2AAgentDomain.PERFORMANCE: return ['performance'];
+        case A2AAgentDomain.QUALITY: return ['documentation_quality'];
+        case A2AAgentDomain.DEPENDENCY: return ['dependency_analysis'];
+        default: return [];
       }
-    }).filter(id => id !== null) as string[];
+    });
 
     const result = await this.coordinationHub.requestComprehensiveAnalysis(entityKey, {
       coordinationType,
@@ -420,15 +613,20 @@ export class EnhancedAIOrchestrationService {
         'multi_agent_analysis',
         'agent_coordination',
         'consensus_building',
+        'debate_verification',
         'business_impact_analysis',
         'comprehensive_security_analysis',
         'comprehensive_performance_analysis',
         'real_time_collaboration',
-        'quality_assessment'
+        'quality_assessment',
+        'documentation_generation',
+        'false_positive_elimination'
       ],
       supported_domains: [
         A2AAgentDomain.SECURITY,
         A2AAgentDomain.PERFORMANCE,
+        A2AAgentDomain.QUALITY,
+        A2AAgentDomain.DEPENDENCY,
         A2AAgentDomain.COORDINATION
       ]
     };
@@ -648,13 +846,17 @@ async function startEnhancedAIOrchestrationService(): Promise<void> {
       url: process.env.ARANGO_URL || 'http://192.168.1.82:8529',
       name: process.env.ARANGO_DATABASE || 'ARANGO_AISDP_DB',
       username: process.env.ARANGO_USER || 'root',
-      password: process.env.ARANGO_PASSWORD || 'password'
+      password: process.env.ARANGO_PASSWORD || ''
     },
     agents: {
       maxConcurrent: parseInt(process.env.MAX_CONCURRENT_AGENTS || '10'),
       timeout: parseInt(process.env.AGENT_TIMEOUT || '30000')
     }
   };
+
+  if (!config.database.password) {
+    console.warn('WARNING: ARANGO_PASSWORD not set in environment. Set it in .env file.');
+  }
 
   const service = new EnhancedAIOrchestrationService(config);
 

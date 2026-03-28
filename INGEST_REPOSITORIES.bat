@@ -86,7 +86,7 @@ echo 📋 Monitor ingestion progress:
 echo    curl http://localhost:8002/api/ingestion/jobs
 echo.
 echo 🔍 Check populated collections:
-echo    Open http://localhost:8529 (user: root, pass: openSesame)
+echo    Open http://localhost:8529 (user: root, pass: your ARANGO_PASSWORD)
 echo.
 echo ⏱️  Repository ingestion will take 5-15 minutes depending on size.
 echo    You can monitor progress in the web interfaces above.

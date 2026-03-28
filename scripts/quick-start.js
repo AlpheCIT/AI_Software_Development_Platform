@@ -146,7 +146,7 @@ Option 2 - Manual Start:
   arangod --server.endpoint tcp://0.0.0.0:8529
 
 Option 3 - Docker:
-  docker run -p 8529:8529 -e ARANGO_ROOT_PASSWORD=openSesame arangodb:3.11
+  docker run -p 8529:8529 -e ARANGO_ROOT_PASSWORD=<your-arango-password> arangodb:3.11
 
 Then run this script again.
           `);
@@ -208,7 +208,7 @@ Then run this script again.
 ARANGODB_URL=http://localhost:8529
 ARANGODB_NAME=ARANGO_AISDP_DB
 ARANGODB_USER=root
-ARANGO_PASSWORD=openSesame
+ARANGO_PASSWORD=<your-arango-password>
 PORT=3001
 NODE_ENV=development
 FRONTEND_URL=http://localhost:3000
@@ -320,7 +320,7 @@ Happy coding! 🚀
 🗄️  ArangoDB Issues:
 • Make sure ArangoDB is installed
 • Check if port 8529 is available
-• Try: docker run -p 8529:8529 -e ARANGO_ROOT_PASSWORD=openSesame arangodb:3.11
+• Try: docker run -p 8529:8529 -e ARANGO_ROOT_PASSWORD=<your-arango-password> arangodb:3.11
 
 📦 Dependency Issues:
 • Try: npm cache clean --force

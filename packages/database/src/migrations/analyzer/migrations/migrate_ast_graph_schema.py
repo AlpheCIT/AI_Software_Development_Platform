@@ -116,8 +116,8 @@ class DatabaseMigration:
                 return False
             
             # Check graph
-            if 'code_graph' not in status.get('graphs', []):
-                logger.error("❌ Code graph not created")
+            if 'knowledge_graph' not in status.get('graphs', []):
+                logger.error("❌ Knowledge graph not created")
                 return False
             
             logger.info("✅ Migration verification successful")

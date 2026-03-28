@@ -81,7 +81,11 @@ REM Set defaults if not set
 if not defined ARANGO_HOST set ARANGO_HOST=localhost
 if not defined ARANGO_PORT set ARANGO_PORT=8529
 if not defined ARANGO_URL set ARANGO_URL=http://%ARANGO_HOST%:%ARANGO_PORT%
-if not defined ARANGO_PASSWORD set ARANGO_PASSWORD=openSesame
+if not defined ARANGO_PASSWORD (
+    echo WARNING: ARANGO_PASSWORD is not set. Please set it in your .env file or environment.
+    echo Example: set ARANGO_PASSWORD=yourpassword
+    set ARANGO_PASSWORD=
+)
 
 REM Check if ArangoDB is already running
 curl -s %ARANGO_URL%/_api/version >nul 2>&1
