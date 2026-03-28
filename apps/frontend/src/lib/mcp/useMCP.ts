@@ -418,6 +418,19 @@ export const useMCP = (): UseMCPReturn => {
               totalFailed,
               avgMutationScore: avgMutation,
               totalIterations,
+              // Per-run breakdown for trend charts
+              runs: completedRuns.map((r: any) => ({
+                id: r._key,
+                date: r.startedAt,
+                tests: r.testsGenerated || 0,
+                passed: r.testsPassed || 0,
+                failed: r.testsFailed || 0,
+                mutationScore: r.mutationScore || 0,
+                iterations: r.iterations || 0,
+                duration: r.completedAt && r.startedAt
+                  ? Math.round((new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime()) / 1000)
+                  : 0,
+              })),
             }
           };
         } catch {
