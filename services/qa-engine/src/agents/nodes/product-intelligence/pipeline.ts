@@ -71,7 +71,8 @@ export async function runProductIntelligencePipeline(
     repoUrl,
     runId,
     dbClient,
-    eventPublisher
+    eventPublisher,
+    codeQuality  // Pass code quality report so PM can factor in health score
   );
 
   // Step 3: Research Assistant takes the PM's analysis and researches trends

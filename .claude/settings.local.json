@@ -46,7 +46,9 @@
       "Bash(curl -s -X POST \"http://localhost:8529/_db/ARANGO_AISDP_DB/_api/collection\" -u \"root:openSesame\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"qa_coverage_audit_reports\"\"}')",
       "Bash(curl -s http://localhost:3005/qa/runs/0f669b02-2019-4a02-83f6-249de0e1dafb)",
       "Bash(curl -s http://localhost:3005/qa/conversations/0f669b02-2019-4a02-83f6-249de0e1dafb)",
-      "Bash(curl -s http://localhost:3005/qa/results/0f669b02-2019-4a02-83f6-249de0e1dafb)"
+      "Bash(curl -s http://localhost:3005/qa/results/0f669b02-2019-4a02-83f6-249de0e1dafb)",
+      "Bash(grep -r \"ANTHROPIC_API_KEY\\\\|CLAUDE_API_KEY\\\\|sk-\" /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai --include=*.ts --include=*.tsx --include=*.js)",
+      "Bash(grep -r \"apiKey\\\\|token\\\\|secret\\\\|password\" /c/Users/richa/OneDrive/Documents/Github_Richard_Helms/AI_Software_Development_Platform/.claude/worktrees/lucid-banzai/apps/frontend/src --include=*.ts --include=*.tsx)"
     ]
   }
 }
