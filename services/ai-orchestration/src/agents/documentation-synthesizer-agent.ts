@@ -4,6 +4,7 @@
 // Combines verified documentation sections from the drafter/
 // challenger debate into a polished final document with table
 // of contents, consistent formatting, and debate metrics.
+// Supports LLM-powered polishing when an llmClient is provided.
 
 import {
   EnhancedBaseA2AAgent,
@@ -19,6 +20,9 @@ import {
   A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
 import { Database } from 'arangojs';
+import { LLMClient } from '../llm/llm-client.js';
+import { docPolishPrompt } from '../llm/prompts.js';
+import { DocumentationPolishSchema } from '../llm/schemas.js';
 
 // =====================================================
 // DOCUMENTATION SYNTHESIZER AGENT
@@ -28,7 +32,7 @@ export class DocumentationSynthesizerAgent extends EnhancedBaseA2AAgent {
   public static readonly AGENT_ID = 'doc_synthesizer';
   private db: Database;
 
-  constructor(communicationBus: A2ACommunicationBus, db: Database) {
+  constructor(communicationBus: A2ACommunicationBus, db: Database, llmClient?: LLMClient | null) {
     const capabilities: A2ACapabilities = {
       methods: [
         'synthesize_documentation',
@@ -50,11 +54,13 @@ export class DocumentationSynthesizerAgent extends EnhancedBaseA2AAgent {
       A2AAgentDomain.QUALITY,
       capabilities,
       6,
-      communicationBus
+      communicationBus,
+      llmClient
     );
 
     this.db = db;
-    console.log('📖 DocumentationSynthesizerAgent: Initialized with ArangoDB connection');
+    console.log('DocumentationSynthesizerAgent: Initialized with ArangoDB connection' +
+      (this.hasLLM() ? ' and LLM client' : ' (template mode)'));
   }
 
   // =====================================================
@@ -62,7 +68,7 @@ export class DocumentationSynthesizerAgent extends EnhancedBaseA2AAgent {
   // =====================================================
 
   protected async performAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {
-    console.log(`📖 DocumentationSynthesizerAgent: Synthesizing documentation for ${request.type}`);
+    console.log(`DocumentationSynthesizerAgent: Synthesizing documentation for ${request.type}`);
     const startTime = Date.now();
 
     try {
@@ -82,13 +88,30 @@ export class DocumentationSynthesizerAgent extends EnhancedBaseA2AAgent {
       const docSections = verifiedFindings.filter(f => f.type === 'documentation_section');
       const gapFindings = verifiedFindings.filter(f => f.type === 'documentation_gap');
 
-      // Phase 1: Build final document structure
-      const finalDoc = this.buildFinalDocument(docSections, gapFindings, repoId);
+      // Phase 1: Build final document structure (template-based)
+      const rawDoc = this.buildFinalDocument(docSections, gapFindings, repoId);
 
-      // Phase 2: Calculate debate metrics
+      // Phase 2: Polish with LLM if available
+      let finalDoc: string;
+      let llmPolished = false;
+
+      if (this.hasLLM()) {
+        const polishedResult = await this.polishWithLLM(rawDoc, verifiedFindings, repoId);
+        if (polishedResult) {
+          finalDoc = polishedResult.polishedDocument;
+          llmPolished = true;
+          console.log(`DocumentationSynthesizerAgent: LLM polished ${polishedResult.sectionsImproved} sections, quality: ${polishedResult.qualityScore}`);
+        } else {
+          finalDoc = rawDoc;
+        }
+      } else {
+        finalDoc = rawDoc;
+      }
+
+      // Phase 3: Calculate debate metrics
       const debateMetrics = this.calculateDebateMetrics(verifiedFindings, debateRounds);
 
-      // Phase 3: Store as final documentation recommendation
+      // Phase 4: Store as final documentation recommendation
       const findings: Finding[] = [{
         id: `doc_final_${Date.now()}`,
         type: 'final_documentation',
@@ -99,12 +122,13 @@ export class DocumentationSynthesizerAgent extends EnhancedBaseA2AAgent {
           sectionsIncluded: docSections.length,
           gapsAddressed: gapFindings.length,
           debateRounds,
+          llmPolished,
           ...debateMetrics
         },
         confidence: debateMetrics.averageConfidence,
         verificationStatus: 'verified',
         verificationMethod: 'debate',
-        verificationEvidence: `Documentation verified through ${debateRounds} debate round(s)`
+        verificationEvidence: `Documentation verified through ${debateRounds} debate round(s)${llmPolished ? ' and LLM polish' : ''}`
       }];
 
       const recommendations: Recommendation[] = [{
@@ -116,7 +140,8 @@ export class DocumentationSynthesizerAgent extends EnhancedBaseA2AAgent {
           `Documentation has been drafted, verified, and synthesized. ` +
           `${debateMetrics.sectionsVerified} sections verified, ` +
           `${debateMetrics.correctionsApplied} corrections applied, ` +
-          `${debateMetrics.gapsFilled} gaps filled.`,
+          `${debateMetrics.gapsFilled} gaps filled.` +
+          (llmPolished ? ' LLM polish applied for improved readability.' : ''),
         impact: 'Provides verified, complete project documentation',
         effort: 'low',
         implementation: [
@@ -146,7 +171,8 @@ export class DocumentationSynthesizerAgent extends EnhancedBaseA2AAgent {
           sectionsVerified: debateMetrics.sectionsVerified,
           correctionsApplied: debateMetrics.correctionsApplied,
           averageConfidence: debateMetrics.averageConfidence,
-          documentLength: finalDoc.length
+          documentLength: finalDoc.length,
+          llmPolished: llmPolished ? 1 : 0
         },
         businessImpact: this.generateBusinessImpact(findings, request.businessContext),
         executionTime: Date.now() - startTime
@@ -158,7 +184,47 @@ export class DocumentationSynthesizerAgent extends EnhancedBaseA2AAgent {
   }
 
   // =====================================================
-  // DOCUMENT BUILDER
+  // LLM-POWERED POLISHING
+  // =====================================================
+
+  private async polishWithLLM(
+    rawDocument: string,
+    verifiedFindings: Finding[],
+    repoId: string
+  ): Promise<{ polishedDocument: string; sectionsImproved: number; qualityScore: number } | null> {
+    console.log('DocumentationSynthesizerAgent: Using LLM for final polish');
+
+    // Collect verification notes from challenger
+    const verificationNotes = verifiedFindings
+      .filter(f => f.challengerNotes && f.challengerNotes.length > 0)
+      .map(f => `[${f.evidence?.sectionName || f.title}]: ${f.challengerNotes}`)
+      .join('\n') || 'No specific corrections needed.';
+
+    const prompt = docPolishPrompt({
+      rawDocument: rawDocument.slice(0, 40000), // Limit to avoid token overflow
+      verificationNotes,
+      repoName: repoId
+    });
+
+    const llmResult = await this.callLLM(prompt.system, prompt.user, {
+      jsonSchema: DocumentationPolishSchema,
+      maxTokens: 8192,
+      temperature: 0.2
+    });
+
+    if (llmResult && llmResult.polishedDocument) {
+      return {
+        polishedDocument: llmResult.polishedDocument,
+        sectionsImproved: llmResult.sectionsImproved || 0,
+        qualityScore: llmResult.qualityScore || 0.8
+      };
+    }
+
+    return null;
+  }
+
+  // =====================================================
+  // DOCUMENT BUILDER (TEMPLATE-BASED)
   // =====================================================
 
   private buildFinalDocument(
@@ -176,7 +242,7 @@ export class DocumentationSynthesizerAgent extends EnhancedBaseA2AAgent {
     lines.push('');
 
     // Table of contents
-    const sectionOrder = ['Getting Started', 'API Reference', 'Architecture Overview', 'Configuration'];
+    const sectionOrder = ['Getting Started', 'API Reference', 'Architecture Overview', 'Configuration', 'Configuration Guide'];
     const orderedSections = this.orderSections(sections, sectionOrder);
 
     lines.push('## Table of Contents');

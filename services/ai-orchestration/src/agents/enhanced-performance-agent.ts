@@ -20,6 +20,9 @@ import {
   A2AContext,
   A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
+import { LLMClient } from '../llm/llm-client.js';
+import { performanceAnalyzerPrompt } from '../llm/prompts.js';
+import { PerformanceAnalysisSchema } from '../llm/schemas.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // =====================================================
@@ -44,7 +47,7 @@ interface PerformanceFinding extends Finding {
 export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
   private performanceKnowledge: Map<string, any> = new Map();
 
-  constructor(communicationBus: A2ACommunicationBus) {
+  constructor(communicationBus: A2ACommunicationBus, llmClient?: LLMClient | null) {
     const capabilities: A2ACapabilities = {
       methods: [
         'analyze_performance_bottlenecks',
@@ -65,7 +68,7 @@ export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
       ]
     };
 
-    super('PerformanceAnalyzerAgent', A2AAgentDomain.PERFORMANCE, capabilities, 7, communicationBus);
+    super('PerformanceAnalyzerAgent', A2AAgentDomain.PERFORMANCE, capabilities, 7, communicationBus, llmClient);
     this.initializePerformanceKnowledge();
   }
 
@@ -87,15 +90,89 @@ export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
 
       console.log(`[PerformanceAnalyzer] Scanning ${sourceFiles.size} file(s)`);
 
-      const findings: PerformanceFinding[] = [];
-      const recommendations: Recommendation[] = [];
-
+      // Step 1: Run regex pre-filter to identify candidate locations (fast scan)
+      const regexFindings: PerformanceFinding[] = [];
       for (const [filePath, fileContent] of sourceFiles) {
         if (!this.isCodeFile(filePath)) continue;
         const fileFindings = this.analyzeFile(filePath, fileContent);
-        findings.push(...fileFindings);
+        regexFindings.push(...fileFindings);
       }
 
+      console.log(`[PerformanceAnalyzer] Regex pre-filter found ${regexFindings.length} candidate(s)`);
+
+      let findings: PerformanceFinding[] = [];
+
+      // Step 2: If LLM is available, use it for deeper analysis
+      if (this.hasLLM()) {
+        try {
+          const candidates = regexFindings.map(f => ({
+            file: f.location?.file || '',
+            line: f.location?.line || 0,
+            pattern: f.type
+          }));
+
+          const prompt = performanceAnalyzerPrompt({
+            files: sourceFiles,
+            candidates: candidates.length > 0 ? candidates : undefined
+          });
+
+          console.log(`[PerformanceAnalyzer] Calling LLM for deep analysis...`);
+          const llmResult = await this.callLLM(prompt.system, prompt.user, {
+            jsonSchema: PerformanceAnalysisSchema
+          });
+
+          if (llmResult && llmResult.findings && Array.isArray(llmResult.findings)) {
+            console.log(`[PerformanceAnalyzer] LLM returned ${llmResult.findings.length} finding(s)`);
+
+            for (const llmFinding of llmResult.findings) {
+              findings.push(this.buildPerformanceFinding({
+                type: llmFinding.type || 'other',
+                severity: llmFinding.severity || 'medium',
+                title: llmFinding.title || 'Performance Issue',
+                description: llmFinding.description || llmFinding.evidence || '',
+                filePath: llmFinding.file || '',
+                line: llmFinding.line || 0,
+                originalLine: '',
+                bottleneckType: this.mapLLMTypeToBottleneck(llmFinding.type),
+                impactLevel: llmFinding.severity === 'critical' ? 'critical' : llmFinding.severity === 'high' ? 'high' : 'medium',
+                scalabilityImpact: llmFinding.severity === 'critical' ? 9 : llmFinding.severity === 'high' ? 7 : 5,
+                optimizationPotential: llmFinding.confidence ? Math.round(llmFinding.confidence * 100) : 60,
+                resourceWaste: llmFinding.severity === 'critical' ? 70 : llmFinding.severity === 'high' ? 50 : 30,
+                confidence: llmFinding.confidence ?? 0.7
+              }));
+              // Override verification method to 'llm'
+              findings[findings.length - 1].verificationMethod = 'llm';
+              findings[findings.length - 1].evidence = {
+                ...findings[findings.length - 1].evidence,
+                detectionMethod: 'llm',
+                llmEvidence: llmFinding.evidence,
+                llmRemediation: llmFinding.remediation,
+                llmEstimatedImpact: llmFinding.estimatedImpact
+              };
+            }
+          } else {
+            console.warn('[PerformanceAnalyzer] LLM returned no findings, falling back to regex');
+            findings = regexFindings;
+          }
+        } catch (llmError) {
+          console.error('[PerformanceAnalyzer] LLM analysis failed, falling back to regex:', llmError);
+          findings = regexFindings.map(f => ({
+            ...f,
+            confidence: Math.min(f.confidence, 0.5),
+            verificationMethod: 'regex' as const
+          }));
+        }
+      } else {
+        // No LLM available -- use regex findings with lower confidence
+        console.log('[PerformanceAnalyzer] No LLM available, using regex-only findings');
+        findings = regexFindings.map(f => ({
+          ...f,
+          confidence: Math.max(0.3, Math.min(f.confidence, 0.5)),
+          verificationMethod: 'regex' as const
+        }));
+      }
+
+      const recommendations: Recommendation[] = [];
       for (const finding of findings) {
         recommendations.push(this.createPerformanceRecommendation(finding, request.businessContext));
       }
@@ -109,7 +186,7 @@ export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
         domain: this.domain,
         timestamp: Date.now(),
         status: 'success',
-        confidence: findings.length > 0 ? 0.7 : 0.5,
+        confidence: findings.length > 0 ? (this.hasLLM() ? 0.85 : 0.5) : 0.5,
         findings: findings as Finding[],
         recommendations,
         metrics: {
@@ -118,7 +195,9 @@ export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
           bottleneckCount: findings.length,
           criticalBottlenecks: findings.filter(f => f.severity === 'critical').length,
           highImpactIssues: findings.filter(f => f.impactLevel === 'high' || f.impactLevel === 'critical').length,
-          filesScanned: sourceFiles.size
+          filesScanned: sourceFiles.size,
+          analysisMethod: this.hasLLM() ? 'llm+regex' : 'regex-only',
+          regexCandidates: regexFindings.length
         },
         businessImpact: this.generateBusinessImpact(findings, request.businessContext),
         executionTime: Date.now() - startTime
@@ -127,6 +206,27 @@ export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
       console.error('[PerformanceAnalyzer] Analysis failed:', error);
       return this.createErrorResult(request, error);
     }
+  }
+
+  // =====================================================
+  // LLM HELPER METHODS
+  // =====================================================
+
+  private mapLLMTypeToBottleneck(llmType: string): PerformanceFinding['bottleneckType'] {
+    const map: Record<string, PerformanceFinding['bottleneckType']> = {
+      n_plus_one: 'database',
+      synchronous_io: 'io',
+      memory_leak: 'memory',
+      excessive_complexity: 'algorithm',
+      missing_index: 'database',
+      unbounded_query: 'database',
+      blocking_event_loop: 'cpu',
+      unnecessary_computation: 'cpu',
+      missing_caching: 'network',
+      inefficient_algorithm: 'algorithm',
+      resource_exhaustion: 'memory'
+    };
+    return map[llmType] ?? 'algorithm';
   }
 
   // =====================================================

@@ -13,6 +13,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 // Main Dashboard - Our new investor-ready interface
 import MainDashboard from './pages/MainDashboard';
 
+// Standalone pages
+import GraphPage from './pages/GraphPage';
+
+// Run comparison view
+import RunComparisonView from './components/analysis/RunComparisonView';
+
 // Theme
 import theme from './design-system/theme';
 
@@ -45,9 +51,21 @@ function App() {
               <Route path="/" element={<MainDashboard />} />
               <Route path="/dashboard" element={<MainDashboard />} />
               <Route path="/ingestion" element={<MainDashboard />} />
-              <Route path="/graph" element={<MainDashboard />} />
               <Route path="/analytics" element={<MainDashboard />} />
-              
+              <Route path="/runs" element={<MainDashboard />} />
+              <Route path="/learnings" element={<MainDashboard />} />
+
+              {/* Standalone graph page with repositoryId from URL */}
+              <Route path="/graph" element={<GraphPage />} />
+
+              {/* Repository-scoped routes */}
+              <Route path="/repo/:repoId" element={<MainDashboard />} />
+              <Route path="/repo/:repoId/runs" element={<MainDashboard />} />
+              <Route path="/repo/:repoId/graph" element={<GraphPage />} />
+
+              {/* Run comparison view */}
+              <Route path="/compare/:runId1/:runId2" element={<RunComparisonView />} />
+
               {/* Catch all - redirect to main dashboard */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

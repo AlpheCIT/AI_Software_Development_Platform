@@ -236,6 +236,15 @@ export class RepositoryIngestionService {
     const additionalRelationships = await this.buildRelationships(repositoryId);
     totalRelationships += additionalRelationships;
 
+    // Verify graph population
+    this.updateJobStatus(jobId, 'running', undefined, 85, 'Verifying graph edge collections');
+    try {
+      const graphMetrics = await this.graphBuilder.verifyGraphPopulation(repositoryId);
+      logger.info(`Graph verification complete: ${JSON.stringify(graphMetrics)}`);
+    } catch (error) {
+      logger.error('Graph verification failed:', error);
+    }
+
     // Generate embeddings
     this.updateJobStatus(jobId, 'running', undefined, 90, 'Generating embeddings');
     await this.generateEmbeddings(repositoryId);
@@ -446,6 +455,16 @@ export class RepositoryIngestionService {
 
   private async processFile(repositoryId: string, filePath: string, basePath: string): Promise<{ entities: number; relationships: number }> {
     const fullPath = path.join(basePath, filePath);
+    const stat = fs.statSync(fullPath);
+    const fileSize = stat.size;
+
+    // Skip binary files and very large files (>500KB)
+    const binaryExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.otf', '.zip', '.tar', '.gz', '.exe', '.dll', '.so', '.dylib', '.bin', '.pdf', '.mp3', '.mp4', '.wav', '.avi'];
+    const ext = path.extname(filePath).toLowerCase();
+    if (binaryExtensions.includes(ext)) {
+      return { entities: 0, relationships: 0 };
+    }
+
     const content = fs.readFileSync(fullPath, 'utf-8');
     const language = this.detectLanguage(filePath);
 
@@ -458,29 +477,32 @@ export class RepositoryIngestionService {
       language,
       size: content.length,
       contentHash: this.calculateHash(content),
-      lastModified: fs.statSync(fullPath).mtime,
+      lastModified: stat.mtime,
       processed: true
     };
 
     await this.db.collection('files').save(fileRecord);
 
-    // Store actual source code for agent analysis
-    try {
-      const codeFilesCollection = this.db.collection('code_files');
-      try { await codeFilesCollection.create(); } catch (e) { /* already exists */ }
-      await codeFilesCollection.save({
-        _key: fileId,
-        repositoryId,
-        path: filePath,
-        content: content,
-        language: language,
-        linesOfCode: content.split('\n').length,
-        sizeBytes: Buffer.byteLength(content, 'utf8'),
-        storedAt: new Date().toISOString()
-      });
-    } catch (e: any) {
-      // Non-fatal - analysis can still work from other sources
-      logger.warn(`Failed to store source code for ${filePath}: ${e.message}`);
+    // Store actual source code for agent analysis (skip files > 500KB)
+    if (fileSize <= 500 * 1024) {
+      try {
+        const codeFilesCollection = this.db.collection('code_files');
+        try { await codeFilesCollection.create(); } catch (e) { /* already exists */ }
+        const sanitizedFileId = filePath.replace(/[/\\]/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '_');
+        await codeFilesCollection.save({
+          _key: sanitizedFileId,
+          repositoryId,
+          path: filePath,
+          content: content,
+          language: language,
+          linesOfCode: content.split('\n').length,
+          sizeBytes: Buffer.byteLength(content, 'utf8'),
+          storedAt: new Date().toISOString()
+        }, { overwriteMode: 'replace' });
+      } catch (e: any) {
+        // Non-fatal - analysis can still work from other sources
+        logger.warn(`Failed to store source code for ${filePath}: ${e.message}`);
+      }
     }
 
     // Parse file content
@@ -496,13 +518,43 @@ export class RepositoryIngestionService {
       entityCount++;
     }
 
-    // Extract relationships
+    // Extract relationships -- save to generic AND typed edge collections
     const relationships = await this.relationshipExtractor.extract(ast, fileId, repositoryId, entities);
     let relationshipCount = 0;
 
     for (const relationship of relationships) {
+      // Save to generic relationships collection
       await this.db.collection('relationships').save(relationship);
       relationshipCount++;
+
+      // Also save to the typed edge collection with _from/_to
+      const edgeCollectionName = RelationshipExtractor.getEdgeCollectionName(relationship.type);
+      if (edgeCollectionName) {
+        try {
+          // Determine source/target collections based on relationship type
+          const sourceCol = relationship.type === 'contains' ? 'files' : 'entities';
+          const targetCol = 'entities';
+
+          const edgeDoc = {
+            _key: relationship._key + '_edge',
+            _from: `${sourceCol}/${relationship.sourceEntityId}`,
+            _to: `${targetCol}/${relationship.targetEntityId}`,
+            repositoryId: relationship.repositoryId,
+            type: relationship.type,
+            sourceEntity: relationship.sourceEntity,
+            targetEntity: relationship.targetEntity,
+            strength: relationship.strength,
+            metadata: relationship.metadata,
+            createdAt: relationship.createdAt,
+          };
+
+          // Ensure edge collection exists (type 3)
+          try { await this.db.collection(edgeCollectionName).create({ type: 3 }); } catch (e) { /* exists */ }
+          await this.db.collection(edgeCollectionName).save(edgeDoc);
+        } catch (e: any) {
+          logger.debug(`Failed to save edge to ${edgeCollectionName}: ${e.message}`);
+        }
+      }
     }
 
     return { entities: entityCount, relationships: relationshipCount };

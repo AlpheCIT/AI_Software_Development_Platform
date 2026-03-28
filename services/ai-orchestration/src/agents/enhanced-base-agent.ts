@@ -5,17 +5,18 @@
 
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import { 
-  IA2AAgent, 
-  A2AMessage, 
-  A2AMessageType, 
-  A2AAgentDomain, 
-  A2APriority, 
-  A2ACapabilities, 
-  A2AContext, 
+import {
+  IA2AAgent,
+  A2AMessage,
+  A2AMessageType,
+  A2AAgentDomain,
+  A2APriority,
+  A2ACapabilities,
+  A2AContext,
   A2AError,
-  A2ACommunicationBus 
+  A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
+import { LLMClient, LLMResponse, parseLLMJson, createLLMClient } from '../llm/llm-client.js';
 
 // =====================================================
 // ENHANCED ANALYSIS INTERFACES
@@ -306,25 +307,102 @@ export abstract class EnhancedBaseA2AAgent extends EventEmitter implements IA2AA
   protected knowledgeBase: Map<string, any> = new Map();
   protected performanceMetrics: PerformanceMetrics = new PerformanceMetrics();
   protected learningSystem: LearningSystem = new LearningSystem();
+  protected llmClient: LLMClient | null = null;
 
   constructor(
     name: string,
     domain: A2AAgentDomain,
     capabilities: A2ACapabilities,
     priority: number = 5,
-    communicationBus: A2ACommunicationBus
+    communicationBus: A2ACommunicationBus,
+    llmClient?: LLMClient | null
   ) {
     super();
-    
+
     this.id = `${domain}_agent_${uuidv4().slice(0, 8)}`;
     this.name = name;
     this.domain = domain;
     this.capabilities = capabilities;
     this.priority = priority;
     this.communicationBus = communicationBus;
+    this.llmClient = llmClient || null;
 
     this.setupEventHandlers();
     this.initializeAgentSystems();
+  }
+
+  // =====================================================
+  // LLM INTEGRATION METHODS
+  // =====================================================
+
+  /**
+   * Call the LLM with structured output parsing.
+   * Returns parsed JSON if schema provided, raw string otherwise.
+   */
+  protected async callLLM(
+    systemPrompt: string,
+    userPrompt: string,
+    options?: { jsonSchema?: object; maxTokens?: number; temperature?: number }
+  ): Promise<any> {
+    if (!this.llmClient) {
+      console.warn(`⚠️ ${this.name}: No LLM client available, falling back to regex-only analysis`);
+      return null;
+    }
+
+    try {
+      const response: LLMResponse = await this.llmClient.complete(systemPrompt, userPrompt, {
+        maxTokens: options?.maxTokens || 4096,
+        temperature: options?.temperature || 0.1,
+        jsonSchema: options?.jsonSchema
+      });
+
+      console.log(`🤖 ${this.name}: LLM call completed (${response.usage.totalTokens} tokens)`);
+
+      if (options?.jsonSchema) {
+        return parseLLMJson(response.content);
+      }
+
+      return response.content;
+    } catch (error) {
+      console.error(`❌ ${this.name}: LLM call failed:`, error instanceof Error ? error.message : error);
+      return null;
+    }
+  }
+
+  /**
+   * Build a code context string from source files, truncated to maxChars.
+   * Formats files with line numbers for LLM reference.
+   */
+  protected buildCodeContext(sourceFiles: Map<string, string>, maxChars: number = 50000): string {
+    let context = '';
+    let currentChars = 0;
+
+    for (const [filePath, content] of sourceFiles) {
+      const lines = content.split('\n');
+      const numbered = lines.map((line, i) => `${String(i + 1).padStart(4)} | ${line}`).join('\n');
+      const fileBlock = `\n--- FILE: ${filePath} ---\n${numbered}\n--- END FILE ---\n`;
+
+      if (currentChars + fileBlock.length > maxChars) {
+        // Truncate this file to fit
+        const remaining = maxChars - currentChars - 200;
+        if (remaining > 500) {
+          context += `\n--- FILE: ${filePath} (truncated) ---\n${numbered.slice(0, remaining)}\n...[truncated]\n--- END FILE ---\n`;
+        }
+        break;
+      }
+
+      context += fileBlock;
+      currentChars += fileBlock.length;
+    }
+
+    return context;
+  }
+
+  /**
+   * Check if LLM is available for this agent
+   */
+  protected hasLLM(): boolean {
+    return this.llmClient !== null;
   }
 
   // =====================================================

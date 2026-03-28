@@ -5,6 +5,7 @@
 // ArangoDB-ingested metadata (API endpoints, frameworks,
 // dependencies). Output is passed to the challenger for
 // verification before the synthesizer produces final docs.
+// Supports LLM-powered generation when an llmClient is provided.
 
 import {
   EnhancedBaseA2AAgent,
@@ -20,6 +21,9 @@ import {
   A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
 import { Database } from 'arangojs';
+import { LLMClient } from '../llm/llm-client.js';
+import { docDrafterPrompt } from '../llm/prompts.js';
+import { DocumentationDrafterSchema } from '../llm/schemas.js';
 
 // =====================================================
 // DOMAIN-SPECIFIC INTERFACES
@@ -47,7 +51,7 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
   public static readonly AGENT_ID = 'doc_drafter';
   private db: Database;
 
-  constructor(communicationBus: A2ACommunicationBus, db: Database) {
+  constructor(communicationBus: A2ACommunicationBus, db: Database, llmClient?: LLMClient | null) {
     const capabilities: A2ACapabilities = {
       methods: [
         'draft_documentation',
@@ -69,11 +73,13 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
       A2AAgentDomain.QUALITY,
       capabilities,
       6,
-      communicationBus
+      communicationBus,
+      llmClient
     );
 
     this.db = db;
-    console.log('📝 DocumentationDrafterAgent: Initialized with ArangoDB connection');
+    console.log('DocumentationDrafterAgent: Initialized with ArangoDB connection' +
+      (this.hasLLM() ? ' and LLM client' : ' (template mode)'));
   }
 
   // =====================================================
@@ -81,7 +87,7 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
   // =====================================================
 
   protected async performAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {
-    console.log(`📝 DocumentationDrafterAgent: Drafting documentation for ${request.type}`);
+    console.log(`DocumentationDrafterAgent: Drafting documentation for ${request.type}`);
     const startTime = Date.now();
 
     try {
@@ -98,11 +104,13 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
       const ingestionData = await this.gatherIngestionData(repoId);
 
       // Phase 2: Generate documentation sections as findings
-      const findings: Finding[] = [];
-      findings.push(this.draftGettingStartedSection(ingestionData, sourceFiles));
-      findings.push(this.draftApiReferenceSection(ingestionData));
-      findings.push(this.draftArchitectureSection(ingestionData, sourceFiles));
-      findings.push(this.draftConfigurationSection(ingestionData, sourceFiles));
+      let findings: Finding[];
+
+      if (this.hasLLM()) {
+        findings = await this.draftWithLLM(ingestionData, sourceFiles);
+      } else {
+        findings = this.draftWithTemplates(ingestionData, sourceFiles);
+      }
 
       // Phase 3: Recommendations for the synthesizer
       const recommendations: Recommendation[] = this.generateDraftRecommendations(findings, ingestionData);
@@ -113,14 +121,15 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
         domain: this.domain,
         timestamp: Date.now(),
         status: 'success',
-        confidence: 0.75, // Drafter confidence before verification
+        confidence: this.hasLLM() ? 0.85 : 0.75,
         findings,
         recommendations,
         metrics: {
           sectionsGenerated: findings.length,
           apiEndpointsDocumented: ingestionData.apiEndpoints.length,
           frameworksDetected: ingestionData.frameworkUsage.length,
-          dependenciesListed: ingestionData.externalDependencies.length
+          dependenciesListed: ingestionData.externalDependencies.length,
+          llmPowered: this.hasLLM() ? 1 : 0
         },
         businessImpact: this.generateBusinessImpact(findings, request.businessContext),
         executionTime: Date.now() - startTime
@@ -129,6 +138,135 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
       console.error('DocumentationDrafterAgent: Analysis failed:', error);
       return this.createErrorResult(request, error);
     }
+  }
+
+  // =====================================================
+  // LLM-POWERED DRAFTING
+  // =====================================================
+
+  private async draftWithLLM(
+    data: IngestionData,
+    sourceFiles: Map<string, string>
+  ): Promise<Finding[]> {
+    console.log('DocumentationDrafterAgent: Using LLM for documentation generation');
+
+    // Build context strings for the LLM
+    const frameworkInfo = data.frameworkUsage.length > 0
+      ? data.frameworkUsage.map(fw => `${fw.name || fw.framework || fw._key} ${fw.version || ''}`).join('\n')
+      : 'No frameworks detected';
+
+    const apiEndpoints = data.apiEndpoints.length > 0
+      ? data.apiEndpoints.map(ep =>
+        `${(ep.method || 'GET').toUpperCase()} ${ep.path || ep.route || '/unknown'} - ${ep.description || 'No description'}`
+      ).join('\n')
+      : 'No API endpoints detected';
+
+    const dependencies = data.externalDependencies.slice(0, 30)
+      .map(d => `${d.name || d.packageName || d._key}: ${d.version || 'unknown'}`)
+      .join('\n') || 'No dependencies detected';
+
+    // Build a source file summary (key files, not full content)
+    const sourceFilesSummary = this.buildSourceFilesSummary(sourceFiles, data);
+
+    const prompt = docDrafterPrompt({
+      frameworkInfo,
+      apiEndpoints,
+      dependencies,
+      sourceFilesSummary
+    });
+
+    const llmResult = await this.callLLM(prompt.system, prompt.user, {
+      jsonSchema: DocumentationDrafterSchema,
+      maxTokens: 8192,
+      temperature: 0.2
+    });
+
+    if (llmResult && llmResult.sections) {
+      return llmResult.sections.map((section: any) => ({
+        id: `doc_section_${section.sectionName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
+        type: 'documentation_section',
+        severity: 'info' as const,
+        title: section.sectionName,
+        description: section.content,
+        evidence: {
+          sectionName: section.sectionName,
+          sourceEvidence: section.sourceEvidence || [],
+          completeness: section.completeness || 0.8
+        },
+        confidence: 0.85,
+        verificationStatus: 'unverified' as const,
+        verificationMethod: 'llm' as const
+      }));
+    }
+
+    // Fallback to template if LLM returns null
+    console.warn('DocumentationDrafterAgent: LLM returned no result, falling back to templates');
+    return this.draftWithTemplates(data, sourceFiles);
+  }
+
+  private buildSourceFilesSummary(
+    sourceFiles: Map<string, string>,
+    data: IngestionData
+  ): string {
+    const parts: string[] = [];
+    let charCount = 0;
+    const maxChars = 30000;
+
+    // Include package.json first
+    for (const [path, content] of sourceFiles.entries()) {
+      if (path.endsWith('package.json')) {
+        const block = `--- ${path} ---\n${content}\n`;
+        parts.push(block);
+        charCount += block.length;
+        break;
+      }
+    }
+
+    // Include key config files
+    for (const [path, content] of sourceFiles.entries()) {
+      if (charCount >= maxChars) break;
+      if (
+        path.includes('.env') ||
+        path.match(/config\.(ts|js|json)$/) ||
+        path.endsWith('tsconfig.json') ||
+        path.endsWith('README.md')
+      ) {
+        const block = `--- ${path} ---\n${content.slice(0, 2000)}\n`;
+        parts.push(block);
+        charCount += block.length;
+      }
+    }
+
+    // Include entry point files
+    for (const [path, content] of sourceFiles.entries()) {
+      if (charCount >= maxChars) break;
+      if (
+        path.match(/\/(index|main|app|server)\.(ts|js|tsx|jsx)$/) ||
+        path.match(/\/routes?\.(ts|js)$/)
+      ) {
+        const block = `--- ${path} ---\n${content.slice(0, 3000)}\n`;
+        parts.push(block);
+        charCount += block.length;
+      }
+    }
+
+    return parts.join('\n') || 'No source files available';
+  }
+
+  // =====================================================
+  // TEMPLATE-BASED DRAFTING (FALLBACK)
+  // =====================================================
+
+  private draftWithTemplates(
+    data: IngestionData,
+    sourceFiles: Map<string, string>
+  ): Finding[] {
+    const findings: Finding[] = [];
+    findings.push(this.draftGettingStartedSection(data, sourceFiles));
+    findings.push(this.draftApiReferenceSection(data));
+    findings.push(this.draftArchitectureSection(data, sourceFiles));
+    findings.push(this.draftConfigurationSection(data, sourceFiles));
+    return findings;
   }
 
   // =====================================================
@@ -201,7 +339,7 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
   }
 
   // =====================================================
-  // SECTION DRAFTERS
+  // SECTION DRAFTERS (TEMPLATE-BASED)
   // =====================================================
 
   private draftGettingStartedSection(
@@ -261,7 +399,7 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
       evidence: { sectionName: 'Getting Started', sourceEvidence: evidence, completeness: frameworks.length > 0 ? 0.8 : 0.5 },
       confidence: 0.7,
       verificationStatus: 'unverified',
-      verificationMethod: 'metadata'
+      verificationMethod: 'template'
     };
   }
 
@@ -309,7 +447,7 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
       },
       confidence: data.apiEndpoints.length > 0 ? 0.8 : 0.4,
       verificationStatus: 'unverified',
-      verificationMethod: 'metadata'
+      verificationMethod: 'template'
     };
   }
 
@@ -379,7 +517,7 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
       },
       confidence: 0.7,
       verificationStatus: 'unverified',
-      verificationMethod: 'metadata'
+      verificationMethod: 'template'
     };
   }
 
@@ -443,7 +581,7 @@ export class DocumentationDrafterAgent extends EnhancedBaseA2AAgent {
       },
       confidence: envVars.length > 0 ? 0.75 : 0.4,
       verificationStatus: 'unverified',
-      verificationMethod: 'metadata'
+      verificationMethod: 'template'
     };
   }
 

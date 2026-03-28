@@ -22,10 +22,11 @@
     "collaborate": "curl -X POST http://localhost:8003/collaborate -H 'Content-Type: application/json' -d '{\"entityKey\":\"demo_entity\",\"coordinationType\":\"consensus\"}'"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "arangojs": "^8.8.1",
+    "dotenv": "^16.3.1",
     "fastify": "^4.24.3",
-    "uuid": "^9.0.1",
-    "dotenv": "^16.3.1"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

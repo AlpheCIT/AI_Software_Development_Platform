@@ -5,6 +5,7 @@
 // against actual source code and ArangoDB ingestion data.
 // Returns VerificationResults marking each section as
 // verified, inaccurate, or incomplete.
+// Supports LLM-powered verification when an llmClient is provided.
 
 import {
   EnhancedBaseA2AAgent,
@@ -21,6 +22,9 @@ import {
   A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
 import { Database } from 'arangojs';
+import { LLMClient } from '../llm/llm-client.js';
+import { docVerificationPrompt } from '../llm/prompts.js';
+import { DocumentationVerificationSchema } from '../llm/schemas.js';
 
 // =====================================================
 // DOMAIN-SPECIFIC INTERFACES
@@ -40,7 +44,7 @@ export class DocumentationChallengerAgent extends EnhancedBaseA2AAgent {
   public static readonly AGENT_ID = 'doc_challenger';
   private db: Database;
 
-  constructor(communicationBus: A2ACommunicationBus, db: Database) {
+  constructor(communicationBus: A2ACommunicationBus, db: Database, llmClient?: LLMClient | null) {
     const capabilities: A2ACapabilities = {
       methods: [
         'verify_documentation',
@@ -62,11 +66,13 @@ export class DocumentationChallengerAgent extends EnhancedBaseA2AAgent {
       A2AAgentDomain.QUALITY,
       capabilities,
       6,
-      communicationBus
+      communicationBus,
+      llmClient
     );
 
     this.db = db;
-    console.log('🔍 DocumentationChallengerAgent: Initialized with ArangoDB connection');
+    console.log('DocumentationChallengerAgent: Initialized with ArangoDB connection' +
+      (this.hasLLM() ? ' and LLM client' : ' (code-based verification)'));
   }
 
   // =====================================================
@@ -74,7 +80,7 @@ export class DocumentationChallengerAgent extends EnhancedBaseA2AAgent {
   // =====================================================
 
   protected async performAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {
-    console.log(`🔍 DocumentationChallengerAgent: Verifying documentation for ${request.type}`);
+    console.log(`DocumentationChallengerAgent: Verifying documentation for ${request.type}`);
     const startTime = Date.now();
 
     try {
@@ -96,17 +102,54 @@ export class DocumentationChallengerAgent extends EnhancedBaseA2AAgent {
       const verificationResults: VerificationResult[] = [];
       const verifiedFindings: Finding[] = [];
 
-      for (const finding of findingsToVerify) {
-        const result = await this.verifyDocumentationSection(finding, sourceFiles, repoId);
-        verificationResults.push(result);
-        verifiedFindings.push({
-          ...finding,
-          verificationStatus: result.verified ? 'verified' : 'unverified',
-          verificationMethod: 'debate',
-          verificationEvidence: result.evidence,
-          challengerNotes: result.mitigationsFound.join('; '),
-          confidence: result.adjustedConfidence
-        });
+      if (this.hasLLM()) {
+        // LLM-powered verification: send each section to LLM with source code
+        const llmResults = await this.verifyWithLLM(findingsToVerify, sourceFiles);
+        for (let i = 0; i < findingsToVerify.length; i++) {
+          const finding = findingsToVerify[i];
+          const llmVerification = llmResults[i];
+
+          const result: VerificationResult = {
+            findingId: finding.id,
+            verified: llmVerification?.verified ?? false,
+            evidence: llmVerification?.reasoning || 'LLM verification completed',
+            adjustedConfidence: llmVerification?.verified
+              ? Math.min((finding.confidence || 0.5) + 0.15, 0.95)
+              : Math.max((finding.confidence || 0.5) - 0.2, 0.2),
+            mitigationsFound: [
+              ...(llmVerification?.issues || []),
+              ...(llmVerification?.incorrectClaims || [])
+            ],
+            challengerAgent: this.id
+          };
+
+          verificationResults.push(result);
+          verifiedFindings.push({
+            ...finding,
+            verificationStatus: result.verified ? 'verified' : 'unverified',
+            verificationMethod: 'debate',
+            verificationEvidence: result.evidence,
+            challengerNotes: [
+              ...(llmVerification?.issues || []),
+              ...(llmVerification?.suggestions || [])
+            ].join('; '),
+            confidence: result.adjustedConfidence
+          });
+        }
+      } else {
+        // Code-based verification (existing logic)
+        for (const finding of findingsToVerify) {
+          const result = await this.verifyDocumentationSection(finding, sourceFiles, repoId);
+          verificationResults.push(result);
+          verifiedFindings.push({
+            ...finding,
+            verificationStatus: result.verified ? 'verified' : 'unverified',
+            verificationMethod: 'debate',
+            verificationEvidence: result.evidence,
+            challengerNotes: result.mitigationsFound.join('; '),
+            confidence: result.adjustedConfidence
+          });
+        }
       }
 
       // Phase 2: Identify documentation gaps
@@ -134,7 +177,8 @@ export class DocumentationChallengerAgent extends EnhancedBaseA2AAgent {
           sectionsVerified: verified,
           sectionsInaccurate: inaccurate,
           gapsIdentified: gaps.length,
-          totalSectionsChecked: verificationResults.length
+          totalSectionsChecked: verificationResults.length,
+          llmPowered: this.hasLLM() ? 1 : 0
         },
         rawData: { verificationResults },
         businessImpact: this.generateBusinessImpact(verifiedFindings, request.businessContext),
@@ -147,7 +191,67 @@ export class DocumentationChallengerAgent extends EnhancedBaseA2AAgent {
   }
 
   // =====================================================
-  // SECTION VERIFICATION
+  // LLM-POWERED VERIFICATION
+  // =====================================================
+
+  private async verifyWithLLM(
+    findings: Finding[],
+    sourceFiles: Map<string, string>
+  ): Promise<Array<{
+    verified: boolean;
+    accuracy: number;
+    issues: string[];
+    incorrectClaims: string[];
+    missingFeatures: string[];
+    suggestions: string[];
+    reasoning: string;
+  } | null>> {
+    console.log('DocumentationChallengerAgent: Using LLM for verification');
+
+    const codeContext = this.buildCodeContext(sourceFiles, 40000);
+    const results: Array<any | null> = [];
+
+    for (const finding of findings) {
+      const sectionName = finding.evidence?.sectionName || finding.title;
+      const sectionContent = finding.description || '';
+
+      const prompt = docVerificationPrompt({
+        sectionName,
+        sectionContent,
+        sourceCode: codeContext
+      });
+
+      const llmResult = await this.callLLM(prompt.system, prompt.user, {
+        jsonSchema: DocumentationVerificationSchema,
+        maxTokens: 4096,
+        temperature: 0.1
+      });
+
+      if (llmResult && llmResult.verifications && llmResult.verifications.length > 0) {
+        // Find the verification for this section
+        const verification = llmResult.verifications.find(
+          (v: any) => v.sectionName === sectionName
+        ) || llmResult.verifications[0];
+
+        results.push({
+          verified: verification.verified ?? (verification.accuracy >= 0.6),
+          accuracy: verification.accuracy || 0.5,
+          issues: verification.issues || [],
+          incorrectClaims: verification.incorrectClaims || [],
+          missingFeatures: verification.missingFeatures || [],
+          suggestions: verification.suggestions || [],
+          reasoning: verification.reasoning || ''
+        });
+      } else {
+        results.push(null);
+      }
+    }
+
+    return results;
+  }
+
+  // =====================================================
+  // CODE-BASED SECTION VERIFICATION
   // =====================================================
 
   private async verifyDocumentationSection(
@@ -173,6 +277,7 @@ export class DocumentationChallengerAgent extends EnhancedBaseA2AAgent {
         verified = await this.verifyArchitecture(finding, sourceFiles, evidence, mitigations);
         break;
       case 'Configuration':
+      case 'Configuration Guide':
         verified = await this.verifyConfiguration(finding, sourceFiles, evidence, mitigations);
         break;
       default:

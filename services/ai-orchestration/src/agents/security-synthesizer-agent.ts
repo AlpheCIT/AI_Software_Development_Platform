@@ -20,6 +20,9 @@ import {
   A2AContext,
   A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
+import { LLMClient } from '../llm/llm-client.js';
+import { securitySynthesizerPrompt } from '../llm/prompts.js';
+import { SynthesizerReportSchema } from '../llm/schemas.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // =====================================================
@@ -28,7 +31,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export class SecuritySynthesizerAgent extends EnhancedBaseA2AAgent {
 
-  constructor(communicationBus: A2ACommunicationBus) {
+  constructor(communicationBus: A2ACommunicationBus, llmClient?: LLMClient | null) {
     const capabilities: A2ACapabilities = {
       methods: [
         'synthesize_security_report',
@@ -46,7 +49,7 @@ export class SecuritySynthesizerAgent extends EnhancedBaseA2AAgent {
       ]
     };
 
-    super('SecuritySynthesizerAgent', A2AAgentDomain.SECURITY, capabilities, 7, communicationBus);
+    super('SecuritySynthesizerAgent', A2AAgentDomain.SECURITY, capabilities, 7, communicationBus, llmClient);
   }
 
   // =====================================================
@@ -69,26 +72,64 @@ export class SecuritySynthesizerAgent extends EnhancedBaseA2AAgent {
 
       console.log(`[SecuritySynthesizer] ${totalProposed} proposed, ${totalVerified} verified, ${totalFalsePositives} false positives`);
 
-      // Step 1: Sort by severity then confidence
+      // Step 1: Filter to only verified findings (not false_positive)
+      const confirmedFindings = verifiedFindings.filter(f => f.verificationStatus !== 'false_positive');
+
+      // Step 2: Sort by severity then confidence
       const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-      const sortedFindings = [...verifiedFindings].sort((a, b) => {
+      const sortedFindings = [...confirmedFindings].sort((a, b) => {
         const sevDiff = (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5);
         if (sevDiff !== 0) return sevDiff;
         return (b.confidence ?? 0) - (a.confidence ?? 0);
       });
 
-      // Step 2: Generate actionable recommendations
+      // Step 3: Try LLM-based report generation
+      let llmReport: any = null;
+      if (this.hasLLM() && sortedFindings.length > 0) {
+        try {
+          const prompt = securitySynthesizerPrompt({
+            domain: 'security',
+            verifiedFindings: sortedFindings.map(f => ({
+              id: f.id,
+              type: f.type,
+              severity: f.severity,
+              title: f.title,
+              description: f.description,
+              file: f.location?.file,
+              line: f.location?.line,
+              confidence: f.confidence,
+              verificationEvidence: f.verificationEvidence,
+              challengerNotes: f.challengerNotes
+            })),
+            repoName: request.parameters?.repoName ?? request.repoId
+          });
+
+          console.log(`[SecuritySynthesizer] Calling LLM for report generation...`);
+          llmReport = await this.callLLM(prompt.system, prompt.user, {
+            jsonSchema: SynthesizerReportSchema
+          });
+
+          if (llmReport) {
+            console.log(`[SecuritySynthesizer] LLM generated report with grade: ${llmReport.overallGrade}`);
+          }
+        } catch (llmError) {
+          console.error('[SecuritySynthesizer] LLM report generation failed, using code-based:', llmError);
+          llmReport = null;
+        }
+      }
+
+      // Step 4: Generate actionable recommendations (code-based, enriched by LLM if available)
       const recommendations: Recommendation[] = sortedFindings.map((finding, index) => {
         return this.buildActionableRecommendation(finding, index + 1);
       });
 
-      // Step 3: Add a summary recommendation with debate metrics
+      // Step 5: Add a summary recommendation with debate metrics
       recommendations.push({
         id: `synth_summary_${uuidv4().slice(0, 8)}`,
         type: 'security_summary',
         priority: sortedFindings.some(f => f.severity === 'critical') ? 'critical' : 'high',
         title: 'Security Debate Summary',
-        description: [
+        description: llmReport?.executiveSummary || [
           `Debate analysis complete.`,
           `${totalProposed} findings proposed by analyzer.`,
           `${totalVerified} findings verified by challenger.`,
@@ -99,16 +140,18 @@ export class SecuritySynthesizerAgent extends EnhancedBaseA2AAgent {
         ].join(' '),
         impact: `${totalVerified} actionable security issues remain after verification`,
         effort: 'low',
-        implementation: [
-          'Address critical findings first',
-          'Review high-severity findings within the current sprint',
-          'Schedule medium/low findings for upcoming sprints'
-        ],
+        implementation: llmReport?.remediationPlan?.length > 0
+          ? llmReport.remediationPlan.map((p: any) => `Phase ${p.phase}: ${p.title} - ${(p.actions || []).join(', ')}`)
+          : [
+            'Address critical findings first',
+            'Review high-severity findings within the current sprint',
+            'Schedule medium/low findings for upcoming sprints'
+          ],
         relatedFindings: sortedFindings.map(f => f.id),
         estimatedValue: this.calculateOverallSecurityValue(sortedFindings)
       });
 
-      // Step 4: Compute overall confidence as weighted average
+      // Step 6: Compute overall confidence as weighted average
       const overallConfidence = sortedFindings.length > 0
         ? sortedFindings.reduce((sum, f) => sum + (f.confidence ?? 0), 0) / sortedFindings.length
         : 0.5;
@@ -131,7 +174,8 @@ export class SecuritySynthesizerAgent extends EnhancedBaseA2AAgent {
           highFindings: sortedFindings.filter(f => f.severity === 'high').length,
           mediumFindings: sortedFindings.filter(f => f.severity === 'medium').length,
           lowFindings: sortedFindings.filter(f => f.severity === 'low').length,
-          securityScore: this.calculateSecurityScore(sortedFindings)
+          securityScore: this.calculateSecurityScore(sortedFindings),
+          reportMethod: llmReport ? 'llm' : 'code-based'
         },
         businessImpact: this.generateBusinessImpact(sortedFindings, request.businessContext),
         rawData: {
@@ -140,7 +184,8 @@ export class SecuritySynthesizerAgent extends EnhancedBaseA2AAgent {
             totalVerified,
             totalFalsePositives,
             verificationRate: totalProposed > 0 ? totalVerified / totalProposed : 0
-          }
+          },
+          llmReport: llmReport || null
         },
         executionTime: Date.now() - startTime
       };

@@ -21,6 +21,9 @@ import {
   A2AContext,
   A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
+import { LLMClient } from '../llm/llm-client.js';
+import { securityAnalyzerPrompt } from '../llm/prompts.js';
+import { SecurityAnalysisSchema } from '../llm/schemas.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // =====================================================
@@ -147,7 +150,7 @@ function stripCommentsAndStrings(code: string): string {
 export class EnhancedSecurityExpertAgent extends EnhancedBaseA2AAgent {
   private securityKnowledge: Map<string, any> = new Map();
 
-  constructor(communicationBus: A2ACommunicationBus) {
+  constructor(communicationBus: A2ACommunicationBus, llmClient?: LLMClient | null) {
     const capabilities: A2ACapabilities = {
       methods: [
         'analyze_security_vulnerabilities',
@@ -168,7 +171,7 @@ export class EnhancedSecurityExpertAgent extends EnhancedBaseA2AAgent {
       ]
     };
 
-    super('SecurityAnalyzerAgent', A2AAgentDomain.SECURITY, capabilities, 8, communicationBus);
+    super('SecurityAnalyzerAgent', A2AAgentDomain.SECURITY, capabilities, 8, communicationBus, llmClient);
     this.initializeSecurityKnowledge();
   }
 
@@ -191,15 +194,95 @@ export class EnhancedSecurityExpertAgent extends EnhancedBaseA2AAgent {
 
       console.log(`[SecurityAnalyzer] Scanning ${sourceFiles.size} file(s)`);
 
-      const findings: SecurityFinding[] = [];
-      const recommendations: Recommendation[] = [];
-
+      // Step 1: Run regex pre-filter to identify candidate locations (fast scan)
+      const regexFindings: SecurityFinding[] = [];
       for (const [filePath, fileContent] of sourceFiles) {
         const fileFindings = this.analyzeFile(filePath, fileContent);
-        findings.push(...fileFindings);
+        regexFindings.push(...fileFindings);
+      }
+
+      console.log(`[SecurityAnalyzer] Regex pre-filter found ${regexFindings.length} candidate(s)`);
+
+      let findings: SecurityFinding[] = [];
+
+      // Step 2: If LLM is available, use it for deeper analysis
+      if (this.hasLLM()) {
+        try {
+          // Build candidate list for the LLM prompt
+          const candidates = regexFindings.map(f => ({
+            file: f.location?.file || '',
+            line: f.location?.line || 0,
+            pattern: f.type
+          }));
+
+          const prompt = securityAnalyzerPrompt({
+            files: sourceFiles,
+            candidates: candidates.length > 0 ? candidates : undefined
+          });
+
+          console.log(`[SecurityAnalyzer] Calling LLM for deep analysis...`);
+          const llmResult = await this.callLLM(prompt.system, prompt.user, {
+            jsonSchema: SecurityAnalysisSchema
+          });
+
+          if (llmResult && llmResult.findings && Array.isArray(llmResult.findings)) {
+            console.log(`[SecurityAnalyzer] LLM returned ${llmResult.findings.length} finding(s)`);
+
+            // Convert LLM findings to SecurityFinding format
+            for (const llmFinding of llmResult.findings) {
+              findings.push(this.buildSecurityFinding({
+                type: llmFinding.type || 'other',
+                severity: llmFinding.severity || 'medium',
+                title: llmFinding.title || 'Security Issue',
+                description: llmFinding.description || llmFinding.evidence || '',
+                filePath: llmFinding.file || '',
+                line: llmFinding.line || 0,
+                originalLine: '',
+                cveId: llmFinding.cwe_id || '',
+                cvssScore: this.severityToCvss(llmFinding.severity),
+                exploitability: this.severityToExploitability(llmFinding.severity),
+                confidence: llmFinding.confidence ?? 0.7,
+                threatVector: llmFinding.description || '',
+                affectedAssets: [llmFinding.file || 'unknown'],
+                attackComplexity: llmFinding.severity === 'critical' || llmFinding.severity === 'high' ? 'low' : 'high',
+                dataIntegrity: llmFinding.severity === 'critical' ? 'complete' : 'partial',
+                availabilityImpact: llmFinding.severity === 'critical' ? 'complete' : 'partial'
+              }));
+              // Override verification method to 'llm'
+              findings[findings.length - 1].verificationMethod = 'llm';
+              findings[findings.length - 1].evidence = {
+                ...findings[findings.length - 1].evidence,
+                detectionMethod: 'llm',
+                llmEvidence: llmFinding.evidence,
+                llmRemediation: llmFinding.remediation
+              };
+            }
+          } else {
+            // LLM returned nothing useful -- fall back to regex findings
+            console.warn('[SecurityAnalyzer] LLM returned no findings, falling back to regex');
+            findings = regexFindings;
+          }
+        } catch (llmError) {
+          // LLM call failed -- fall back to regex findings with lower confidence
+          console.error('[SecurityAnalyzer] LLM analysis failed, falling back to regex:', llmError);
+          findings = regexFindings.map(f => ({
+            ...f,
+            confidence: Math.min(f.confidence, 0.5),
+            verificationMethod: 'regex' as const
+          }));
+        }
+      } else {
+        // No LLM available -- use regex findings with lower confidence
+        console.log('[SecurityAnalyzer] No LLM available, using regex-only findings');
+        findings = regexFindings.map(f => ({
+          ...f,
+          confidence: Math.max(0.3, Math.min(f.confidence, 0.5)),
+          verificationMethod: 'regex' as const
+        }));
       }
 
       // Generate one recommendation per finding
+      const recommendations: Recommendation[] = [];
       for (const finding of findings) {
         recommendations.push(this.createSecurityRecommendation(finding, request.businessContext));
       }
@@ -212,7 +295,7 @@ export class EnhancedSecurityExpertAgent extends EnhancedBaseA2AAgent {
         domain: this.domain,
         timestamp: Date.now(),
         status: 'success',
-        confidence: findings.length > 0 ? 0.75 : 0.5,
+        confidence: findings.length > 0 ? (this.hasLLM() ? 0.85 : 0.5) : 0.5,
         findings: findings as Finding[],
         recommendations,
         metrics: {
@@ -220,7 +303,9 @@ export class EnhancedSecurityExpertAgent extends EnhancedBaseA2AAgent {
           vulnerabilityCount: findings.length,
           criticalVulnerabilities: findings.filter(f => f.severity === 'critical').length,
           highVulnerabilities: findings.filter(f => f.severity === 'high').length,
-          filesScanned: sourceFiles.size
+          filesScanned: sourceFiles.size,
+          analysisMethod: this.hasLLM() ? 'llm+regex' : 'regex-only',
+          regexCandidates: regexFindings.length
         },
         businessImpact: this.generateBusinessImpact(findings, request.businessContext),
         executionTime: Date.now() - startTime
@@ -229,6 +314,22 @@ export class EnhancedSecurityExpertAgent extends EnhancedBaseA2AAgent {
       console.error('[SecurityAnalyzer] Analysis failed:', error);
       return this.createErrorResult(request, error);
     }
+  }
+
+  // =====================================================
+  // LLM HELPER METHODS
+  // =====================================================
+
+  private severityToCvss(severity: string): number {
+    const map: Record<string, number> = { critical: 9.0, high: 7.5, medium: 5.0, low: 3.0, info: 1.0 };
+    return map[severity] ?? 5.0;
+  }
+
+  private severityToExploitability(severity: string): SecurityFinding['exploitability'] {
+    const map: Record<string, SecurityFinding['exploitability']> = {
+      critical: 'critical', high: 'high', medium: 'medium', low: 'low', info: 'none'
+    };
+    return map[severity] ?? 'medium';
   }
 
   // =====================================================
