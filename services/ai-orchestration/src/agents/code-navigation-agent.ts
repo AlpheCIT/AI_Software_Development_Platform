@@ -64,7 +64,7 @@ export class CodeNavigationAgent {
       databaseName: process.env.ARANGO_DATABASE || 'ARANGO_AISDP_DB',
       auth: {
         username: process.env.ARANGO_USER || 'root',
-        password: process.env.ARANGO_PASSWORD || 'password'
+        password: process.env.ARANGO_PASSWORD || ''
       }
     });
   }

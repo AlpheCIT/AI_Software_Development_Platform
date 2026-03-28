@@ -1,23 +1,30 @@
 // =====================================================
-// ENHANCED PERFORMANCE EXPERT AGENT - COMPREHENSIVE ANALYSIS
+// PERFORMANCE ANALYZER AGENT - REAL PATTERN ANALYSIS
 // =====================================================
-// Advanced performance analysis agent with optimization recommendations
+// Debate triad role: ANALYZER
+// Scans source files for performance anti-patterns using
+// regex and structural analysis. Findings are unverified
+// until the challenger reviews them.
 
-import { 
-  EnhancedBaseA2AAgent, 
-  AnalysisRequest, 
-  AnalysisResult, 
-  Finding, 
+import {
+  EnhancedBaseA2AAgent,
+  AnalysisRequest,
+  AnalysisResult,
+  Finding,
   Recommendation,
-  BusinessContext,
-  BusinessImpact
+  BusinessContext
 } from './enhanced-base-agent.js';
-import { 
-  A2AAgentDomain, 
-  A2ACapabilities, 
-  A2AContext, 
-  A2ACommunicationBus 
+import {
+  A2AAgentDomain,
+  A2ACapabilities,
+  A2AContext,
+  A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
+import { v4 as uuidv4 } from 'uuid';
+
+// =====================================================
+// PERFORMANCE-SPECIFIC INTERFACES
+// =====================================================
 
 interface PerformanceFinding extends Finding {
   executionTime?: number;
@@ -29,6 +36,10 @@ interface PerformanceFinding extends Finding {
   optimizationPotential: number;
   resourceWaste: number;
 }
+
+// =====================================================
+// PERFORMANCE ANALYZER AGENT
+// =====================================================
 
 export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
   private performanceKnowledge: Map<string, any> = new Map();
@@ -49,38 +60,44 @@ export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
         'bottleneck_detection',
         'scalability_analysis',
         'optimization_recommendations',
-        'memory_analysis'
+        'memory_analysis',
+        'debate_analyzer_role'
       ]
     };
 
-    super('EnhancedPerformanceExpertAgent', A2AAgentDomain.PERFORMANCE, capabilities, 7, communicationBus);
+    super('PerformanceAnalyzerAgent', A2AAgentDomain.PERFORMANCE, capabilities, 7, communicationBus);
     this.initializePerformanceKnowledge();
   }
 
+  // =====================================================
+  // MAIN ANALYSIS ENTRY POINT
+  // =====================================================
+
   protected async performAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {
-    console.log(`⚡ EnhancedPerformanceExpertAgent: Analyzing ${request.type}`);
+    console.log(`[PerformanceAnalyzer] Analyzing ${request.type}`);
     const startTime = Date.now();
-    
+
     try {
-      const { entityKey, businessContext } = request;
-      
-      if (!entityKey) {
-        return this.createErrorResult(request, new Error('EntityKey is required for performance analysis'));
+      const sourceFiles = this.resolveSourceFiles(request);
+
+      if (sourceFiles.size === 0) {
+        console.warn('[PerformanceAnalyzer] No source files provided');
+        return this.createEmptyResult(request, 'No source files available for analysis');
       }
-      
-      console.log(`🔍 Performing comprehensive performance analysis for entity: ${entityKey}`);
+
+      console.log(`[PerformanceAnalyzer] Scanning ${sourceFiles.size} file(s)`);
 
       const findings: PerformanceFinding[] = [];
       const recommendations: Recommendation[] = [];
 
-      // Multi-phase performance analysis
-      const bottleneckFindings = await this.detectPerformanceBottlenecks(entityKey);
-      findings.push(...bottleneckFindings);
+      for (const [filePath, fileContent] of sourceFiles) {
+        if (!this.isCodeFile(filePath)) continue;
+        const fileFindings = this.analyzeFile(filePath, fileContent);
+        findings.push(...fileFindings);
+      }
 
-      // Generate recommendations for each finding
       for (const finding of findings) {
-        const recommendation = await this.createPerformanceRecommendation(finding, businessContext);
-        recommendations.push(recommendation);
+        recommendations.push(this.createPerformanceRecommendation(finding, request.businessContext));
       }
 
       const performanceScore = this.calculatePerformanceScore(findings);
@@ -92,164 +109,414 @@ export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
         domain: this.domain,
         timestamp: Date.now(),
         status: 'success',
-        confidence: findings.length > 0 ? 0.85 : 0.6,
+        confidence: findings.length > 0 ? 0.7 : 0.5,
         findings: findings as Finding[],
         recommendations,
-        metrics: { 
+        metrics: {
           performanceScore,
           optimizationPotential,
           bottleneckCount: findings.length,
           criticalBottlenecks: findings.filter(f => f.severity === 'critical').length,
-          highImpactIssues: findings.filter(f => (f as PerformanceFinding).impactLevel === 'high').length
+          highImpactIssues: findings.filter(f => f.impactLevel === 'high' || f.impactLevel === 'critical').length,
+          filesScanned: sourceFiles.size
         },
-        businessImpact: this.generateBusinessImpact(findings, businessContext),
+        businessImpact: this.generateBusinessImpact(findings, request.businessContext),
         executionTime: Date.now() - startTime
       };
     } catch (error) {
-      console.error(`❌ EnhancedPerformanceExpertAgent: Analysis failed:`, error);
+      console.error('[PerformanceAnalyzer] Analysis failed:', error);
       return this.createErrorResult(request, error);
     }
   }
 
-  private async detectPerformanceBottlenecks(entityKey: string): Promise<PerformanceFinding[]> {
-    const findings: PerformanceFinding[] = [];
-    
-    // Simulate nested loops detection
-    findings.push({
-      id: `nested_loops_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      type: 'algorithmic_complexity',
-      severity: 'high',
-      title: 'Nested Loops - O(n²) Complexity',
-      description: 'Nested loops detected which may cause performance issues with large datasets',
-      location: {
-        file: `entity_${entityKey}`,
-        line: Math.floor(Math.random() * 100) + 1,
-        function: 'processUserData'
-      },
-      evidence: { 
-        pattern: 'Nested for loops',
-        complexity: 'O(n²)',
-        estimatedImpact: 'High for large datasets'
-      },
-      confidence: 0.9,
-      executionTime: 1000,
-      bottleneckType: 'algorithm',
-      impactLevel: 'high',
-      scalabilityImpact: 8,
-      optimizationPotential: 75,
-      resourceWaste: 60
-    });
+  // =====================================================
+  // PER-FILE ANALYSIS
+  // =====================================================
 
-    // Simulate string concatenation issue
-    findings.push({
-      id: `string_concat_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      type: 'inefficient_string_operations',
-      severity: 'medium',
-      title: 'Inefficient String Concatenation in Loop',
-      description: 'String concatenation in loop is inefficient and should use array join',
-      location: {
-        file: `entity_${entityKey}`,
-        line: Math.floor(Math.random() * 100) + 1,
-        function: 'buildReport'
-      },
-      evidence: { 
-        pattern: 'String concatenation in loop',
-        performance_impact: 'Exponential memory allocation',
-        recommendation: 'Use Array.join() instead'
-      },
-      confidence: 0.85,
-      memoryUsage: 512,
-      bottleneckType: 'memory',
-      impactLevel: 'medium',
-      scalabilityImpact: 6,
-      optimizationPotential: 80,
-      resourceWaste: 45
-    });
+  private analyzeFile(filePath: string, content: string): PerformanceFinding[] {
+    const findings: PerformanceFinding[] = [];
+    const lines = content.split('\n');
+
+    this.detectNestedLoops(filePath, lines, findings);
+    this.detectStringConcatInLoops(filePath, lines, findings);
+    this.detectSyncIO(filePath, lines, findings);
+    this.detectMissingAwait(filePath, lines, content, findings);
 
     return findings;
   }
 
-  private async createPerformanceRecommendation(finding: PerformanceFinding, businessContext?: BusinessContext): Promise<Recommendation> {
-    const priorityMap = { critical: 'critical', high: 'high', medium: 'medium', low: 'low' } as const;
-    
+  // =====================================================
+  // BOTTLENECK DETECTORS
+  // =====================================================
+
+  /**
+   * Detect nested loops by tracking brace depth inside loop constructs.
+   * When we find a for/while, we track its brace scope. If another
+   * for/while appears inside that scope, it is nested.
+   */
+  private detectNestedLoops(
+    filePath: string,
+    lines: string[],
+    findings: PerformanceFinding[]
+  ): void {
+    const loopPattern = /\b(for|while)\s*\(/;
+    let outerLoopLine: number | null = null;
+    let braceDepthAtOuterLoop = 0;
+    let braceDepth = 0;
+    let inOuterLoop = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Track brace depth
+      for (const ch of line) {
+        if (ch === '{') braceDepth++;
+        if (ch === '}') {
+          braceDepth--;
+          // Check if we exited the outer loop scope
+          if (inOuterLoop && braceDepth < braceDepthAtOuterLoop) {
+            inOuterLoop = false;
+            outerLoopLine = null;
+          }
+        }
+      }
+
+      if (loopPattern.test(line)) {
+        if (inOuterLoop) {
+          // This is a nested loop
+          findings.push(this.buildPerformanceFinding({
+            type: 'nested_loop',
+            severity: 'high',
+            title: 'Nested Loop - O(n^2) or Worse Complexity',
+            description: `Nested loop detected. Outer loop starts at line ${outerLoopLine}, inner loop at line ${i + 1}. This can cause quadratic or worse performance with large datasets.`,
+            filePath,
+            line: i + 1,
+            originalLine: line,
+            bottleneckType: 'algorithm',
+            impactLevel: 'high',
+            scalabilityImpact: 8,
+            optimizationPotential: 75,
+            resourceWaste: 60,
+            confidence: 0.7
+          }));
+        } else {
+          // Start tracking an outer loop
+          inOuterLoop = true;
+          outerLoopLine = i + 1;
+          braceDepthAtOuterLoop = braceDepth;
+        }
+      }
+    }
+  }
+
+  /**
+   * Detect string concatenation inside loop bodies.
+   * Look for += or + with a string context inside for/while blocks.
+   */
+  private detectStringConcatInLoops(
+    filePath: string,
+    lines: string[],
+    findings: PerformanceFinding[]
+  ): void {
+    const loopPattern = /\b(for|while)\s*\(/;
+    const concatPattern = /\+\s*=\s*['"`]|\+\s*=\s*\w|['"]\s*\+\s*\w|\w\s*\+\s*['"]/;
+    let insideLoop = false;
+    let loopBraceDepth = 0;
+    let braceDepth = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Track brace depth
+      for (const ch of line) {
+        if (ch === '{') braceDepth++;
+        if (ch === '}') {
+          braceDepth--;
+          if (insideLoop && braceDepth < loopBraceDepth) {
+            insideLoop = false;
+          }
+        }
+      }
+
+      if (loopPattern.test(line)) {
+        insideLoop = true;
+        loopBraceDepth = braceDepth;
+      }
+
+      if (insideLoop && concatPattern.test(line)) {
+        findings.push(this.buildPerformanceFinding({
+          type: 'string_concat_in_loop',
+          severity: 'medium',
+          title: 'String Concatenation in Loop',
+          description: 'String concatenation or += detected inside a loop body. This causes repeated memory allocation. Use Array.push() + join(), template literals, or a StringBuilder pattern instead.',
+          filePath,
+          line: i + 1,
+          originalLine: line,
+          bottleneckType: 'memory',
+          impactLevel: 'medium',
+          scalabilityImpact: 6,
+          optimizationPotential: 80,
+          resourceWaste: 45,
+          confidence: 0.6
+        }));
+      }
+    }
+  }
+
+  /**
+   * Detect synchronous I/O calls (readFileSync, writeFileSync, execSync, etc.)
+   */
+  private detectSyncIO(
+    filePath: string,
+    lines: string[],
+    findings: PerformanceFinding[]
+  ): void {
+    const syncIOPattern = /\b(readFileSync|writeFileSync|appendFileSync|existsSync|mkdirSync|statSync|readdirSync|execSync|spawnSync|accessSync)\b/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = line.match(syncIOPattern);
+      if (match) {
+        findings.push(this.buildPerformanceFinding({
+          type: 'sync_io',
+          severity: 'medium',
+          title: `Synchronous I/O Call: ${match[1]}`,
+          description: `Synchronous I/O function '${match[1]}' blocks the event loop. In request handlers or hot paths, this degrades throughput and responsiveness.`,
+          filePath,
+          line: i + 1,
+          originalLine: line,
+          bottleneckType: 'io',
+          impactLevel: 'medium',
+          scalabilityImpact: 7,
+          optimizationPotential: 70,
+          resourceWaste: 50,
+          confidence: 0.8
+        }));
+      }
+    }
+  }
+
+  /**
+   * Detect missing await on async operations.
+   * Look for fetch() or .query() calls inside async functions
+   * where the same line lacks 'await'.
+   */
+  private detectMissingAwait(
+    filePath: string,
+    lines: string[],
+    fullContent: string,
+    findings: PerformanceFinding[]
+  ): void {
+    const asyncCallPattern = /\b(fetch|\.query|\.findOne|\.findMany|\.create|\.update|\.delete|\.save|\.remove|\.execute)\s*\(/;
+    let inAsyncFunction = false;
+    let asyncBraceDepth = 0;
+    let braceDepth = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      for (const ch of line) {
+        if (ch === '{') braceDepth++;
+        if (ch === '}') {
+          braceDepth--;
+          if (inAsyncFunction && braceDepth < asyncBraceDepth) {
+            inAsyncFunction = false;
+          }
+        }
+      }
+
+      if (/\basync\b/.test(line)) {
+        inAsyncFunction = true;
+        asyncBraceDepth = braceDepth;
+      }
+
+      if (inAsyncFunction && asyncCallPattern.test(line)) {
+        // Check if await is on the same line
+        if (!/\bawait\b/.test(line)) {
+          // Also check if the result is assigned to a variable (might be intentional fire-and-forget)
+          const isAssigned = /\b(const|let|var)\s+\w+\s*=/.test(line) || /\breturn\b/.test(line);
+          // Lower confidence if it looks like intentional fire-and-forget
+          const confidence = isAssigned ? 0.5 : 0.6;
+
+          findings.push(this.buildPerformanceFinding({
+            type: 'missing_await',
+            severity: 'medium',
+            title: 'Potentially Missing await on Async Call',
+            description: `An async operation is called without 'await' on the same line inside an async function. This may lead to unhandled promise rejections or race conditions.`,
+            filePath,
+            line: i + 1,
+            originalLine: line,
+            bottleneckType: 'algorithm',
+            impactLevel: 'medium',
+            scalabilityImpact: 5,
+            optimizationPotential: 40,
+            resourceWaste: 30,
+            confidence
+          }));
+        }
+      }
+    }
+  }
+
+  // =====================================================
+  // FINDING BUILDER
+  // =====================================================
+
+  private buildPerformanceFinding(params: {
+    type: string;
+    severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+    title: string;
+    description: string;
+    filePath: string;
+    line: number;
+    originalLine: string;
+    bottleneckType: PerformanceFinding['bottleneckType'];
+    impactLevel: PerformanceFinding['impactLevel'];
+    scalabilityImpact: number;
+    optimizationPotential: number;
+    resourceWaste: number;
+    confidence: number;
+  }): PerformanceFinding {
     return {
-      id: `perf_rec_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      type: 'performance_optimization',
-      priority: priorityMap[finding.severity],
-      title: `Optimize ${finding.title}`,
-      description: `Address the identified ${finding.type} performance issue: ${finding.description}`,
-      impact: this.getPerformanceImpactDescription(finding),
-      effort: this.estimateOptimizationEffort(finding),
-      implementation: this.getOptimizationSteps(finding),
-      relatedFindings: [finding.id],
-      estimatedValue: this.calculatePerformanceValue(finding),
-      businessJustification: this.generateBusinessJustification(finding, businessContext)
+      id: `${params.type}_${uuidv4().slice(0, 8)}`,
+      type: params.type,
+      severity: params.severity,
+      title: params.title,
+      description: params.description,
+      location: {
+        file: params.filePath,
+        line: params.line
+      },
+      evidence: {
+        pattern: params.type,
+        matchedLine: params.originalLine.trim(),
+        detectionMethod: 'regex'
+      },
+      confidence: params.confidence,
+      verificationStatus: 'unverified',
+      verificationMethod: 'regex',
+      bottleneckType: params.bottleneckType,
+      impactLevel: params.impactLevel,
+      scalabilityImpact: params.scalabilityImpact,
+      optimizationPotential: params.optimizationPotential,
+      resourceWaste: params.resourceWaste
     };
   }
 
+  // =====================================================
+  // RECOMMENDATION GENERATOR
+  // =====================================================
+
+  private createPerformanceRecommendation(finding: PerformanceFinding, businessContext?: BusinessContext): Recommendation {
+    const priorityMap = { critical: 'critical', high: 'high', medium: 'medium', low: 'low', info: 'low' } as const;
+
+    return {
+      id: `perf_rec_${uuidv4().slice(0, 8)}`,
+      type: 'performance_optimization',
+      priority: priorityMap[finding.severity],
+      title: `Optimize: ${finding.title}`,
+      description: `Fix ${finding.type} in ${finding.location?.file}:${finding.location?.line} -- ${finding.description}`,
+      impact: this.getPerformanceImpactDescription(finding.type),
+      effort: finding.severity === 'critical' || finding.severity === 'high' ? 'medium' : 'low',
+      implementation: this.getOptimizationSteps(finding.type),
+      relatedFindings: [finding.id],
+      estimatedValue: Math.round(finding.optimizationPotential),
+      businessJustification: businessContext?.criticality === 'critical'
+        ? `Critical system -- addressing this ${finding.impactLevel} impact performance issue is mandatory.`
+        : `Improves user experience and reduces operational costs.`
+    };
+  }
+
+  private getPerformanceImpactDescription(findingType: string): string {
+    const impacts: Record<string, string> = {
+      nested_loop: 'High -- Exponential performance degradation with data growth',
+      string_concat_in_loop: 'Medium -- Repeated memory allocation and GC pressure in loops',
+      sync_io: 'Medium-High -- Event loop blocking degrades throughput for all concurrent users',
+      missing_await: 'Medium -- Potential race conditions and unhandled promise rejections'
+    };
+    return impacts[findingType] || 'Performance improvement opportunity identified';
+  }
+
+  private getOptimizationSteps(findingType: string): string[] {
+    const steps: Record<string, string[]> = {
+      nested_loop: [
+        'Consider using a Map/Set for O(1) lookups instead of inner loop',
+        'Evaluate if data can be pre-indexed or sorted',
+        'Use array methods like .find() or .includes() with indexed data',
+        'Add performance benchmarks to verify improvement'
+      ],
+      string_concat_in_loop: [
+        'Replace string += with Array.push() followed by .join("")',
+        'Use template literals for fixed patterns',
+        'Consider a streaming approach for very large outputs'
+      ],
+      sync_io: [
+        'Replace with async equivalent (e.g., readFile instead of readFileSync)',
+        'If startup-only, document that sync usage is intentional',
+        'Use fs/promises for modern async file operations'
+      ],
+      missing_await: [
+        'Add await before the async call',
+        'If fire-and-forget is intentional, add void keyword and .catch() handler',
+        'Wrap in try/catch to handle potential rejections'
+      ]
+    };
+    return steps[findingType] || ['Analyze and optimize the identified performance issue'];
+  }
+
+  // =====================================================
+  // SCORING
+  // =====================================================
+
   private calculatePerformanceScore(findings: PerformanceFinding[]): number {
     if (findings.length === 0) return 90;
-    
-    const severityWeights = { critical: 40, high: 30, medium: 20, low: 10 };
-    const totalWeight = findings.reduce((sum, finding) => {
-      return sum + (severityWeights[finding.severity] || 10);
-    }, 0);
-    
-    return Math.max(10, 100 - Math.min(totalWeight, 90));
+    const weights: Record<string, number> = { critical: 40, high: 30, medium: 20, low: 10, info: 2 };
+    const total = findings.reduce((sum, f) => sum + (weights[f.severity] || 10), 0);
+    return Math.max(10, 100 - Math.min(total, 90));
   }
 
   private calculateOptimizationPotential(findings: PerformanceFinding[]): number {
     if (findings.length === 0) return 0;
-    
-    return findings.reduce((sum, finding) => sum + finding.optimizationPotential, 0) / findings.length;
+    return findings.reduce((sum, f) => sum + f.optimizationPotential, 0) / findings.length;
   }
 
-  private getPerformanceImpactDescription(finding: PerformanceFinding): string {
-    const impacts = {
-      algorithmic_complexity: 'High - Exponential performance degradation with data growth',
-      inefficient_string_operations: 'Medium - Memory allocation issues and slower execution',
-      blocking_operations: 'High - Thread blocking affects user experience',
-      database_performance: 'Medium - Query optimization can improve response times',
-      memory_management: 'High - Memory leaks affect long-running applications'
-    };
-    return impacts[finding.type as keyof typeof impacts] || 'Performance improvement opportunity identified';
+  // =====================================================
+  // UTILITIES
+  // =====================================================
+
+  private isCodeFile(filePath: string): boolean {
+    const codeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.java', '.go', '.rb', '.rs', '.cs'];
+    return codeExtensions.some(ext => filePath.endsWith(ext));
   }
 
-  private estimateOptimizationEffort(finding: PerformanceFinding): 'low' | 'medium' | 'high' {
-    const effortMap = {
-      critical: 'high',
-      high: 'medium',
-      medium: 'medium',
-      low: 'low'
-    } as const;
-    return effortMap[finding.severity];
-  }
-
-  private getOptimizationSteps(finding: PerformanceFinding): string[] {
-    const steps: Record<string, string[]> = {
-      algorithmic_complexity: ['Analyze algorithm complexity', 'Implement more efficient algorithm', 'Use appropriate data structures', 'Add performance benchmarks'],
-      inefficient_string_operations: ['Replace string concatenation with Array.join()', 'Use StringBuilder pattern', 'Implement string pooling if needed'],
-      blocking_operations: ['Convert to asynchronous operations', 'Implement non-blocking alternatives', 'Use worker threads for heavy computations'],
-      database_performance: ['Add database indexes', 'Optimize query structure', 'Implement query caching', 'Use connection pooling'],
-      memory_management: ['Fix memory leaks', 'Implement proper cleanup', 'Use weak references where appropriate', 'Add memory monitoring']
-    };
-    return steps[finding.type] || ['Analyze performance issue', 'Implement optimization', 'Measure improvement'];
-  }
-
-  private calculatePerformanceValue(finding: PerformanceFinding): number {
-    const baseValue = finding.optimizationPotential;
-    const impactBonus = { critical: 20, high: 15, medium: 10, low: 5 }[finding.impactLevel] || 0;
-    return Math.min(baseValue + impactBonus, 100);
-  }
-
-  private generateBusinessJustification(finding: PerformanceFinding, businessContext?: BusinessContext): string {
-    const baseJustification = `Optimizing this ${finding.impactLevel} impact performance issue improves user experience`;
-    
-    if (businessContext?.criticality === 'critical') {
-      return `${baseJustification} and is essential for critical business operations`;
+  private resolveSourceFiles(request: AnalysisRequest): Map<string, string> {
+    if (request.sourceFiles && request.sourceFiles.size > 0) return request.sourceFiles;
+    const paramFiles = request.parameters?.sourceFiles;
+    if (paramFiles) {
+      if (paramFiles instanceof Map) return paramFiles;
+      if (typeof paramFiles === 'object') {
+        const map = new Map<string, string>();
+        for (const [k, v] of Object.entries(paramFiles)) {
+          if (typeof v === 'string') map.set(k, v);
+        }
+        return map;
+      }
     }
-    
-    return `${baseJustification} and reduces operational costs`;
+    return new Map();
+  }
+
+  private createEmptyResult(request: AnalysisRequest, reason: string): AnalysisResult {
+    return {
+      requestId: request.id,
+      agentId: this.id,
+      domain: this.domain,
+      timestamp: Date.now(),
+      status: 'success',
+      confidence: 0.3,
+      findings: [],
+      recommendations: [],
+      metrics: { performanceScore: 100, bottleneckCount: 0, note: reason } as any
+    };
   }
 
   private createErrorResult(request: AnalysisRequest, error: any): AnalysisResult {
@@ -262,15 +529,18 @@ export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
       confidence: 0,
       findings: [],
       recommendations: [],
-      metrics: { error: error.message }
+      metrics: { error: error instanceof Error ? error.message : String(error) } as any
     };
   }
 
   private initializePerformanceKnowledge(): void {
-    console.log(`⚡ Initializing performance knowledge base for ${this.name}`);
+    console.log(`[PerformanceAnalyzer] Initialized performance knowledge base`);
   }
 
-  // Required abstract method implementations
+  // =====================================================
+  // ABSTRACT METHOD IMPLEMENTATIONS
+  // =====================================================
+
   protected async shouldJoinCollaboration(context: A2AContext): Promise<boolean> {
     const performanceRelated = ['performance', 'optimization', 'scalability', 'bottleneck', 'latency'];
     const contextString = JSON.stringify(context).toLowerCase();
@@ -282,9 +552,9 @@ export class EnhancedPerformanceExpertAgent extends EnhancedBaseA2AAgent {
   }
 
   protected async generateVoteReasoning(proposal: any, vote: boolean): Promise<string> {
-    return vote ? 
-      'Performance analysis indicates this change will improve system efficiency.' :
-      'Performance concerns identified. This proposal may negatively impact system performance.';
+    return vote
+      ? 'Performance analysis indicates this change will improve system efficiency.'
+      : 'Performance concerns identified. This proposal may negatively impact system performance.';
   }
 
   protected shouldAcceptKnowledge(knowledge: any, sourceAgent: string): boolean {

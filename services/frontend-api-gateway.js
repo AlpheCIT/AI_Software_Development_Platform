@@ -20,6 +20,8 @@ const io = new SocketIOServer(server, {
 const PORT = process.env.PORT || 3001;
 const REPOSITORY_SERVICE_URL = process.env.REPOSITORY_SERVICE_URL || 'http://localhost:8080';
 const VECTOR_SEARCH_URL = process.env.VECTOR_SEARCH_URL || 'http://localhost:8081';
+const AI_ORCHESTRATION_URL = process.env.AI_ORCHESTRATION_URL || 'http://localhost:8003';
+const VECTOR_SEARCH_SERVICE_URL = process.env.VECTOR_SEARCH_SERVICE_URL || 'http://localhost:8005';
 const ARANGO_URL = process.env.ARANGO_URL || 'http://localhost:8529';
 const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:3002';
 const ENABLE_DEMO_DATA = process.env.DEMO_MODE === 'true';
@@ -591,6 +593,54 @@ app.get('/api/v1/mcp/analytics', async (req, res) => {
   }
 });
 
+// AI Orchestration Service proxy (port 8003)
+app.use('/api/v1/ai', async (req, res) => {
+  try {
+    const targetUrl = `${AI_ORCHESTRATION_URL}${req.url}`;
+    const response = await axios({
+      method: req.method,
+      url: targetUrl,
+      headers: { 'Content-Type': 'application/json' },
+      data: req.method !== 'GET' && req.body ? req.body : undefined,
+      timeout: 30000,
+      validateStatus: () => true
+    });
+    res.status(response.status).json(response.data);
+  } catch (error) {
+    console.error('AI Orchestration proxy error:', error.message);
+    res.status(502).json({
+      success: false,
+      error: 'AI Orchestration service unavailable',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Vector Search Service proxy (port 8005)
+app.use('/api/v1/vector', async (req, res) => {
+  try {
+    const targetUrl = `${VECTOR_SEARCH_SERVICE_URL}${req.url}`;
+    const response = await axios({
+      method: req.method,
+      url: targetUrl,
+      headers: { 'Content-Type': 'application/json' },
+      data: req.method !== 'GET' && req.body ? req.body : undefined,
+      timeout: 30000,
+      validateStatus: () => true
+    });
+    res.status(response.status).json(response.data);
+  } catch (error) {
+    console.error('Vector Search proxy error:', error.message);
+    res.status(502).json({
+      success: false,
+      error: 'Vector Search service unavailable',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Real ingestion job monitoring
 async function monitorIngestionJob(jobId, realTimeUpdates) {
   if (!realTimeUpdates) return;
@@ -754,6 +804,8 @@ server.listen(PORT, () => {
   console.log(`   ArangoDB: ${ARANGO_URL}`);
   console.log(`   MCP Server: ${MCP_SERVER_URL}`);
   console.log(`   Vector Search: ${VECTOR_SEARCH_URL}`);
+  console.log(`   AI Orchestration: ${AI_ORCHESTRATION_URL}`);
+  console.log(`   Vector Search Service: ${VECTOR_SEARCH_SERVICE_URL}`);
   console.log('');
   console.log('🚀 PRODUCTION MODE: Using real services ONLY - no fallbacks');
   console.log('');
