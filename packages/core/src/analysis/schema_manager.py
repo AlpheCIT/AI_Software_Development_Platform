@@ -219,15 +219,21 @@ class UnifiedSchemaManager:
             }
         }
         
-        # Graph definitions for relationship traversal
+        # Unified graph definition for relationship traversal
+        # All edge collections are included in a single 'knowledge_graph' so that
+        # the MCP server and all backend services use a consistent graph name.
         self.graph_definitions = {
-            'code_graph': {
-                'edge_collections': ['relationships', 'dependencies'],
-                'vertex_collections': ['ast_nodes', 'codeunits', 'code_files']
-            },
-            'similarity_graph': {
-                'edge_collections': ['relationships'],
-                'vertex_collections': ['codeunits', 'ast_nodes']
+            'knowledge_graph': {
+                'edge_collections': [
+                    'relationships', 'dependencies', 'depends_on',
+                    'imports', 'calls', 'contains', 'inherits',
+                    'implements', 'references', 'cross_file_calls',
+                    'semantic_relationships'
+                ],
+                'vertex_collections': [
+                    'ast_nodes', 'codeunits', 'code_files',
+                    'code_entities', 'repositories'
+                ]
             }
         }
     

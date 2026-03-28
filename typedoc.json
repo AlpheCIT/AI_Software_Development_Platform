@@ -1,0 +1,27 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "services/ai-orchestration/src",
+    "services/api-gateway/src",
+    "services/repository-ingestion/src",
+    "services/vector-search/src",
+    "services/jira-integration/src",
+    "services/websocket/src",
+    "arangodb-ai-platform-mcp/src"
+  ],
+  "entryPointStrategy": "expand",
+  "out": "docs/generated/typescript",
+  "plugin": ["typedoc-plugin-markdown"],
+  "exclude": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/legacy/**",
+    "**/analyzer-legacy/**"
+  ],
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "readme": "none",
+  "name": "AI Software Development Platform API"
+}

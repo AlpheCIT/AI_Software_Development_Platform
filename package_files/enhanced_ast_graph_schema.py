@@ -205,37 +205,32 @@ class EnhancedASTGraphSchemaManager(ASTGraphSchemaManager):
         """Create enhanced graphs for AI refactoring analysis."""
         graphs_to_create = [
             {
-                'name': 'similarity_graph',
-                'edge_definitions': [
-                    {
-                        'edge_collection': 'similarity_relationships',
-                        'from_vertex_collections': ['codeunits'],
-                        'to_vertex_collections': ['codeunits']
-                    }
-                ]
-            },
-            {
-                'name': 'refactoring_graph',
-                'edge_definitions': [
-                    {
-                        'edge_collection': 'refactoring_relationships',
-                        'from_vertex_collections': ['refactoring_opportunities'],
-                        'to_vertex_collections': ['codeunits', 'similarity_groups']
-                    }
-                ]
-            },
-            {
-                'name': 'enhanced_code_graph',
+                'name': 'knowledge_graph',
                 'edge_definitions': [
                     {
                         'edge_collection': 'relationships',
-                        'from_vertex_collections': ['codeunits', 'code_files'],
-                        'to_vertex_collections': ['codeunits', 'code_files']
+                        'from_vertex_collections': ['ast_nodes', 'codeunits', 'code_files', 'code_entities', 'repositories'],
+                        'to_vertex_collections': ['ast_nodes', 'codeunits', 'code_files', 'code_entities', 'repositories']
                     },
                     {
                         'edge_collection': 'similarity_relationships',
                         'from_vertex_collections': ['codeunits'],
                         'to_vertex_collections': ['codeunits']
+                    },
+                    {
+                        'edge_collection': 'refactoring_relationships',
+                        'from_vertex_collections': ['refactoring_opportunities'],
+                        'to_vertex_collections': ['codeunits', 'similarity_groups']
+                    },
+                    {
+                        'edge_collection': 'dependencies',
+                        'from_vertex_collections': ['ast_nodes', 'codeunits', 'code_files', 'code_entities', 'repositories'],
+                        'to_vertex_collections': ['ast_nodes', 'codeunits', 'code_files', 'code_entities', 'repositories']
+                    },
+                    {
+                        'edge_collection': 'semantic_relationships',
+                        'from_vertex_collections': ['ast_nodes', 'codeunits', 'code_files', 'code_entities', 'repositories'],
+                        'to_vertex_collections': ['ast_nodes', 'codeunits', 'code_files', 'code_entities', 'repositories']
                     }
                 ]
             }
@@ -393,7 +388,7 @@ class EnhancedASTGraphSchemaManager(ASTGraphSchemaManager):
                     info['enhanced_edge_collections'][collection_name] = {'status': 'missing'}
             
             # Get graph info
-            graph_names = ['similarity_graph', 'refactoring_graph', 'enhanced_code_graph']
+            graph_names = ['knowledge_graph']
             for graph_name in graph_names:
                 if self.db.has_graph(graph_name):
                     info['enhanced_graphs'].append({
@@ -430,7 +425,7 @@ class EnhancedASTGraphSchemaManager(ASTGraphSchemaManager):
                     validation_result['valid'] = False
             
             # Check graphs exist
-            required_graphs = ['similarity_graph', 'refactoring_graph', 'enhanced_code_graph']
+            required_graphs = ['knowledge_graph']
             for graph_name in required_graphs:
                 if not self.db.has_graph(graph_name):
                     validation_result['issues'].append(f"Missing required graph: {graph_name}")

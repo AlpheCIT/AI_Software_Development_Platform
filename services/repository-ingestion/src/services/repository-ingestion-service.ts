@@ -6,6 +6,10 @@ import { EntityExtractor } from '../extractors/entity-extractor';
 import { RelationshipExtractor } from '../extractors/relationship-extractor';
 import { GraphBuilder } from '../builders/graph-builder';
 import { EmbeddingService } from '../utils/embedding-service';
+import { DependencyExtractor, ExtractedDependency } from '../extractors/dependency-extractor';
+import { EndpointExtractor } from '../extractors/endpoint-extractor';
+import { FrameworkDetector } from '../analyzers/framework-detector';
+import { DocCoverageAnalyzer } from '../analyzers/doc-coverage-analyzer';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
@@ -47,6 +51,10 @@ export class RepositoryIngestionService {
   private relationshipExtractor: RelationshipExtractor;
   private graphBuilder: GraphBuilder;
   private embeddingService: EmbeddingService;
+  private dependencyExtractor: DependencyExtractor;
+  private endpointExtractor: EndpointExtractor;
+  private frameworkDetector: FrameworkDetector;
+  private docCoverageAnalyzer: DocCoverageAnalyzer;
 
   constructor(
     private db: Database,
@@ -58,6 +66,10 @@ export class RepositoryIngestionService {
     this.relationshipExtractor = new RelationshipExtractor();
     this.graphBuilder = new GraphBuilder(db);
     this.embeddingService = new EmbeddingService();
+    this.dependencyExtractor = new DependencyExtractor();
+    this.endpointExtractor = new EndpointExtractor();
+    this.frameworkDetector = new FrameworkDetector();
+    this.docCoverageAnalyzer = new DocCoverageAnalyzer();
   }
 
   async ingestRepository(url: string, branch: string = 'main', options: IngestionOptions = {}): Promise<string> {
@@ -196,6 +208,135 @@ export class RepositoryIngestionService {
     this.updateJobStatus(jobId, 'running', undefined, 90, 'Generating embeddings');
     await this.generateEmbeddings(repositoryId);
 
+    // === NEW: Dependency Extraction ===
+    this.updateJobStatus(jobId, 'running', undefined, 91, 'Extracting dependencies');
+    let dependencies: ExtractedDependency[] = [];
+    try {
+      dependencies = await this.dependencyExtractor.extract(directoryPath, repositoryId);
+      if (dependencies.length > 0) {
+        const depCollection = this.db.collection('external_dependencies');
+        // Ensure collection exists, create if not
+        try { await depCollection.create(); } catch (e) { /* already exists */ }
+        for (const dep of dependencies) {
+          try { await depCollection.save(dep); } catch (e) { logger.warn(`Failed to save dependency: ${dep.packageName}`); }
+        }
+      }
+      logger.info(`Extracted ${dependencies.length} dependencies`);
+    } catch (error) {
+      logger.error('Dependency extraction failed:', error);
+    }
+
+    // === NEW: Framework & Middleware Detection ===
+    this.updateJobStatus(jobId, 'running', undefined, 93, 'Detecting frameworks and middleware');
+    let detectedFrameworks: any[] = [];
+    try {
+      const frameworkResult = await this.frameworkDetector.detect(directoryPath, repositoryId, dependencies);
+      detectedFrameworks = frameworkResult.frameworks;
+
+      if (frameworkResult.frameworks.length > 0) {
+        const fwCollection = this.db.collection('framework_usage');
+        try { await fwCollection.create(); } catch (e) { /* already exists */ }
+        for (const fw of frameworkResult.frameworks) {
+          try { await fwCollection.save(fw); } catch (e) { logger.warn(`Failed to save framework: ${fw.framework}`); }
+        }
+      }
+
+      if (frameworkResult.middleware.length > 0) {
+        const mwCollection = this.db.collection('middleware_chains');
+        try { await mwCollection.create(); } catch (e) { /* already exists */ }
+        for (const mw of frameworkResult.middleware) {
+          try { await mwCollection.save(mw); } catch (e) { logger.warn(`Failed to save middleware: ${mw.name}`); }
+        }
+      }
+
+      logger.info(`Detected ${frameworkResult.frameworks.length} frameworks, ${frameworkResult.middleware.length} middleware`);
+    } catch (error) {
+      logger.error('Framework detection failed:', error);
+    }
+
+    // === NEW: API Endpoint Extraction ===
+    this.updateJobStatus(jobId, 'running', undefined, 95, 'Extracting API endpoints');
+    try {
+      const endpoints = await this.endpointExtractor.extract(directoryPath, repositoryId, detectedFrameworks);
+      if (endpoints.length > 0) {
+        const epCollection = this.db.collection('api_endpoints');
+        try { await epCollection.create(); } catch (e) { /* already exists */ }
+        for (const ep of endpoints) {
+          try { await epCollection.save(ep); } catch (e) { logger.warn(`Failed to save endpoint: ${ep.method} ${ep.path}`); }
+        }
+      }
+      logger.info(`Extracted ${endpoints.length} API endpoints`);
+    } catch (error) {
+      logger.error('Endpoint extraction failed:', error);
+    }
+
+    // === NEW: Documentation Coverage Analysis ===
+    this.updateJobStatus(jobId, 'running', undefined, 97, 'Analyzing documentation coverage');
+    try {
+      const docResult = await this.docCoverageAnalyzer.analyze(directoryPath, repositoryId);
+      if (docResult.files.length > 0) {
+        const docCollection = this.db.collection('documentation_coverage');
+        try { await docCollection.create(); } catch (e) { /* already exists */ }
+        for (const fileCov of docResult.files) {
+          try { await docCollection.save(fileCov); } catch (e) { logger.warn(`Failed to save doc coverage: ${fileCov.filePath}`); }
+        }
+      }
+      logger.info(`Analyzed documentation coverage: ${docResult.summary.overallCoveragePercent.toFixed(1)}% across ${docResult.summary.analyzedFiles} files`);
+    } catch (error) {
+      logger.error('Documentation coverage analysis failed:', error);
+    }
+
+    // === NEW: Git History Persistence ===
+    this.updateJobStatus(jobId, 'running', undefined, 98, 'Storing git history');
+    try {
+      // Get commit history
+      const commitHistory = await this.gitService.getCommitHistory(directoryPath, { maxCount: 500 });
+      if (commitHistory && commitHistory.length > 0) {
+        const commitsCollection = this.db.collection('git_commits');
+        try { await commitsCollection.create(); } catch (e) { /* already exists */ }
+
+        for (const commit of commitHistory) {
+          try {
+            await commitsCollection.save({
+              _key: commit.hash?.substring(0, 12) || uuidv4(),
+              hash: commit.hash,
+              message: commit.message,
+              author: commit.author,
+              authorEmail: commit.email,
+              date: commit.date,
+              repositoryId: repositoryId,
+              refs: commit.refs
+            });
+          } catch (e) { /* duplicate or error, skip */ }
+        }
+        logger.info(`Stored ${commitHistory.length} commits`);
+      }
+
+      // Get branches
+      const branches = await this.gitService.getBranches(directoryPath);
+      if (branches) {
+        const branchCollection = this.db.collection('git_branches');
+        try { await branchCollection.create(); } catch (e) { /* already exists */ }
+
+        for (const branchName of branches.all) {
+          try {
+            await branchCollection.save({
+              _key: `${repositoryId}-${branchName.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+              name: branchName,
+              repositoryId: repositoryId,
+              isCurrent: branchName === branches.current,
+              isRemote: branchName.startsWith('remotes/'),
+              status: 'active',
+              trackedAt: new Date()
+            });
+          } catch (e) { /* duplicate or error, skip */ }
+        }
+        logger.info(`Stored ${branches.all.length} branches`);
+      }
+    } catch (error) {
+      logger.error('Git history persistence failed:', error);
+    }
+
     // Update repository status
     await this.db.collection('repositories').update(repositoryId, {
       status: 'completed',
@@ -203,7 +344,9 @@ export class RepositoryIngestionService {
       stats: {
         filesProcessed: processedFiles,
         entitiesExtracted: totalEntities,
-        relationshipsCreated: totalRelationships
+        relationshipsCreated: totalRelationships,
+        dependenciesFound: dependencies.length,
+        frameworksDetected: detectedFrameworks.length,
       }
     });
 
@@ -287,6 +430,25 @@ export class RepositoryIngestionService {
     };
 
     await this.db.collection('files').save(fileRecord);
+
+    // Store actual source code for agent analysis
+    try {
+      const codeFilesCollection = this.db.collection('code_files');
+      try { await codeFilesCollection.create(); } catch (e) { /* already exists */ }
+      await codeFilesCollection.save({
+        _key: fileId,
+        repositoryId,
+        path: filePath,
+        content: content,
+        language: language,
+        linesOfCode: content.split('\n').length,
+        sizeBytes: Buffer.byteLength(content, 'utf8'),
+        storedAt: new Date().toISOString()
+      });
+    } catch (e: any) {
+      // Non-fatal - analysis can still work from other sources
+      logger.warn(`Failed to store source code for ${filePath}: ${e.message}`);
+    }
 
     // Parse file content
     const parser = this.languageParserFactory.getParser(language);

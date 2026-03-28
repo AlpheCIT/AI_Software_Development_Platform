@@ -33,6 +33,8 @@ export interface AnalysisRequest {
   timeout?: number;
   businessContext?: BusinessContext;
   priority?: A2APriority;
+  sourceFiles?: Map<string, string>;    // actual file contents keyed by relative path
+  repositoryPath?: string;              // local path to cloned repo
 }
 
 export interface AnalysisResult {
@@ -63,6 +65,20 @@ export interface Finding {
   businessRelevance?: BusinessRelevance;
   confidence: number;
   impact?: ImpactAssessment;
+  verificationStatus?: 'verified' | 'unverified' | 'false_positive';
+  verificationMethod?: 'ast' | 'regex' | 'metadata' | 'debate';
+  verificationEvidence?: string;
+  challengerNotes?: string;
+}
+
+export interface VerificationResult {
+  findingId: string;
+  verified: boolean;
+  evidence: string;
+  adjustedSeverity?: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  adjustedConfidence: number;
+  mitigationsFound: string[];
+  challengerAgent: string;
 }
 
 export interface Recommendation {

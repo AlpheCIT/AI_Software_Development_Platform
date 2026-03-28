@@ -355,7 +355,7 @@ class ImpactAnalysisEngine:
         FOR target_key IN @target_keys
             FOR vertex, edge, path IN 1..3 OUTBOUND 
                 CONCAT("codeunits/", target_key) 
-                GRAPH "code_graph"
+                GRAPH "knowledge_graph"
                 RETURN DISTINCT {
                     component: vertex,
                     relationship: edge,

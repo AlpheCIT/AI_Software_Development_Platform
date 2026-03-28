@@ -67,7 +67,7 @@ export interface A2AContext {
   entityKey?: string;
   repoId?: string;
   branchId?: string;
-  collaborationMode?: 'parallel' | 'sequential' | 'consensus' | 'competitive';
+  collaborationMode?: 'parallel' | 'sequential' | 'consensus' | 'competitive' | 'debate';
   businessContext?: Record<string, any>;
   technicalContext?: Record<string, any>;
 }
@@ -246,7 +246,7 @@ export class A2ACommunicationBus extends EventEmitter {
     initiatorId: string,
     participants: string[],
     context: A2AContext,
-    mode: 'parallel' | 'sequential' | 'consensus' | 'competitive' = 'parallel'
+    mode: 'parallel' | 'sequential' | 'consensus' | 'competitive' | 'debate' = 'parallel'
   ): Promise<string> {
     const collaborationId = uuidv4();
     
@@ -503,6 +503,40 @@ export function createA2AMessage(
     payload,
     metadata: {}
   };
+}
+
+// =====================================================
+// DEBATE COORDINATION INTERFACES
+// =====================================================
+
+export interface DebateConfiguration {
+  maxRounds: number;
+  convergenceThreshold: number;
+  roles: {
+    analyzer: string;
+    challenger: string;
+    synthesizer: string;
+  };
+}
+
+export interface DebateRound {
+  round: number;
+  role: 'analyzer' | 'challenger' | 'synthesizer';
+  agentId: string;
+  findingsProposed?: number;
+  findingsChallenged?: number;
+  findingsVerified?: number;
+  falsePositivesFound?: number;
+  timestamp: number;
+}
+
+export interface DebateResult {
+  rounds: DebateRound[];
+  totalProposed: number;
+  totalVerified: number;
+  totalFalsePositives: number;
+  falsePositiveRate: number;
+  consensusScore: number;
 }
 
 export function isValidA2AMessage(obj: any): obj is A2AMessage {

@@ -165,7 +165,7 @@ class ASTGraphSchemaManager:
         if not self.db:
             raise RuntimeError("Database connection not established. Call connect() first.")
         
-        graph_name = 'code_graph'
+        graph_name = 'knowledge_graph'
         
         try:
             if not self.db.has_graph(graph_name):
@@ -246,8 +246,8 @@ class ASTGraphSchemaManager:
                     status["collections"][collection_name] = {"exists": False}
             
             # Check graphs
-            if self.db.has_graph('code_graph'):
-                status["graphs"].append('code_graph')
+            if self.db.has_graph('knowledge_graph'):
+                status["graphs"].append('knowledge_graph')
             
             return status
             

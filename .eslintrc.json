@@ -19,7 +19,8 @@
   "plugins": [
     "@typescript-eslint",
     "import",
-    "prettier"
+    "prettier",
+    "jsdoc"
   ],
   "rules": {
     "prettier/prettier": "error",
@@ -48,7 +49,19 @@
     ],
     "no-console": ["warn", { "allow": ["warn", "error"] }],
     "prefer-const": "error",
-    "no-var": "error"
+    "no-var": "error",
+    "jsdoc/require-jsdoc": ["warn", {
+      "require": {
+        "FunctionDeclaration": true,
+        "MethodDefinition": true,
+        "ClassDeclaration": true,
+        "ArrowFunctionExpression": false
+      },
+      "publicOnly": true
+    }],
+    "jsdoc/require-param": "warn",
+    "jsdoc/require-returns": "warn",
+    "jsdoc/require-description": "warn"
   },
   "overrides": [
     {

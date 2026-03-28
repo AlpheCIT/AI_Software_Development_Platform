@@ -1,0 +1,22 @@
+site_name: AI Software Development Platform - Python API
+theme:
+  name: material
+  palette:
+    primary: indigo
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - packages/core/src
+          options:
+            show_source: true
+            show_root_heading: true
+            heading_level: 2
+nav:
+  - Home: index.md
+  - Analysis Pipeline:
+    - Repository Processor: api/repository_processor.md
+    - Database Manager: api/database_manager.md
+    - Schema Manager: api/schema_manager.md
