@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
+import { detectGlobalMiddleware, routeHasErrorHandling, routeHasInputValidation } from './verification-helpers.js';
 
 const API_VALIDATOR_SYSTEM_PROMPT = `You are an API security and reliability expert. Your job is to discover all API routes from a codebase and validate them for correctness, security, and completeness.
 
@@ -141,6 +142,12 @@ export async function apiValidatorNode(
     .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 2000)}\n\`\`\``)
     .join('\n\n');
 
+  // Detect global middleware BEFORE the LLM call to provide context
+  const globalMiddleware = detectGlobalMiddleware(codeFiles);
+  const globalMiddlewareContext = globalMiddleware.details.length > 0
+    ? `\n## IMPORTANT: Global Middleware Detected\n${globalMiddleware.details.join('\n')}\nDO NOT report "missing rate limiting" or "missing auth" for routes already covered by these global middleware.\n`
+    : '';
+
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'api-validator',
@@ -153,7 +160,7 @@ export async function apiValidatorNode(
   const userMessage = `Discover and validate all API endpoints in this codebase.
 
 ## Repository: ${repoUrl}
-
+${globalMiddlewareContext}
 ## Route/Controller Files (${routeFiles.length} found)
 ${routeContext}
 
@@ -205,6 +212,63 @@ Respond with ONLY valid JSON, no markdown fencing.`;
       apiHealthScore: 0,
       summary: 'Analysis failed — retry recommended',
     };
+  }
+
+  // --- PASS 2: Programmatic verification of each finding ---
+  const preVerifyCount = {
+    securityGaps: (report.securityGaps || []).length,
+    missingErrorHandling: (report.missingErrorHandling || []).length,
+  };
+
+  // Ensure arrays exist
+  report.securityGaps = report.securityGaps || [];
+  report.missingErrorHandling = report.missingErrorHandling || [];
+  report.endpoints = report.endpoints || [];
+  report.schemaIssues = report.schemaIssues || [];
+
+  // Verify security gaps
+  report.securityGaps = report.securityGaps.filter(gap => {
+    // Missing rate limiting? But global rate limiter exists
+    if (gap.type === 'missing-rate-limit' && globalMiddleware.hasRateLimiting) {
+      console.log(`[APIValidator] Filtered: ${gap.endpoint} - global rate limiting exists`);
+      return false;
+    }
+    // Missing auth? Check if route or parent router has auth
+    if (gap.type === 'missing-auth' && (globalMiddleware.hasAuth || globalMiddleware.hasRouterAuth)) {
+      console.log(`[APIValidator] Filtered: ${gap.endpoint} - global/router auth middleware exists`);
+      return false;
+    }
+    // Input validation / injection risk? Check the actual file
+    if (gap.type === 'missing-validation' || gap.type === 'injection-risk') {
+      const hasValidation = routeHasInputValidation(codeFiles, (gap as any).file || '', gap.endpoint || '');
+      if (hasValidation) {
+        console.log(`[APIValidator] Filtered: ${gap.endpoint} - input validation exists`);
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Verify missing error handling
+  report.missingErrorHandling = report.missingErrorHandling.filter(item => {
+    const hasHandling = routeHasErrorHandling(codeFiles, item.file || '', item.endpoint || '');
+    if (hasHandling) {
+      console.log(`[APIValidator] Filtered: ${item.endpoint} - error handling exists`);
+      return false;
+    }
+    return true;
+  });
+
+  // Recalculate health score
+  const verifiedGaps = (report.securityGaps?.length || 0) + (report.missingErrorHandling?.length || 0);
+  report.apiHealthScore = Math.max(report.apiHealthScore, Math.round(100 - verifiedGaps * 4));
+
+  const filteredCount =
+    (preVerifyCount.securityGaps - report.securityGaps.length) +
+    (preVerifyCount.missingErrorHandling - report.missingErrorHandling.length);
+  if (filteredCount > 0) {
+    console.log(`[APIValidator] Verification pass filtered ${filteredCount} false positives`);
+    report.summary = `[Verified] ${report.summary} (${filteredCount} false positives removed by code verification)`;
   }
 
   eventPublisher?.emit('qa:agent.completed', {

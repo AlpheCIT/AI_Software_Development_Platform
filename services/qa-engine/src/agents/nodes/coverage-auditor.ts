@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
+import { extractAllRoutes, fileExistsInCodeFiles } from './verification-helpers.js';
 
 const COVERAGE_AUDITOR_SYSTEM_PROMPT = `You are an expert at cross-referencing backend APIs with frontend consumers. Your job is to find features that exist on one side but not the other — preventing "hidden features" and "broken calls".
 
@@ -157,11 +158,15 @@ export async function coverageAuditorNode(
     .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 1500)}\n\`\`\``)
     .join('\n\n');
 
+  // Build complete route inventory BEFORE the LLM call
+  const allRoutes = extractAllRoutes(codeFiles);
+  const routeInventory = allRoutes.map(r => `${r.method} ${r.path} (${r.file})`).join('\n');
+
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'coverage-auditor',
     progress: 30,
-    message: `Found ${backendFiles.length} backend route files, ${frontendFiles.length} frontend service files`,
+    message: `Found ${backendFiles.length} backend route files, ${frontendFiles.length} frontend service files, ${allRoutes.length} total routes`,
   });
 
   const model = createModel({ temperature: 0.2, maxTokens: 8192 });
@@ -169,6 +174,9 @@ export async function coverageAuditorNode(
   const userMessage = `Cross-reference the backend API with frontend consumers to find coverage gaps.
 
 ## Repository: ${repoUrl}
+
+## Complete Backend Route Inventory (${allRoutes.length} routes extracted programmatically)
+${routeInventory || '(no routes extracted)'}
 
 ## Backend Route/Controller Files (${backendFiles.length})
 ${backendContext}
@@ -185,6 +193,8 @@ Find:
 3. Orphaned/dead routes
 4. Data shape mismatches between backend responses and frontend expectations
 5. Missing CRUD operations
+
+IMPORTANT: Use the Complete Backend Route Inventory above as the source of truth for which endpoints exist. Do NOT report a frontend call as "broken" if the endpoint exists in the inventory.
 
 Respond with ONLY valid JSON, no markdown fencing.`;
 
@@ -224,6 +234,47 @@ Respond with ONLY valid JSON, no markdown fencing.`;
       coverageScore: 0,
       summary: 'Analysis failed — retry recommended',
     };
+  }
+
+  // --- PASS 2: Programmatic verification of each finding ---
+  const preVerifyBrokenCalls = (report.brokenFrontendCalls || []).length;
+
+  // Ensure arrays exist
+  report.brokenFrontendCalls = report.brokenFrontendCalls || [];
+  report.unexposedBackendFeatures = report.unexposedBackendFeatures || [];
+  report.orphanedRoutes = report.orphanedRoutes || [];
+  report.dataShapeMismatches = report.dataShapeMismatches || [];
+  report.missingCrudOperations = report.missingCrudOperations || [];
+
+  // Verify broken frontend calls against the complete route inventory
+  report.brokenFrontendCalls = report.brokenFrontendCalls.filter(call => {
+    const callPath = (call.expectedEndpoint || call.call || '')
+      .replace(/^(GET|POST|PUT|DELETE|PATCH)\s+/i, '')
+      .replace(/\?.*$/, '')  // strip query params
+      .trim();
+
+    if (!callPath) return true; // can't verify, keep it
+
+    const routeExists = allRoutes.some(r => {
+      const rPath = r.path.replace(/\/$/, '');
+      const cPath = callPath.replace(/\/$/, '');
+      return rPath === cPath || rPath.includes(cPath) || cPath.includes(rPath);
+    });
+
+    if (routeExists) {
+      console.log(`[CoverageAuditor] Filtered: ${call.call || call.expectedEndpoint} - route exists in inventory`);
+      return false;
+    }
+    return true;
+  });
+
+  // Recalculate
+  report.coverageScore = Math.max(report.coverageScore, Math.round(100 - (report.brokenFrontendCalls?.length || 0) * 10));
+
+  const filteredCount = preVerifyBrokenCalls - report.brokenFrontendCalls.length;
+  if (filteredCount > 0) {
+    console.log(`[CoverageAuditor] Verification pass filtered ${filteredCount} false positive broken calls`);
+    report.summary = `[Verified] ${report.summary} (${filteredCount} false positives removed by code verification)`;
   }
 
   eventPublisher?.emit('qa:agent.completed', {
