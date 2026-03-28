@@ -806,6 +806,7 @@ const DocumentationGaps: React.FC<{ data: ProductData }> = ({ data }) => {
 
 const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
   const [data, setData] = useState<ProductData | null>(null);
+  const [wikiData, setWikiData] = useState<{ files: any[]; entities: any[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -859,7 +860,30 @@ const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
       }
     };
 
+    const fetchWiki = async () => {
+      try {
+        // Try provided runId, then latest run
+        const rid = runId || '';
+        let wikiRes = rid ? await fetch(`${QA_ENGINE_URL}/qa/wiki/${rid}`).catch(() => null) : null;
+        if (!wikiRes?.ok) {
+          const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs?limit=1`);
+          if (runsRes.ok) {
+            const runsData = await runsRes.json();
+            const latestRun = runsData.runs?.[0];
+            if (latestRun?._key) {
+              wikiRes = await fetch(`${QA_ENGINE_URL}/qa/wiki/${latestRun._key}`);
+            }
+          }
+        }
+        if (wikiRes?.ok) {
+          const wiki = await wikiRes.json();
+          setWikiData(wiki);
+        }
+      } catch { /* non-fatal */ }
+    };
+
     fetchData();
+    fetchWiki();
   }, [runId]);
 
   const handlePrint = () => {
@@ -975,6 +999,107 @@ const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
         <StrategicRecommendations data={data} />
         <Divider my={4} />
         <DocumentationGaps data={data} />
+
+        {/* Files Requiring Action — aggregated from wiki data */}
+        {wikiData && wikiData.files.length > 0 && (() => {
+          const sourceFiles = wikiData.files.filter((f: any) =>
+            f.path?.match(/\.(js|jsx|ts|tsx|py|java)$/)
+          );
+          const noDocFiles = sourceFiles.filter((f: any) => !f.hasDocumentation).slice(0, 20);
+          const highRiskFiles = sourceFiles.filter((f: any) => (f.size || 0) > 300).slice(0, 10);
+
+          // Count entities per file
+          const entityCounts: Record<string, number> = {};
+          for (const e of (wikiData.entities || [])) {
+            const f = e.file || '';
+            entityCounts[f] = (entityCounts[f] || 0) + 1;
+          }
+          const complexFiles = Object.entries(entityCounts)
+            .filter(([_, count]) => count >= 8)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10);
+
+          return (
+            <>
+              <Divider my={4} />
+              <Box>
+                <Heading size="sm" mb={3}>
+                  <HStack><Text>📋</Text><Text>Files Requiring Team Action</Text></HStack>
+                </Heading>
+                <Text fontSize="sm" color={subtextColor} mb={3}>
+                  Aggregated from {sourceFiles.length} source files and {wikiData.entities.length} code entities.
+                  Assign these to your team for immediate attention.
+                </Text>
+
+                {/* Files needing documentation */}
+                {noDocFiles.length > 0 && (
+                  <Box mb={4}>
+                    <Text fontSize="sm" fontWeight="bold" mb={2}>
+                      📝 Files Needing Documentation ({noDocFiles.length})
+                    </Text>
+                    <Box fontSize="xs" maxH="200px" overflowY="auto">
+                      <Table size="sm" variant="simple">
+                        <Thead><Tr><Th>File</Th><Th>Language</Th><Th>Size</Th></Tr></Thead>
+                        <Tbody>
+                          {noDocFiles.map((f: any, i: number) => (
+                            <Tr key={i}>
+                              <Td fontFamily="mono" fontSize="xs">{f.path}</Td>
+                              <Td><Badge colorScheme="blue" fontSize="2xs">{f.language}</Badge></Td>
+                              <Td>{f.size ? `${f.size}B` : '—'}</Td>
+                            </Tr>
+                          ))}
+                        </Tbody>
+                      </Table>
+                    </Box>
+                  </Box>
+                )}
+
+                {/* Complex files (many entities) */}
+                {complexFiles.length > 0 && (
+                  <Box mb={4}>
+                    <Text fontSize="sm" fontWeight="bold" mb={2}>
+                      🔧 Complex Files — Consider Refactoring ({complexFiles.length})
+                    </Text>
+                    <Box fontSize="xs" maxH="200px" overflowY="auto">
+                      <Table size="sm" variant="simple">
+                        <Thead><Tr><Th>File</Th><Th>Entities</Th><Th>Recommendation</Th></Tr></Thead>
+                        <Tbody>
+                          {complexFiles.map(([file, count], i) => (
+                            <Tr key={i}>
+                              <Td fontFamily="mono" fontSize="xs">{file}</Td>
+                              <Td><Badge colorScheme={count >= 15 ? 'red' : count >= 10 ? 'orange' : 'yellow'}>{count} entities</Badge></Td>
+                              <Td fontSize="xs">{count >= 15 ? 'Split into smaller modules' : count >= 10 ? 'Review for single responsibility' : 'Monitor complexity'}</Td>
+                            </Tr>
+                          ))}
+                        </Tbody>
+                      </Table>
+                    </Box>
+                  </Box>
+                )}
+
+                {/* Summary stats */}
+                <SimpleGrid columns={{ base: 2, md: 4 }} spacing={3} mt={3}>
+                  <Box p={2} bg={cardBg === 'white' ? 'blue.50' : 'blue.900'} borderRadius="md" textAlign="center">
+                    <Text fontSize="lg" fontWeight="bold" color="blue.500">{sourceFiles.length}</Text>
+                    <Text fontSize="2xs">Source Files</Text>
+                  </Box>
+                  <Box p={2} bg={cardBg === 'white' ? 'purple.50' : 'purple.900'} borderRadius="md" textAlign="center">
+                    <Text fontSize="lg" fontWeight="bold" color="purple.500">{wikiData.entities.length}</Text>
+                    <Text fontSize="2xs">Code Entities</Text>
+                  </Box>
+                  <Box p={2} bg={cardBg === 'white' ? 'orange.50' : 'orange.900'} borderRadius="md" textAlign="center">
+                    <Text fontSize="lg" fontWeight="bold" color="orange.500">{noDocFiles.length}</Text>
+                    <Text fontSize="2xs">Need Docs</Text>
+                  </Box>
+                  <Box p={2} bg={cardBg === 'white' ? 'red.50' : 'red.900'} borderRadius="md" textAlign="center">
+                    <Text fontSize="lg" fontWeight="bold" color="red.500">{complexFiles.length}</Text>
+                    <Text fontSize="2xs">Complex Files</Text>
+                  </Box>
+                </SimpleGrid>
+              </Box>
+            </>
+          );
+        })()}
 
         {/* Interactive Chat — ask about this report */}
         <Divider my={4} />
