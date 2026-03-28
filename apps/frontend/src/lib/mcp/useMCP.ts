@@ -361,7 +361,13 @@ export const useMCP = (): UseMCPReturn => {
     try {
       // Try the real MCP analytics API first, then fall back to QA engine data
       const QA_URL = (import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005');
-      const result = await apiClient.mcpGetAnalytics('7d').catch(async () => {
+      let result = null;
+      try {
+        result = await apiClient.mcpGetAnalytics('7d');
+      } catch { /* MCP not available — fall back to QA engine */ }
+
+      if (!result) {
+        result = await (async () => {
         // Fall back to real QA engine data from ArangoDB — use honest labels
         try {
           const runsRes = await fetch(`${QA_URL}/qa/runs`).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -417,7 +423,8 @@ export const useMCP = (): UseMCPReturn => {
         } catch {
           return null;
         }
-      });
+      })();
+      }
       setAnalytics(result);
     } catch (error) {
       const errorMessage = apiClient.handleApiError(error);
