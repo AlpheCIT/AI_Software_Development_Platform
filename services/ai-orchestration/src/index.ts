@@ -27,6 +27,7 @@ import { DocumentationSynthesizerAgent } from './agents/documentation-synthesize
 import { DependencyChallengerAgent } from './agents/dependency-challenger-agent.js';
 import { DependencySynthesizerAgent } from './agents/dependency-synthesizer-agent.js';
 import { DocQualityChallengerAgent } from './agents/doc-quality-challenger-agent.js';
+import { AutoRemediationAgent } from './agents/auto-remediation-agent.js';
 import { SourceCodeProvider } from './services/source-code-provider.js';
 import { getDebateConfig } from './config/debate-registry.js';
 
@@ -241,6 +242,12 @@ export class EnhancedAIOrchestrationService {
     this.agents.set('doc_quality_challenger', dqChallenger);
     console.log('📋 Doc Quality Challenger Agent initialized');
 
+    // Auto-remediation agent -- generates actual code fixes for verified findings
+    const autoRemediation = new AutoRemediationAgent(this.communicationBus);
+    await autoRemediation.initialize();
+    this.agents.set('auto_remediation', autoRemediation);
+    console.log('🔧 Auto-Remediation Agent initialized');
+
     // Initialize SourceCodeProvider for debate agents
     this.sourceCodeProvider = new SourceCodeProvider(this.db);
     console.log('📂 SourceCodeProvider initialized');
@@ -375,6 +382,54 @@ export class EnhancedAIOrchestrationService {
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Documentation generation failed'
+        };
+      }
+    });
+
+    // Auto-remediation: takes verified findings and returns code patches
+    this.app.post('/remediate', async (request, reply) => {
+      try {
+        const { verifiedFindings, sourceFiles } = request.body as {
+          verifiedFindings: any[];
+          sourceFiles?: Record<string, string>;
+        };
+
+        if (!verifiedFindings || verifiedFindings.length === 0) {
+          reply.code(400);
+          return { success: false, error: 'verifiedFindings array is required' };
+        }
+
+        const remediationAgent = this.agents.get('auto_remediation');
+        if (!remediationAgent) {
+          reply.code(503);
+          return { success: false, error: 'Auto-remediation agent is not available' };
+        }
+
+        const result = await this.coordinationHub.requestComprehensiveAnalysis('remediation', {
+          coordinationType: 'parallel',
+          targetAgents: ['auto_remediation'],
+          analysisType: 'generate_fixes',
+          timeout: 30000,
+          sourceFiles: sourceFiles ? new Map(Object.entries(sourceFiles)) : new Map(),
+          parameters: { verifiedFindings, sourceFiles: sourceFiles || {} }
+        } as any);
+
+        const patches = result.combinedResult?.rawData?.patches || [];
+
+        return {
+          success: true,
+          patches,
+          summary: {
+            totalFindings: verifiedFindings.length,
+            patchesGenerated: patches.length,
+            breakingChanges: patches.filter((p: any) => p.breakingChange).length
+          }
+        };
+      } catch (error) {
+        reply.code(500);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Remediation failed'
         };
       }
     });
