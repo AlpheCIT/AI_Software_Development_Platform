@@ -14,7 +14,7 @@ const { Database } = require('arangojs');
 function getDBConfig() {
   const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev' || !process.env.NODE_ENV;
   const defaultPort = isDev ? '8529' : '8529';
-  const defaultPassword = isDev ? 'rootpassword' : 'openSesame';
+  const defaultPassword = process.env.ARANGO_PASSWORD || '';
   
   return {
     url: process.env.ARANGO_URL || `http://localhost:${defaultPort}`,

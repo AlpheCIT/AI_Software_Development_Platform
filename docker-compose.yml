@@ -9,7 +9,7 @@ services:
     container_name: aisdp_db
     restart: unless-stopped
     environment:
-      ARANGO_ROOT_PASSWORD: ${ARANGO_PASSWORD:-openSesame}
+      ARANGO_ROOT_PASSWORD: ${ARANGO_PASSWORD:?ARANGO_PASSWORD must be set in .env}
       ARANGO_NO_AUTH: 0
     ports:
       - "${ARANGO_PORT:-8529}:8529"
@@ -56,7 +56,7 @@ services:
       - ARANGO_URL=http://arangodb:8529
       - ARANGO_DATABASE=${ARANGO_DATABASE:-ARANGO_AISDP_DB}
       - ARANGO_USERNAME=${ARANGO_USERNAME:-root}
-      - ARANGO_PASSWORD=${ARANGO_PASSWORD:-openSesame}
+      - ARANGO_PASSWORD=${ARANGO_PASSWORD:?ARANGO_PASSWORD must be set in .env}
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:-aisdp-jwt-secret}
       - AWS_REGION=${AWS_REGION:-us-east-1}
@@ -128,7 +128,7 @@ services:
       - ARANGO_URL=http://arangodb:8529
       - ARANGO_DATABASE=${ARANGO_DATABASE:-ARANGO_AISDP_DB}
       - ARANGO_USERNAME=${ARANGO_USERNAME:-root}
-      - ARANGO_PASSWORD=${ARANGO_PASSWORD:-openSesame}
+      - ARANGO_PASSWORD=${ARANGO_PASSWORD:?ARANGO_PASSWORD must be set in .env}
       - FRONTEND_URL=http://localhost:3000
       - EMBEDDING_PROVIDER=openai
       - EMBEDDING_MODEL=text-embedding-ada-002
