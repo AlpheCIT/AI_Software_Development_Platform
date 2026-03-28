@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
+import { packageExistsInManifests } from './verification-helpers.js';
 
 const UI_UX_SYSTEM_PROMPT = `You are a senior UI/UX auditor and accessibility specialist. Your job is to analyze React/frontend code for usability issues, accessibility violations, and UX anti-patterns.
 
@@ -175,11 +176,42 @@ export async function uiUxAnalystNode(
     .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 1500)}\n\`\`\``)
     .join('\n\n');
 
+  // Detect UI framework to reduce false positives about built-in a11y
+  const hasChakra = packageExistsInManifests(codeFiles, '@chakra-ui/react');
+  const hasMUI = packageExistsInManifests(codeFiles, '@mui/material');
+  const hasAntD = packageExistsInManifests(codeFiles, 'antd');
+  const hasRadix = packageExistsInManifests(codeFiles, '@radix-ui/react-dialog') ||
+                   packageExistsInManifests(codeFiles, '@radix-ui/themes');
+  const hasHeadlessUI = packageExistsInManifests(codeFiles, '@headlessui/react');
+
+  let frameworkContext = '';
+  if (hasChakra) {
+    frameworkContext += '\nIMPORTANT: This project uses Chakra UI which provides built-in accessibility (FormControl/FormLabel auto-associates, Button has proper ARIA, Modal handles focus trap, etc.). Do NOT report missing ARIA labels for Chakra components that handle this automatically.\n';
+  }
+  if (hasMUI) {
+    frameworkContext += '\nIMPORTANT: This project uses Material-UI (MUI) which provides built-in accessibility for most components (TextField has label association, Button/IconButton have ARIA support, Dialog handles focus trap). Do NOT report missing ARIA labels for MUI components.\n';
+  }
+  if (hasAntD) {
+    frameworkContext += '\nIMPORTANT: This project uses Ant Design which provides built-in accessibility for form controls, modals, and interactive elements. Do NOT report missing ARIA labels for Ant Design components.\n';
+  }
+  if (hasRadix || hasHeadlessUI) {
+    frameworkContext += '\nIMPORTANT: This project uses a headless UI library (Radix/Headless UI) that provides built-in accessibility. Do NOT report missing ARIA labels for these components.\n';
+  }
+
+  // Track which framework components are used
+  const detectedFrameworks: string[] = [];
+  if (hasChakra) detectedFrameworks.push('Chakra UI');
+  if (hasMUI) detectedFrameworks.push('Material-UI');
+  if (hasAntD) detectedFrameworks.push('Ant Design');
+  if (hasRadix) detectedFrameworks.push('Radix UI');
+  if (hasHeadlessUI) detectedFrameworks.push('Headless UI');
+
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'ui-ux-analyst',
     progress: 25,
-    message: `Found ${componentFiles.length} UI components, ${styleFiles.length} style files, ${routeFiles.length} route files`,
+    message: `Found ${componentFiles.length} UI components, ${styleFiles.length} style files, ${routeFiles.length} route files` +
+      (detectedFrameworks.length > 0 ? `. UI frameworks: ${detectedFrameworks.join(', ')}` : ''),
   });
 
   const model = createModel({ temperature: 0.3, maxTokens: 8192 });
@@ -190,7 +222,8 @@ export async function uiUxAnalystNode(
 UI Components: ${componentFiles.length}
 Style Files: ${styleFiles.length}
 Route Files: ${routeFiles.length}
-
+${detectedFrameworks.length > 0 ? `UI Frameworks: ${detectedFrameworks.join(', ')}` : ''}
+${frameworkContext}
 ## React Components
 ${componentContext}
 
@@ -249,6 +282,83 @@ Respond with ONLY valid JSON, no markdown fencing.`;
       uxScore: 0,
       summary: 'Analysis failed — retry recommended',
     };
+  }
+
+  // --- PASS 2: Programmatic verification — filter framework-handled a11y issues ---
+  const preVerifyA11y = (report.accessibilityIssues || []).length;
+
+  // Ensure arrays exist
+  report.accessibilityIssues = report.accessibilityIssues || [];
+  report.uxAntiPatterns = report.uxAntiPatterns || [];
+  report.componentIssues = report.componentIssues || [];
+  report.userFlowIssues = report.userFlowIssues || [];
+  report.suggestions = report.suggestions || [];
+
+  // Chakra UI components that handle a11y automatically
+  const chakraA11yComponents = [
+    'Button', 'IconButton', 'FormControl', 'FormLabel', 'Input', 'Select',
+    'Checkbox', 'Radio', 'Switch', 'Slider', 'Modal', 'ModalOverlay',
+    'ModalContent', 'Drawer', 'Menu', 'MenuButton', 'MenuItem',
+    'Popover', 'Tooltip', 'Tabs', 'Tab', 'Accordion', 'Alert',
+    'AlertDialog', 'Toast', 'useToast',
+  ];
+
+  // MUI components that handle a11y automatically
+  const muiA11yComponents = [
+    'Button', 'IconButton', 'TextField', 'Select', 'Checkbox', 'Radio',
+    'Switch', 'Slider', 'Dialog', 'Menu', 'MenuItem', 'Popover',
+    'Tooltip', 'Tabs', 'Tab', 'Accordion', 'Alert', 'Snackbar',
+    'FormControl', 'InputLabel', 'FormControlLabel',
+  ];
+
+  if (hasChakra || hasMUI || hasAntD || hasRadix || hasHeadlessUI) {
+    const frameworkComponents = [
+      ...(hasChakra ? chakraA11yComponents : []),
+      ...(hasMUI ? muiA11yComponents : []),
+    ];
+
+    report.accessibilityIssues = report.accessibilityIssues.filter(issue => {
+      // Check if the issue references a framework component that handles a11y automatically
+      const element = (issue.element || '').toLowerCase();
+      const isFrameworkHandled = frameworkComponents.some(comp =>
+        element.includes(comp.toLowerCase()) ||
+        element.includes(`<${comp.toLowerCase()}`)
+      );
+
+      if (isFrameworkHandled && (issue.type === 'missing-aria' || issue.type === 'form-label' || issue.type === 'focus-indicator')) {
+        console.log(`[UIUXAnalyst] Filtered: ${issue.element} in ${issue.file} - handled by UI framework`);
+        return false;
+      }
+
+      // Also check if the referenced file actually uses a framework component
+      if (issue.file && (issue.type === 'missing-aria' || issue.type === 'form-label')) {
+        const normalizedPath = issue.file.replace(/\\/g, '/');
+        const matchingFile = codeFiles.find(f =>
+          f.path && f.path.replace(/\\/g, '/').endsWith(normalizedPath)
+        );
+        if (matchingFile?.content) {
+          const usesFramework =
+            (hasChakra && matchingFile.content.includes('@chakra-ui')) ||
+            (hasMUI && matchingFile.content.includes('@mui/')) ||
+            (hasAntD && matchingFile.content.includes('antd')) ||
+            (hasRadix && matchingFile.content.includes('@radix-ui'));
+          if (usesFramework) {
+            console.log(`[UIUXAnalyst] Filtered: ${issue.type} in ${issue.file} - file uses UI framework with built-in a11y`);
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+  }
+
+  // Recalculate accessibility score
+  const filteredA11yCount = preVerifyA11y - report.accessibilityIssues.length;
+  if (filteredA11yCount > 0) {
+    report.accessibilityScore = Math.max(report.accessibilityScore, Math.round(100 - report.accessibilityIssues.length * 3));
+    console.log(`[UIUXAnalyst] Verification pass filtered ${filteredA11yCount} framework-handled a11y false positives`);
+    report.summary = `[Verified] ${report.summary} (${filteredA11yCount} false positives removed — UI framework handles a11y)`;
   }
 
   eventPublisher?.emit('qa:agent.completed', {

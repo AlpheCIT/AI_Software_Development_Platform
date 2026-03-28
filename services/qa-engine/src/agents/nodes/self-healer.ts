@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
+import { fileExistsInCodeFiles, exportExistsInFile, packageExistsInManifests, isStandardDevProxy } from './verification-helpers.js';
 
 const SELF_HEALER_SYSTEM_PROMPT = `You are an expert static analysis engineer specializing in detecting subtle cross-file issues that linters and compilers miss. Your focus is on finding bugs that only manifest at runtime or integration time.
 
@@ -262,6 +263,81 @@ Respond with ONLY valid JSON, no markdown fencing.`;
       healthScore: 0,
       summary: 'Analysis failed — retry recommended',
     };
+  }
+
+  // --- PASS 2: Programmatic verification of each finding ---
+  const preVerifyCount = {
+    brokenImports: (report.brokenImports || []).length,
+    missingDeps: (report.missingDeps || []).length,
+    configIssues: (report.configIssues || []).length,
+  };
+
+  // Ensure arrays exist
+  report.brokenImports = report.brokenImports || [];
+  report.missingDeps = report.missingDeps || [];
+  report.configIssues = report.configIssues || [];
+  report.typeMismatches = report.typeMismatches || [];
+  report.autoFixes = report.autoFixes || [];
+
+  // Verify broken imports
+  report.brokenImports = report.brokenImports.filter(imp => {
+    const match = imp.importStatement?.match(/from\s+['"]([^'"]+)['"]/);
+    const importPath = match?.[1];
+    if (!importPath) return true; // can't verify, keep it
+
+    const exists = fileExistsInCodeFiles(codeFiles, importPath, imp.file);
+    if (exists) {
+      console.log(`[SelfHealer] Filtered false positive: ${imp.file} import of ${importPath} — file exists`);
+      return false;
+    }
+    return true;
+  });
+
+  // Verify missing deps
+  report.missingDeps = report.missingDeps.filter(dep => {
+    const exists = packageExistsInManifests(codeFiles, dep.package);
+    if (exists) {
+      console.log(`[SelfHealer] Filtered false positive: ${dep.package} — found in package.json`);
+      return false;
+    }
+    return true;
+  });
+
+  // Verify config issues
+  report.configIssues = report.configIssues.filter(issue => {
+    if (issue.type === 'port-mismatch' && isStandardDevProxy(codeFiles)) {
+      console.log(`[SelfHealer] Filtered false positive: port mismatch is standard Vite proxy`);
+      return false;
+    }
+    return true;
+  });
+
+  // Recalculate health score based on verified findings only
+  const verifiedIssueCount = report.typeMismatches.length + report.brokenImports.length +
+    report.missingDeps.length + report.configIssues.length;
+  if (verifiedIssueCount === 0) {
+    report.healthScore = Math.max(report.healthScore, 90);
+  } else {
+    report.healthScore = Math.max(report.healthScore, Math.round(100 - verifiedIssueCount * 5));
+  }
+
+  // Update auto-fixes to only reference verified issues
+  report.autoFixes = report.autoFixes.filter(fix => {
+    const relevantFiles = [
+      ...report.brokenImports.map(i => i.file),
+      ...report.typeMismatches.map(t => t.file),
+      ...report.configIssues.flatMap(c => c.files),
+    ];
+    return fix.files.some(f => relevantFiles.includes(f));
+  });
+
+  const filteredCount =
+    (preVerifyCount.brokenImports - report.brokenImports.length) +
+    (preVerifyCount.missingDeps - report.missingDeps.length) +
+    (preVerifyCount.configIssues - report.configIssues.length);
+  if (filteredCount > 0) {
+    console.log(`[SelfHealer] Verification pass filtered ${filteredCount} false positives`);
+    report.summary = `[Verified] ${report.summary} (${filteredCount} false positives removed by code verification)`;
   }
 
   const totalIssues = report.typeMismatches.length + report.brokenImports.length +
