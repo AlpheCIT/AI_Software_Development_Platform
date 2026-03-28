@@ -1,0 +1,115 @@
+{
+  "name": "MES Job Jacket",
+  "description": "Manufacturing Execution System - Job Jacket tracking application",
+  "repository": "mes-job-jacket",
+  "groundTruth": {
+    "realIssues": [
+      {
+        "id": "MJJ-001",
+        "type": "security",
+        "severity": "medium",
+        "title": "Export endpoint lacks authentication",
+        "file": "src/routes/export.js",
+        "line": 10,
+        "description": "GET /api/export/printbindery/:jobId has no auth middleware. Anyone who knows a jobId can export jacket data.",
+        "fix": "Add requireRole('Admin', 'PM', 'CSR', 'Management') middleware"
+      },
+      {
+        "id": "MJJ-002",
+        "type": "quality",
+        "severity": "low",
+        "title": "Inconsistent error handling style",
+        "file": "src/routes/floor/devices.js",
+        "description": "Some floor routes use inline res.status(500).json() instead of sendError() middleware used in 27 other files",
+        "relatedFiles": ["src/routes/floor/buildingScan.js", "src/routes/floor/heartbeat.js"]
+      },
+      {
+        "id": "MJJ-003",
+        "type": "quality",
+        "severity": "low",
+        "title": "Missing Error Boundary in App.jsx",
+        "file": "client/src/App.jsx",
+        "description": "Lazy-loaded components wrapped in Suspense but no ErrorBoundary. If chunk fails to load, app crashes."
+      },
+      {
+        "id": "MJJ-004",
+        "type": "quality",
+        "severity": "low",
+        "title": "No API type definitions",
+        "file": "client/src/api.js",
+        "description": "No TypeScript or JSDoc type definitions for API response shapes. Makes maintenance harder."
+      }
+    ],
+    "confirmedFalsePositives": [
+      {
+        "id": "FP-001",
+        "claimedIssue": "schedulerUtils.js missing exports",
+        "reality": "All constants and functions are properly exported and imported"
+      },
+      {
+        "id": "FP-002",
+        "claimedIssue": "JACKET_THEMES not exported from tokens.js",
+        "reality": "JACKET_THEMES is exported from tokens.js (lines 43-116)"
+      },
+      {
+        "id": "FP-003",
+        "claimedIssue": "Lazy-loaded screen components may not exist",
+        "reality": "All 10 screen files verified to exist in client/src/screens/"
+      },
+      {
+        "id": "FP-004",
+        "claimedIssue": "Missing @atlaskit/pragmatic-drag-and-drop dependency",
+        "reality": "Listed in client/package.json (v1.7.9)"
+      },
+      {
+        "id": "FP-005",
+        "claimedIssue": "Port mismatch client 5173 vs proxy 3000",
+        "reality": "Standard Vite dev proxy behavior - intentional"
+      },
+      {
+        "id": "FP-006",
+        "claimedIssue": "Missing rate limiting on badge-scan, pairing, uploads",
+        "reality": "Global express-rate-limit (200 req/min) on all /api/* routes + dedicated upload limiter"
+      },
+      {
+        "id": "FP-007",
+        "claimedIssue": "SQL injection on ref/:table",
+        "reality": "Whitelist validation exists in src/routes/ref.js - only 8 approved table names"
+      },
+      {
+        "id": "FP-008",
+        "claimedIssue": "Missing error handling in 9 routes",
+        "reality": "All routes verified to have try/catch blocks"
+      },
+      {
+        "id": "FP-009",
+        "claimedIssue": "6 broken frontend calls",
+        "reality": "All routes exist: BOM in materials.js, production counts in production.js, scheduler endpoints in scheduler.js"
+      },
+      {
+        "id": "FP-010",
+        "claimedIssue": "Kiosk badge-scan path mismatch",
+        "reality": "Kiosk correctly calls /api/floor/auth/badge-scan/v2; backend route exists"
+      },
+      {
+        "id": "FP-011",
+        "claimedIssue": "Security checkpoint-scan missing",
+        "reality": "Route exists in src/routes/security/checkpointScan.js"
+      }
+    ],
+    "expectedScores": {
+      "oldSystem": {
+        "precision": 0.10,
+        "recall": 0.50,
+        "falsePositiveRate": 0.85,
+        "f1": 0.17
+      },
+      "targetWithDebate": {
+        "precision": 0.80,
+        "recall": 0.75,
+        "falsePositiveRate": 0.10,
+        "f1": 0.77
+      }
+    }
+  }
+}

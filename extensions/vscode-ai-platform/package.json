@@ -1,0 +1,91 @@
+{
+  "name": "ai-code-intelligence",
+  "displayName": "AI Code Intelligence Platform",
+  "description": "Real-time code intelligence powered by multi-agent AI analysis with graph-based dependency understanding",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Linters", "Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiPlatform.analyzeFile",
+        "title": "AI Platform: Analyze Current File"
+      },
+      {
+        "command": "aiPlatform.analyzeWorkspace",
+        "title": "AI Platform: Analyze Workspace"
+      },
+      {
+        "command": "aiPlatform.showImpact",
+        "title": "AI Platform: Show Change Impact"
+      },
+      {
+        "command": "aiPlatform.generateDocs",
+        "title": "AI Platform: Generate Documentation"
+      },
+      {
+        "command": "aiPlatform.applyFix",
+        "title": "AI Platform: Apply Suggested Fix"
+      }
+    ],
+    "configuration": {
+      "title": "AI Code Intelligence Platform",
+      "properties": {
+        "aiPlatform.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:4000",
+          "description": "URL of the AI Platform API gateway"
+        },
+        "aiPlatform.autoAnalyze": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically analyze files on save"
+        },
+        "aiPlatform.showInlineDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show AI findings as inline diagnostics"
+        }
+      }
+    },
+    "views": {
+      "aiPlatform": [
+        {
+          "id": "aiPlatform.findings",
+          "name": "AI Findings"
+        },
+        {
+          "id": "aiPlatform.impact",
+          "name": "Impact Analysis"
+        },
+        {
+          "id": "aiPlatform.dependencies",
+          "name": "Dependencies"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiPlatform",
+          "title": "AI Code Intelligence",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}
