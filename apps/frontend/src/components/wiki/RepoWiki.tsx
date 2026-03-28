@@ -9,7 +9,7 @@
  * A summary card highlights documentation gaps and code health.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Box,
   VStack,
@@ -85,7 +85,25 @@ function repoName(url: string): string {
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-const RepoWiki: React.FC<RepoWikiProps> = ({ runId }) => {
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+
+const RepoWiki: React.FC<RepoWikiProps> = ({ runId: propRunId }) => {
+  // Auto-fetch latest runId if none provided
+  const [autoRunId, setAutoRunId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!propRunId) {
+      fetch(`${QA_ENGINE_URL}/qa/runs?limit=1`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          const latestRun = data?.runs?.[0];
+          if (latestRun?._key) setAutoRunId(latestRun._key);
+        })
+        .catch(() => {});
+    }
+  }, [propRunId]);
+
+  const runId = propRunId || autoRunId;
   const { wikiData, loading, error, selectedFile, setSelectedFile } = useRepoWiki(runId);
 
   const cardBg = useColorModeValue('white', 'gray.800');
