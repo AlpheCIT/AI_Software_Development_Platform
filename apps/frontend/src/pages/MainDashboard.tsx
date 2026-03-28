@@ -8,6 +8,9 @@ import {
   Text,
   Button,
   Badge,
+  Alert,
+  AlertIcon,
+  Spinner,
   useDisclosure,
   Drawer,
   DrawerBody,
@@ -20,24 +23,29 @@ import {
   Tooltip,
   useBreakpointValue
 } from '@chakra-ui/react';
-import { 
-  Database, 
-  Activity, 
-  Settings, 
+import {
+  Database,
+  Activity,
+  Settings,
   Menu,
   BarChart3,
-  Search
+  Search,
+  FlaskConical,
+  Brain
 } from 'lucide-react';
 
 import RepositoryIngestionDashboard from '../components/ingestion/RepositoryIngestionDashboard';
 import GraphCanvas from '../components/graph/GraphCanvas';
 import InspectorTabs from '../components/graph/inspector/InspectorTabs';
+import AnalysisRunsList from '../components/analysis/AnalysisRunsList';
+import AILearnings from '../components/analysis/AILearnings';
+import RepositorySelector from '../components/repository/RepositorySelector';
 import { useMCP } from '../lib/mcp/useMCP';
 import { useIngestionStore } from '../stores/ingestion-store';
 
 const MainDashboard: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics'>('ingestion');
+  const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics' | 'runs' | 'learnings'>('ingestion');
   const { isOpen, onOpen, onClose } = useDisclosure();
   
   const { 
@@ -128,9 +136,26 @@ const MainDashboard: React.FC = () => {
               <Text fontSize="2xl" fontWeight="bold">
                 Repository Analytics
               </Text>
-              
+
               {analyticsLoading ? (
-                <Box>Loading analytics...</Box>
+                <HStack spacing={3} justify="center" py={12}>
+                  <Spinner size="lg" color="blue.500" />
+                  <Text>Loading analytics from database...</Text>
+                </HStack>
+              ) : analyticsError ? (
+                <Alert status="warning" borderRadius="md">
+                  <AlertIcon />
+                  <Box>
+                    <Text fontWeight="bold">Could not load analytics</Text>
+                    <Text fontSize="sm">{analyticsError}</Text>
+                    <Text fontSize="sm" mt={1}>Run an analysis or check that services are running.</Text>
+                  </Box>
+                </Alert>
+              ) : !analytics ? (
+                <Alert status="info" borderRadius="md">
+                  <AlertIcon />
+                  <Text>No analytics data available. Ingest a repository and run analysis to see metrics here.</Text>
+                </Alert>
               ) : (
                 <Grid templateColumns="repeat(auto-fit, minmax(300px, 1fr))" gap={6}>
                   <Box key="security" bg={cardBg} p={6} borderRadius="lg" border="1px solid" borderColor={borderColor}>
@@ -139,19 +164,19 @@ const MainDashboard: React.FC = () => {
                       <HStack justify="space-between">
                         <Text>Total Vulnerabilities:</Text>
                         <Badge colorScheme="red">
-                          {analytics?.security?.totalVulnerabilities || 0}
+                          {analytics.security?.totalVulnerabilities ?? 0}
                         </Badge>
                       </HStack>
                       <HStack justify="space-between">
                         <Text>Critical Issues:</Text>
                         <Badge colorScheme="red" variant="solid">
-                          {analytics?.security?.criticalIssues || 0}
+                          {analytics.security?.criticalIssues ?? 0}
                         </Badge>
                       </HStack>
                       <HStack justify="space-between">
                         <Text>High Issues:</Text>
                         <Badge colorScheme="orange">
-                          {analytics?.security?.highIssues || 0}
+                          {analytics.security?.highIssues ?? 0}
                         </Badge>
                       </HStack>
                     </VStack>
@@ -163,19 +188,19 @@ const MainDashboard: React.FC = () => {
                       <HStack justify="space-between">
                         <Text>Average Complexity:</Text>
                         <Badge colorScheme="blue">
-                          {analytics?.performance?.averageComplexity?.toFixed(1) || '0.0'}
+                          {analytics.performance?.averageComplexity?.toFixed(1) ?? '0.0'}
                         </Badge>
                       </HStack>
                       <HStack justify="space-between">
                         <Text>Total Functions:</Text>
                         <Badge colorScheme="green">
-                          {analytics?.performance?.totalFunctions || 0}
+                          {analytics.performance?.totalFunctions ?? 0}
                         </Badge>
                       </HStack>
                       <HStack justify="space-between">
                         <Text>Test Coverage:</Text>
                         <Badge colorScheme="purple">
-                          {analytics?.performance?.testCoverage || 0}%
+                          {analytics.performance?.testCoverage ?? 0}%
                         </Badge>
                       </HStack>
                     </VStack>
@@ -187,20 +212,20 @@ const MainDashboard: React.FC = () => {
                       <HStack justify="space-between">
                         <Text>Total Files:</Text>
                         <Badge colorScheme="teal">
-                          {analytics?.repository?.totalFiles || 0}
+                          {analytics.repository?.totalFiles ?? 0}
                         </Badge>
                       </HStack>
                       <HStack justify="space-between">
                         <Text>Total Lines:</Text>
                         <Badge colorScheme="cyan">
-                          {analytics?.repository?.totalLines?.toLocaleString() || '0'}
+                          {analytics.repository?.totalLines?.toLocaleString() ?? '0'}
                         </Badge>
                       </HStack>
                       <HStack justify="space-between">
                         <Text>Last Analyzed:</Text>
                         <Text fontSize="sm" color="gray.500">
-                          {analytics?.repository?.lastAnalyzed ? 
-                            new Date(analytics.repository.lastAnalyzed).toLocaleDateString() : 
+                          {analytics.repository?.lastAnalyzed ?
+                            new Date(analytics.repository.lastAnalyzed).toLocaleDateString() :
                             'Never'
                           }
                         </Text>
@@ -212,7 +237,21 @@ const MainDashboard: React.FC = () => {
             </VStack>
           </Box>
         );
-      
+
+      case 'runs':
+        return (
+          <Box height="100%" p={6}>
+            <AnalysisRunsList />
+          </Box>
+        );
+
+      case 'learnings':
+        return (
+          <Box height="100%" p={6}>
+            <AILearnings />
+          </Box>
+        );
+
       default:
         return null;
     }
@@ -241,9 +280,10 @@ const MainDashboard: React.FC = () => {
             </HStack>
             
             {!isMobile && (
-              <HStack spacing={2}>
-                <Badge colorScheme="blue" variant="subtle">
-                  Collections: {statusSummary.populated}/{statusSummary.total}
+              <HStack spacing={3}>
+                <RepositorySelector />
+                <Badge colorScheme={collectionsError ? 'red' : 'blue'} variant="subtle">
+                  {collectionsLoading ? 'Loading...' : collectionsError ? 'DB Offline' : `Collections: ${statusSummary.populated}/${statusSummary.total}`}
                 </Badge>
                 {statusSummary.populating > 0 && (
                   <Badge colorScheme="orange" variant="subtle">
@@ -253,7 +293,7 @@ const MainDashboard: React.FC = () => {
                 )}
                 {currentJob && (
                   <Badge colorScheme="green" variant="subtle">
-                    {currentJob.status === 'running' ? '🔄' : '✅'} 
+                    {currentJob.status === 'running' ? '🔄' : '✅'}
                     {currentJob.repositoryUrl.split('/').pop()}
                   </Badge>
                 )}
@@ -289,7 +329,25 @@ const MainDashboard: React.FC = () => {
             >
               Analytics
             </Button>
-            
+            <Button
+              variant={currentView === 'runs' ? 'solid' : 'ghost'}
+              colorScheme="blue"
+              size="sm"
+              onClick={() => setCurrentView('runs')}
+              leftIcon={<FlaskConical size={16} />}
+            >
+              Runs
+            </Button>
+            <Button
+              variant={currentView === 'learnings' ? 'solid' : 'ghost'}
+              colorScheme="blue"
+              size="sm"
+              onClick={() => setCurrentView('learnings')}
+              leftIcon={<Brain size={16} />}
+            >
+              Learnings
+            </Button>
+
             {isMobile && (
               <IconButton
                 aria-label="Menu"

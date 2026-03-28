@@ -24,12 +24,97 @@ export interface GraphMetrics {
   }>;
 }
 
+// Maps relationship types to their target edge collection names
+const EDGE_COLLECTION_MAP: Record<string, string> = {
+  'imports': 'imports',
+  'calls': 'calls',
+  'depends_on': 'depends_on',
+  'extends': 'extends_class',
+  'implements': 'implements_interface',
+  'references': 'references',
+  'contains': 'contains',
+};
+
 export class GraphBuilder {
+  private edgeCollectionsEnsured = false;
+
   constructor(private db: Database) {}
+
+  /**
+   * Ensure all edge collections exist (type 3 = edge collection in ArangoDB).
+   * Called once per ingestion run.
+   */
+  private async ensureEdgeCollections(): Promise<void> {
+    if (this.edgeCollectionsEnsured) return;
+
+    const edgeCollectionNames = Object.values(EDGE_COLLECTION_MAP);
+    for (const name of edgeCollectionNames) {
+      try {
+        const col = this.db.collection(name);
+        await col.create({ type: 3 }); // type 3 = edge collection
+        logger.info(`Created edge collection: ${name}`);
+      } catch (e: any) {
+        // Collection already exists -- expected
+        if (!e.message?.includes('duplicate') && e.errorNum !== 1207) {
+          logger.debug(`Edge collection ${name} already exists or minor error: ${e.message}`);
+        }
+      }
+    }
+    this.edgeCollectionsEnsured = true;
+  }
+
+  /**
+   * Save a relationship to the correct typed edge collection AND to the
+   * generic `relationships` collection for backward compatibility.
+   * Edge documents get _from / _to in ArangoDB format.
+   */
+  private async saveToEdgeCollection(
+    relationship: any,
+    sourceCollection: string = 'code_entities',
+    targetCollection: string = 'code_entities'
+  ): Promise<void> {
+    const edgeCollectionName = EDGE_COLLECTION_MAP[relationship.type];
+
+    // Always save to generic relationships for backward compat
+    await this.db.collection('relationships').save(relationship);
+
+    if (!edgeCollectionName) return;
+
+    // Build _from/_to using entity keys. Fall back to files collection if the
+    // entity looks like a file reference (module dependencies).
+    const fromId = relationship.sourceEntityId;
+    const toId = relationship.targetEntityId;
+
+    const edgeDoc = {
+      _key: relationship._key + '_edge',
+      _from: `${sourceCollection}/${fromId}`,
+      _to: `${targetCollection}/${toId}`,
+      repositoryId: relationship.repositoryId,
+      type: relationship.type,
+      crossFileType: relationship.crossFileType,
+      sourceEntity: relationship.sourceEntity,
+      targetEntity: relationship.targetEntity,
+      strength: relationship.strength,
+      metadata: relationship.metadata,
+      sourceFile: relationship.sourceFile,
+      targetFile: relationship.targetFile,
+      createdAt: relationship.createdAt,
+    };
+
+    try {
+      await this.db.collection(edgeCollectionName).save(edgeDoc);
+    } catch (e: any) {
+      // Log but don't fail -- the generic relationships collection already has the data
+      logger.warn(`Failed to save edge to ${edgeCollectionName}: ${e.message}`);
+    }
+  }
 
   async buildCrossFileRelationships(repositoryId: string): Promise<number> {
     try {
       logger.info(`Building cross-file relationships for repository ${repositoryId}`);
+
+      // Ensure typed edge collections exist before writing
+      await this.ensureEdgeCollections();
 
       // Get all entities and files for the repository
       const [entities, files] = await Promise.all([
@@ -71,9 +156,9 @@ export class GraphBuilder {
           repositoryId
         );
 
-        // Save cross-file relationships
+        // Save cross-file relationships to typed edge collections + generic relationships
         for (const relationship of crossFileRels) {
-          await this.db.collection('relationships').save(relationship);
+          await this.saveToEdgeCollection(relationship, 'entities', 'entities');
           relationshipsCreated++;
         }
       }
@@ -343,7 +428,7 @@ export class GraphBuilder {
             createdAt: new Date()
           };
 
-          await this.db.collection('relationships').save(moduleDependency);
+          await this.saveToEdgeCollection(moduleDependency, 'files', 'files');
         }
       }
     }
@@ -442,6 +527,71 @@ export class GraphBuilder {
       stronglyConnectedComponents,
       criticalPaths
     };
+  }
+
+  /**
+   * Verify that edge collections were populated and return metrics.
+   * Stores graphMetrics on the repository document and warns if empty.
+   */
+  async verifyGraphPopulation(repositoryId: string): Promise<{
+    imports: number;
+    calls: number;
+    dependsOn: number;
+    extendsClass: number;
+    contains: number;
+    references: number;
+    totalEdges: number;
+  }> {
+    const edgeCollections = [
+      { name: 'imports', key: 'imports' },
+      { name: 'calls', key: 'calls' },
+      { name: 'depends_on', key: 'dependsOn' },
+      { name: 'extends_class', key: 'extendsClass' },
+      { name: 'contains', key: 'contains' },
+      { name: 'references', key: 'references' },
+    ];
+
+    const metrics: Record<string, number> = {};
+    let totalEdges = 0;
+
+    for (const ec of edgeCollections) {
+      try {
+        const cursor = await this.db.query(
+          `RETURN LENGTH(FOR e IN @@col FILTER e.repositoryId == @repoId RETURN 1)`,
+          { '@col': ec.name, repoId: repositoryId }
+        );
+        const count = (await cursor.next()) || 0;
+        metrics[ec.key] = count;
+        totalEdges += count;
+        logger.info(`  Edge collection '${ec.name}': ${count} edges for repository ${repositoryId}`);
+      } catch (e: any) {
+        metrics[ec.key] = 0;
+        logger.debug(`  Edge collection '${ec.name}' not found or empty: ${e.message}`);
+      }
+    }
+
+    const result = { ...metrics, totalEdges } as any;
+
+    if (totalEdges === 0) {
+      logger.warn(
+        `WARNING: No edges found in any edge collection for repository ${repositoryId}. ` +
+        `Check if entity extraction produced entities with dependency information. ` +
+        `Ensure source files contain import/call/inheritance statements that the parser can detect.`
+      );
+    } else {
+      logger.info(`Graph verification: ${totalEdges} total edges across edge collections for repository ${repositoryId}`);
+    }
+
+    // Store metrics on the repository document
+    try {
+      await this.db.collection('repositories').update(repositoryId, {
+        graphMetrics: result
+      });
+    } catch (e: any) {
+      logger.warn(`Failed to store graphMetrics on repository: ${e.message}`);
+    }
+
+    return result;
   }
 
   async findCriticalPaths(repositoryId: string, limit: number = 10): Promise<Array<{ path: string[]; importance: number; }>> {

@@ -21,6 +21,9 @@ import {
   A2AContext,
   A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
+import { LLMClient } from '../llm/llm-client.js';
+import { performanceChallengerPrompt } from '../llm/prompts.js';
+import { PerformanceChallengerSchema } from '../llm/schemas.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // =====================================================
@@ -29,7 +32,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export class PerformanceChallengerAgent extends EnhancedBaseA2AAgent {
 
-  constructor(communicationBus: A2ACommunicationBus) {
+  constructor(communicationBus: A2ACommunicationBus, llmClient?: LLMClient | null) {
     const capabilities: A2ACapabilities = {
       methods: [
         'verify_performance_findings',
@@ -47,7 +50,7 @@ export class PerformanceChallengerAgent extends EnhancedBaseA2AAgent {
       ]
     };
 
-    super('PerformanceChallengerAgent', A2AAgentDomain.PERFORMANCE, capabilities, 7, communicationBus);
+    super('PerformanceChallengerAgent', A2AAgentDomain.PERFORMANCE, capabilities, 7, communicationBus, llmClient);
   }
 
   // =====================================================
@@ -72,26 +75,98 @@ export class PerformanceChallengerAgent extends EnhancedBaseA2AAgent {
       const verifiedFindings: Finding[] = [];
       const falsePositives: Finding[] = [];
 
-      for (const finding of findingsToVerify) {
-        const result = this.verifyFinding(finding, sourceFiles);
-        verificationResults.push(result);
+      // Try LLM-based verification first
+      if (this.hasLLM() && sourceFiles.size > 0) {
+        try {
+          const prompt = performanceChallengerPrompt({
+            files: sourceFiles,
+            findings: findingsToVerify.map(f => ({
+              id: f.id,
+              type: f.type,
+              severity: f.severity,
+              title: f.title,
+              description: f.description,
+              file: f.location?.file,
+              line: f.location?.line,
+              confidence: f.confidence,
+              evidence: f.evidence
+            }))
+          });
 
-        const updatedFinding: Finding = {
-          ...finding,
-          verificationStatus: result.verified ? 'verified' : 'false_positive',
-          verificationEvidence: result.evidence,
-          challengerNotes: result.mitigationsFound.length > 0
-            ? `Mitigations found: ${result.mitigationsFound.join('; ')}`
-            : undefined,
-          confidence: result.adjustedConfidence,
-          severity: result.adjustedSeverity ?? finding.severity
-        };
+          console.log(`[PerformanceChallenger] Calling LLM for verification...`);
+          const llmResult = await this.callLLM(prompt.system, prompt.user, {
+            jsonSchema: PerformanceChallengerSchema
+          });
 
-        if (result.verified) {
-          verifiedFindings.push(updatedFinding);
-        } else {
-          falsePositives.push(updatedFinding);
+          if (llmResult && llmResult.verifications && Array.isArray(llmResult.verifications)) {
+            console.log(`[PerformanceChallenger] LLM returned ${llmResult.verifications.length} verification(s)`);
+
+            // Build a map of LLM verifications by findingId
+            const llmVerificationMap = new Map<string, any>();
+            for (const v of llmResult.verifications) {
+              if (v.findingId) llmVerificationMap.set(v.findingId, v);
+            }
+
+            for (const finding of findingsToVerify) {
+              const llmVerification = llmVerificationMap.get(finding.id);
+
+              if (llmVerification) {
+                const isVerified = llmVerification.verdict === 'verified';
+                const result: VerificationResult = {
+                  findingId: finding.id,
+                  verified: isVerified,
+                  evidence: llmVerification.evidence || llmVerification.reasoning || '',
+                  adjustedSeverity: llmVerification.adjustedSeverity,
+                  adjustedConfidence: llmVerification.adjustedConfidence ?? finding.confidence,
+                  mitigationsFound: llmVerification.mitigationsFound ?? [],
+                  challengerAgent: this.id
+                };
+                verificationResults.push(result);
+
+                const updatedFinding: Finding = {
+                  ...finding,
+                  verificationStatus: isVerified ? 'verified' : 'false_positive',
+                  verificationEvidence: result.evidence,
+                  verificationMethod: 'llm',
+                  challengerNotes: llmVerification.reasoning || (result.mitigationsFound.length > 0
+                    ? `Mitigations found: ${result.mitigationsFound.join('; ')}`
+                    : undefined),
+                  confidence: result.adjustedConfidence,
+                  severity: result.adjustedSeverity ?? finding.severity
+                };
+
+                if (isVerified) verifiedFindings.push(updatedFinding);
+                else falsePositives.push(updatedFinding);
+              } else {
+                // LLM didn't cover this finding -- fall back to code-based
+                const result = this.verifyFinding(finding, sourceFiles);
+                verificationResults.push(result);
+                const updatedFinding: Finding = {
+                  ...finding,
+                  verificationStatus: result.verified ? 'verified' : 'false_positive',
+                  verificationEvidence: result.evidence,
+                  verificationMethod: 'regex',
+                  challengerNotes: result.mitigationsFound.length > 0
+                    ? `Mitigations found: ${result.mitigationsFound.join('; ')}`
+                    : undefined,
+                  confidence: result.adjustedConfidence,
+                  severity: result.adjustedSeverity ?? finding.severity
+                };
+                if (result.verified) verifiedFindings.push(updatedFinding);
+                else falsePositives.push(updatedFinding);
+              }
+            }
+          } else {
+            console.warn('[PerformanceChallenger] LLM returned no verifications, falling back to code-based');
+            this.codeBasedVerification(findingsToVerify, sourceFiles, verificationResults, verifiedFindings, falsePositives);
+          }
+        } catch (llmError) {
+          console.error('[PerformanceChallenger] LLM verification failed, falling back to code-based:', llmError);
+          this.codeBasedVerification(findingsToVerify, sourceFiles, verificationResults, verifiedFindings, falsePositives);
         }
+      } else {
+        // No LLM -- use existing code-based verification
+        this.codeBasedVerification(findingsToVerify, sourceFiles, verificationResults, verifiedFindings, falsePositives);
       }
 
       const recommendations: Recommendation[] = verificationResults
@@ -126,7 +201,8 @@ export class PerformanceChallengerAgent extends EnhancedBaseA2AAgent {
           falsePositives: falsePositives.length,
           falsePositiveRate: findingsToVerify.length > 0
             ? falsePositives.length / findingsToVerify.length
-            : 0
+            : 0,
+          verificationMethod: this.hasLLM() ? 'llm' : 'code-based'
         },
         rawData: {
           verificationResults,
@@ -137,6 +213,41 @@ export class PerformanceChallengerAgent extends EnhancedBaseA2AAgent {
     } catch (error) {
       console.error('[PerformanceChallenger] Verification failed:', error);
       return this.createErrorResult(request, error);
+    }
+  }
+
+  // =====================================================
+  // CODE-BASED VERIFICATION FALLBACK
+  // =====================================================
+
+  private codeBasedVerification(
+    findingsToVerify: Finding[],
+    sourceFiles: Map<string, string>,
+    verificationResults: VerificationResult[],
+    verifiedFindings: Finding[],
+    falsePositives: Finding[]
+  ): void {
+    for (const finding of findingsToVerify) {
+      const result = this.verifyFinding(finding, sourceFiles);
+      verificationResults.push(result);
+
+      const updatedFinding: Finding = {
+        ...finding,
+        verificationStatus: result.verified ? 'verified' : 'false_positive',
+        verificationEvidence: result.evidence,
+        verificationMethod: 'regex',
+        challengerNotes: result.mitigationsFound.length > 0
+          ? `Mitigations found: ${result.mitigationsFound.join('; ')}`
+          : undefined,
+        confidence: result.adjustedConfidence,
+        severity: result.adjustedSeverity ?? finding.severity
+      };
+
+      if (result.verified) {
+        verifiedFindings.push(updatedFinding);
+      } else {
+        falsePositives.push(updatedFinding);
+      }
     }
   }
 

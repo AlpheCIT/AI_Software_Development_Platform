@@ -258,6 +258,23 @@ export class RelationshipExtractor {
     return contextMap[type] || 'unknown';
   }
 
+  /**
+   * Return the edge collection name for a given relationship type,
+   * or null if there is no dedicated edge collection.
+   */
+  static getEdgeCollectionName(type: string): string | null {
+    const map: Record<string, string> = {
+      'imports': 'imports',
+      'calls': 'calls',
+      'depends_on': 'depends_on',
+      'extends': 'extends_class',
+      'implements': 'implements_interface',
+      'references': 'references',
+      'contains': 'contains',
+    };
+    return map[type] || null;
+  }
+
   // Public methods for relationship analysis
   async groupRelationshipsByType(relationships: ExtractedRelationship[]): Promise<Record<string, ExtractedRelationship[]>> {
     const grouped: Record<string, ExtractedRelationship[]> = {};

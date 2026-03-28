@@ -17,15 +17,17 @@ import {
   DebateRound,
   DebateResult
 } from '../communication/a2a-protocol.js';
-import { 
-  AnalysisRequest, 
-  AnalysisResult, 
-  Finding, 
+import {
+  AnalysisRequest,
+  AnalysisResult,
+  Finding,
   Recommendation,
   BusinessImpact,
   CollaborationData,
   BusinessContext
 } from '../agents/enhanced-base-agent.js';
+import { RunPersistenceService, AnalysisRunRecord, AnalysisFindingRecord } from '../services/run-persistence-service.js';
+import { AILearningsService } from '../services/ai-learnings-service.js';
 
 interface CoordinationRequest {
   id: string;
@@ -104,12 +106,26 @@ export class AgentCoordinationHub extends EventEmitter {
   private coordinationHistory: CoordinationResult[] = [];
   private agentCapabilities: Map<string, string[]> = new Map();
   private qualityStandards: Map<string, QualityGate[]> = new Map();
+  private runPersistence?: RunPersistenceService;
+  private aiLearnings?: AILearningsService;
 
   constructor(communicationBus: A2ACommunicationBus) {
     super();
     this.communicationBus = communicationBus;
     this.setupEventHandlers();
     this.initializeQualityStandards();
+  }
+
+  /**
+   * Attach persistence services after construction (allows lazy init).
+   */
+  setPersistenceServices(
+    runPersistence: RunPersistenceService,
+    aiLearnings: AILearningsService
+  ): void {
+    this.runPersistence = runPersistence;
+    this.aiLearnings = aiLearnings;
+    console.log('AgentCoordinationHub: persistence services attached');
   }
 
   // =====================================================
@@ -163,12 +179,18 @@ export class AgentCoordinationHub extends EventEmitter {
       result.coordinationMetrics = this.calculateCoordinationMetrics(session);
       result.businessImpact = this.generateBusinessImpact(result);
 
-      console.log(`✅ AgentCoordinationHub: Coordination ${coordinationId} completed`);
+      console.log(`AgentCoordinationHub: Coordination ${coordinationId} completed`);
       console.log(`   Status: ${result.status}`);
       console.log(`   Quality Score: ${result.qualityMetrics.overallScore.toFixed(2)}`);
       console.log(`   Duration: ${result.duration}ms`);
 
       this.coordinationHistory.push(result);
+
+      // Persist run + findings asynchronously (don't block return)
+      this.persistCoordinationResult(result, request).catch(err =>
+        console.warn('Failed to persist coordination result:', err.message)
+      );
+
       return result;
 
     } catch (error) {
@@ -402,25 +424,23 @@ export class AgentCoordinationHub extends EventEmitter {
   }
 
   // =====================================================
-  // DEBATE COORDINATION
+  // DEBATE COORDINATION (Multi-Round with Persistence)
   // =====================================================
 
   private async executeDebateCoordination(session: CoordinationSession): Promise<CoordinationResult> {
     const { request } = session;
     const debateConfig = request.parameters?.debateConfig as DebateConfiguration;
+    const CONVERGENCE_THRESHOLD = 0.80;
 
     if (!debateConfig) {
-      // Fall back to sequential if no debate config
-      console.log(`⚖️ No debate config found, falling back to sequential coordination`);
+      console.log(`No debate config found, falling back to sequential coordination`);
       return this.executeSequentialCoordination(session);
     }
 
-    console.log(`⚖️ Executing debate coordination: Analyzer → Challenger → Synthesizer`);
+    console.log(`Executing multi-round debate coordination: Analyzer -> Challenger -> [Rebuttal] -> Synthesizer`);
 
     const { analyzer: analyzerRole, challenger: challengerRole, synthesizer: synthesizerRole } = debateConfig.roles;
     const debateRounds: DebateRound[] = [];
-
-    // Get source files from request for challenger verification
     const sourceFiles = request.parameters?.sourceFiles;
 
     // === ROUND 1: Analyzer produces candidate findings ===
@@ -461,7 +481,7 @@ export class AgentCoordinationHub extends EventEmitter {
     try {
       analyzerResult = await this.waitForAgentResponse(analyzerRole, session.id, request.timeout);
     } catch (error) {
-      console.error(`❌ Analyzer agent failed:`, error);
+      console.error(`Analyzer agent failed:`, error);
       return {
         coordinationId: session.id,
         status: 'failed',
@@ -482,13 +502,12 @@ export class AgentCoordinationHub extends EventEmitter {
       timestamp: Date.now()
     });
 
-    console.log(`⚖️ Round 1 (Analyzer): ${candidateFindings.length} candidate findings proposed`);
+    console.log(`Round 1 (Analyzer): ${candidateFindings.length} candidate findings proposed`);
 
     // === ROUND 2: Challenger verifies each finding ===
     const challengerAgent = this.communicationBus.getAgent(challengerRole);
     if (!challengerAgent) {
-      // If no challenger, pass findings through unverified
-      console.log(`⚖️ No challenger agent found, passing findings through unverified`);
+      console.log(`No challenger agent found, passing findings through unverified`);
       const combinedResult = this.combineAnalysisResults([analyzerResult], session.id, request.businessContext);
       return {
         coordinationId: session.id,
@@ -528,7 +547,7 @@ export class AgentCoordinationHub extends EventEmitter {
     try {
       challengerResult = await this.waitForAgentResponse(challengerRole, session.id, request.timeout);
     } catch (error) {
-      console.error(`❌ Challenger agent failed, using unverified findings:`, error);
+      console.error(`Challenger agent failed, using unverified findings:`, error);
       const combinedResult = this.combineAnalysisResults([analyzerResult], session.id, request.businessContext);
       return {
         coordinationId: session.id,
@@ -543,21 +562,41 @@ export class AgentCoordinationHub extends EventEmitter {
     session.results.set(challengerRole, challengerResult);
     const verificationResults = (challengerResult as any).rawData?.verificationResults || challengerResult.metrics?.verificationResults || [];
 
-    const verifiedFindings = candidateFindings.filter((f: any) => {
+    // Partition findings into verified, rejected, and disputed
+    const verifiedFindings: Finding[] = [];
+    const rejectedFindings: Finding[] = [];
+    const disputedFindings: Array<{ finding: Finding; objection: string }> = [];
+
+    for (const f of candidateFindings) {
       const verification = Array.isArray(verificationResults)
         ? verificationResults.find((v: any) => v.findingId === f.id)
         : null;
+
       if (verification) {
         f.verificationStatus = verification.verified ? 'verified' : 'false_positive';
         f.verificationEvidence = verification.evidence;
         f.confidence = verification.adjustedConfidence ?? f.confidence;
         f.challengerNotes = verification.mitigationsFound?.join('; ') || '';
         if (verification.adjustedSeverity) f.severity = verification.adjustedSeverity;
-      }
-      return !verification || verification.verified;
-    });
 
-    const falsePositives = candidateFindings.length - verifiedFindings.length;
+        if (verification.verified) {
+          verifiedFindings.push(f);
+        } else if (verification.confidence !== undefined && verification.confidence < 0.6) {
+          // Low-confidence rejection = disputed (challenger is not sure)
+          disputedFindings.push({
+            finding: f,
+            objection: verification.evidence || verification.reason || 'Challenger uncertain'
+          });
+        } else {
+          rejectedFindings.push(f);
+        }
+      } else {
+        // No verification data -- treat as verified
+        verifiedFindings.push(f);
+      }
+    }
+
+    const falsePositivesRound2 = rejectedFindings.length;
 
     debateRounds.push({
       round: 2,
@@ -565,32 +604,111 @@ export class AgentCoordinationHub extends EventEmitter {
       agentId: challengerRole,
       findingsChallenged: candidateFindings.length,
       findingsVerified: verifiedFindings.length,
-      falsePositivesFound: falsePositives,
+      falsePositivesFound: falsePositivesRound2 + disputedFindings.length,
       timestamp: Date.now()
     });
 
-    console.log(`⚖️ Round 2 (Challenger): ${verifiedFindings.length} verified, ${falsePositives} false positives eliminated`);
+    console.log(`Round 2 (Challenger): ${verifiedFindings.length} verified, ${falsePositivesRound2} rejected, ${disputedFindings.length} disputed`);
 
-    // === ROUND 3: Synthesizer produces final report ===
+    // === ROUND 3 (optional): Rebuttal if convergence below threshold ===
+    const convergenceAfterRound2 = candidateFindings.length > 0
+      ? verifiedFindings.length / candidateFindings.length
+      : 1.0;
+
+    let finalVerified = [...verifiedFindings];
+    let totalFalsePositives = falsePositivesRound2;
+    let totalRounds = 2;
+
+    if (convergenceAfterRound2 < CONVERGENCE_THRESHOLD && disputedFindings.length > 0) {
+      console.log(`Convergence ${(convergenceAfterRound2 * 100).toFixed(1)}% < ${(CONVERGENCE_THRESHOLD * 100)}% threshold -- initiating Round 3 rebuttal`);
+
+      // Send disputed findings back to analyzer with challenger objections
+      const rebuttalMessage: A2AMessage = {
+        id: uuidv4(),
+        type: A2AMessageType.REQUEST,
+        fromAgent: 'coordination_hub',
+        toAgent: analyzerRole,
+        domain: A2AAgentDomain.COORDINATION,
+        priority: request.priority,
+        timestamp: Date.now(),
+        correlationId: session.id,
+        payload: {
+          method: request.analysisType,
+          params: {
+            ...request.parameters,
+            role: 'rebuttal',
+            disputedFindings: disputedFindings.map(d => ({
+              ...d.finding,
+              challengerObjection: d.objection
+            })),
+            sourceFiles,
+            instruction: 'The challenger disputed these findings. For each, either defend with stronger evidence or concede. Return only findings you can defend with concrete evidence.'
+          }
+        },
+        metadata: { coordination: true, coordinationType: 'debate', debateRole: 'rebuttal' }
+      };
+
+      await this.communicationBus.routeMessage(rebuttalMessage);
+
+      try {
+        const rebuttalResult = await this.waitForAgentResponse(analyzerRole, session.id, request.timeout);
+        session.results.set(`${analyzerRole}_rebuttal`, rebuttalResult);
+
+        const defendedFindings = rebuttalResult.findings || [];
+        const concededCount = disputedFindings.length - defendedFindings.length;
+
+        // Add defended findings to the verified set
+        for (const df of defendedFindings) {
+          df.verificationStatus = 'defended';
+          finalVerified.push(df);
+        }
+
+        totalFalsePositives += concededCount;
+
+        debateRounds.push({
+          round: 3,
+          role: 'rebuttal',
+          agentId: analyzerRole,
+          findingsChallenged: disputedFindings.length,
+          findingsVerified: defendedFindings.length,
+          falsePositivesFound: concededCount,
+          timestamp: Date.now()
+        });
+
+        console.log(`Round 3 (Rebuttal): ${defendedFindings.length} defended, ${concededCount} conceded`);
+        totalRounds = 3;
+      } catch (error) {
+        console.warn(`Rebuttal round failed, proceeding without disputed findings:`, error);
+        totalFalsePositives += disputedFindings.length;
+      }
+    } else if (disputedFindings.length > 0) {
+      // Convergence is high enough -- treat disputed as rejected
+      totalFalsePositives += disputedFindings.length;
+      console.log(`Convergence ${(convergenceAfterRound2 * 100).toFixed(1)}% >= threshold -- skipping rebuttal, ${disputedFindings.length} disputed findings rejected`);
+    }
+
+    // === FINAL ROUND: Synthesizer produces final report ===
     const synthesizerAgent = this.communicationBus.getAgent(synthesizerRole);
     if (!synthesizerAgent) {
-      // If no synthesizer, use challenger-filtered results directly
-      console.log(`⚖️ No synthesizer agent found, using challenger-filtered results`);
-      const filteredAnalyzerResult: AnalysisResult = {
+      console.log(`No synthesizer agent found, using debate-filtered results`);
+      const filteredResult: AnalysisResult = {
         ...analyzerResult,
-        findings: verifiedFindings
+        findings: finalVerified
       };
-      session.results.set('debate_combined', filteredAnalyzerResult);
-
+      session.results.set('debate_combined', filteredResult);
       return {
         coordinationId: session.id,
         status: 'success',
         results: session.results,
-        combinedResult: filteredAnalyzerResult,
+        combinedResult: filteredResult,
         duration: Date.now() - session.startTime,
         participantCount: 2
       };
     }
+
+    const convergenceFinal = candidateFindings.length > 0
+      ? finalVerified.length / candidateFindings.length
+      : 1.0;
 
     const synthesizerMessage: A2AMessage = {
       id: uuidv4(),
@@ -606,9 +724,10 @@ export class AgentCoordinationHub extends EventEmitter {
         params: {
           ...request.parameters,
           role: 'synthesizer',
-          verifiedFindings: verifiedFindings,
+          verifiedFindings: finalVerified,
           debateRounds: debateRounds,
-          falsePositiveRate: candidateFindings.length > 0 ? falsePositives / candidateFindings.length : 0,
+          falsePositiveRate: candidateFindings.length > 0 ? totalFalsePositives / candidateFindings.length : 0,
+          convergenceScore: convergenceFinal,
           instruction: 'Produce a final report with only the verified findings. Rank by severity and confidence. Include debate metrics.'
         }
       },
@@ -621,44 +740,44 @@ export class AgentCoordinationHub extends EventEmitter {
     try {
       synthesizerResult = await this.waitForAgentResponse(synthesizerRole, session.id, request.timeout);
     } catch (error) {
-      console.error(`❌ Synthesizer agent failed, using challenger-filtered results:`, error);
-      const filteredAnalyzerResult: AnalysisResult = {
+      console.error(`Synthesizer agent failed, using debate-filtered results:`, error);
+      const filteredResult: AnalysisResult = {
         ...analyzerResult,
-        findings: verifiedFindings
+        findings: finalVerified
       };
       return {
         coordinationId: session.id,
         status: 'partial',
         results: session.results,
-        combinedResult: filteredAnalyzerResult,
+        combinedResult: filteredResult,
         duration: Date.now() - session.startTime,
         participantCount: 2
       };
     }
 
     session.results.set(synthesizerRole, synthesizerResult);
+    totalRounds++;
 
     debateRounds.push({
-      round: 3,
+      round: totalRounds,
       role: 'synthesizer',
       agentId: synthesizerRole,
-      findingsVerified: verifiedFindings.length,
+      findingsVerified: finalVerified.length,
       timestamp: Date.now()
     });
 
-    console.log(`⚖️ Round 3 (Synthesizer): Final report produced with ${verifiedFindings.length} verified findings`);
+    console.log(`Round ${totalRounds} (Synthesizer): Final report produced with ${finalVerified.length} verified findings`);
 
-    // Add debate metadata to final result
+    // Build debate result metadata
     const debateResult: DebateResult = {
       rounds: debateRounds,
       totalProposed: candidateFindings.length,
-      totalVerified: verifiedFindings.length,
-      totalFalsePositives: falsePositives,
-      falsePositiveRate: candidateFindings.length > 0 ? falsePositives / candidateFindings.length : 0,
-      consensusScore: verifiedFindings.length > 0 ? 1.0 : 0.0
+      totalVerified: finalVerified.length,
+      totalFalsePositives: totalFalsePositives,
+      falsePositiveRate: candidateFindings.length > 0 ? totalFalsePositives / candidateFindings.length : 0,
+      consensusScore: convergenceFinal
     };
 
-    // Attach debate metadata to the synthesizer result
     const finalResult: AnalysisResult = {
       ...synthesizerResult,
       metrics: {
@@ -684,6 +803,85 @@ export class AgentCoordinationHub extends EventEmitter {
       participantCount: 3,
       consensusAchieved: true
     };
+  }
+
+  // =====================================================
+  // PERSISTENCE HELPERS
+  // =====================================================
+
+  private async persistCoordinationResult(
+    result: CoordinationResult,
+    request: CoordinationRequest
+  ): Promise<void> {
+    if (!this.runPersistence) return;
+
+    const findings = result.combinedResult?.findings || [];
+    const debateResult = result.combinedResult?.metrics?.debateResult as DebateResult | undefined;
+
+    // Count findings by severity
+    const countBySeverity = (sev: string) => findings.filter((f: any) => f.severity === sev).length;
+    const falsePositives = debateResult?.totalFalsePositives ?? 0;
+
+    const runRecord: AnalysisRunRecord = {
+      _key: result.coordinationId,
+      repositoryId: request.parameters?.entityKey || request.parameters?.repositoryId || 'unknown',
+      analysisType: request.analysisType || 'comprehensive',
+      coordinationType: request.type,
+      status: result.status === 'success' ? 'completed' : 'failed',
+      startTime: new Date(Date.now() - result.duration).toISOString(),
+      endTime: new Date().toISOString(),
+      duration: result.duration,
+      domains: request.targetAgents,
+      participantAgents: result.combinedResult?.collaborationData?.collaborators || request.targetAgents,
+      debateMetrics: debateResult ? {
+        rounds: debateResult.rounds.length,
+        convergenceScore: debateResult.consensusScore,
+        falsePositivesEliminated: debateResult.totalFalsePositives,
+        totalProposed: debateResult.totalProposed,
+        totalVerified: debateResult.totalVerified
+      } : undefined,
+      findingsCount: {
+        total: findings.length,
+        critical: countBySeverity('critical'),
+        high: countBySeverity('high'),
+        medium: countBySeverity('medium'),
+        low: countBySeverity('low'),
+        info: countBySeverity('info'),
+        falsePositives
+      }
+    };
+
+    await this.runPersistence.saveRun(runRecord);
+
+    // Save individual findings
+    if (findings.length > 0) {
+      const findingRecords: AnalysisFindingRecord[] = findings.map((f: any, idx: number) => ({
+        _key: `${result.coordinationId}_f${idx}`,
+        runId: result.coordinationId,
+        repositoryId: runRecord.repositoryId,
+        domain: f.domain || request.targetAgents[0] || 'unknown',
+        type: f.type || 'unknown',
+        severity: f.severity || 'info',
+        title: f.title || f.description?.slice(0, 80) || 'Untitled finding',
+        description: f.description || '',
+        file: f.location?.file || f.file,
+        line: f.location?.line || f.line,
+        evidence: f.evidence || f.verificationEvidence,
+        confidence: f.confidence || 0,
+        verificationStatus: f.verificationStatus || 'unverified',
+        verificationMethod: f.verificationMethod,
+        challengerNotes: f.challengerNotes,
+        remediation: f.remediation || f.recommendation,
+        createdAt: new Date().toISOString()
+      }));
+
+      await this.runPersistence.saveFindings(findingRecords);
+
+      // Extract learnings
+      if (this.aiLearnings) {
+        await this.aiLearnings.extractLearnings(runRecord, findingRecords);
+      }
+    }
   }
 
   // =====================================================

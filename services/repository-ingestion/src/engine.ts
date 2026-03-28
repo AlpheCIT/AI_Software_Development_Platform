@@ -66,6 +66,10 @@ export class RepositoryIngestionEngine {
     this.app.post('/api/search/semantic', this.semanticSearch);
     this.app.post('/api/search/entities', this.searchEntities);
     this.app.post('/api/search/code', this.searchCode);
+
+    // V1 API - Repository listing with enriched data
+    this.app.get('/api/v1/ingestion/repositories', this.getRepositoriesV1);
+    this.app.get('/api/v1/ingestion/repositories/:repoId/branches', this.getRepositoryBranches);
   }
 
   private healthCheck = async (request: FastifyRequest, reply: FastifyReply) => {
@@ -415,6 +419,108 @@ export class RepositoryIngestionEngine {
       return reply.status(500).send({
         error: 'Search failed',
         message: error.message
+      });
+    }
+  };
+
+  /**
+   * GET /api/v1/ingestion/repositories
+   * Returns enriched repository list with branch info and run counts.
+   */
+  private getRepositoriesV1 = async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      // Query repositories collection
+      const query = `
+        FOR repo IN repositories
+          LET branchCount = LENGTH(
+            FOR b IN git_branches
+              FILTER b.repositoryId == repo._key OR b.repositoryId == repo._id
+              RETURN 1
+          )
+          LET runCount = LENGTH(
+            FOR r IN analysis_runs
+              FILTER r.repositoryId == repo._key OR r.repositoryId == repo._id
+              RETURN 1
+          )
+          LET branches = (
+            FOR b IN git_branches
+              FILTER b.repositoryId == repo._key OR b.repositoryId == repo._id
+              RETURN b.name
+          )
+          LET lastRun = FIRST(
+            FOR r IN analysis_runs
+              FILTER r.repositoryId == repo._key OR r.repositoryId == repo._id
+              SORT r.startedAt DESC
+              LIMIT 1
+              RETURN r.startedAt
+          )
+          RETURN {
+            id: repo._key,
+            url: repo.url,
+            name: repo.name || LAST(SPLIT(repo.url, "/")),
+            defaultBranch: repo.defaultBranch || "main",
+            lastAnalyzed: lastRun || repo.lastAnalyzed,
+            branches: branches,
+            totalRuns: runCount
+          }
+      `;
+
+      const cursor = await this.db.query(query);
+      const repositories = await cursor.all();
+
+      return reply.send({
+        repositories,
+        total: repositories.length
+      });
+    } catch (error) {
+      // If collections don't exist yet, return empty list
+      logger.warn('Failed to query repositories (collections may not exist yet):', error.message);
+      return reply.send({
+        repositories: [],
+        total: 0
+      });
+    }
+  };
+
+  /**
+   * GET /api/v1/ingestion/repositories/:repoId/branches
+   * Returns branches for a specific repository from git_branches collection.
+   */
+  private getRepositoryBranches = async (
+    request: FastifyRequest<{ Params: { repoId: string } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { repoId } = request.params;
+
+      const query = `
+        FOR b IN git_branches
+          FILTER b.repositoryId == @repoId
+              OR b.repositoryId == CONCAT("repositories/", @repoId)
+          SORT b.name ASC
+          RETURN {
+            id: b._key,
+            name: b.name,
+            commitHash: b.latestCommit || b.commitHash,
+            lastAnalyzed: b.lastAnalyzed,
+            isDefault: b.isDefault || false
+          }
+      `;
+
+      const cursor = await this.db.query(query, { repoId });
+      const branches = await cursor.all();
+
+      return reply.send({
+        branches,
+        total: branches.length,
+        repositoryId: repoId
+      });
+    } catch (error) {
+      logger.warn('Failed to query branches (collection may not exist yet):', error.message);
+      return reply.send({
+        branches: [],
+        total: 0,
+        repositoryId: request.params.repoId
       });
     }
   };

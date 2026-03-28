@@ -20,6 +20,9 @@ import {
   A2AContext,
   A2ACommunicationBus
 } from '../communication/a2a-protocol.js';
+import { LLMClient } from '../llm/llm-client.js';
+import { performanceSynthesizerPrompt } from '../llm/prompts.js';
+import { SynthesizerReportSchema } from '../llm/schemas.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // =====================================================
@@ -28,7 +31,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export class PerformanceSynthesizerAgent extends EnhancedBaseA2AAgent {
 
-  constructor(communicationBus: A2ACommunicationBus) {
+  constructor(communicationBus: A2ACommunicationBus, llmClient?: LLMClient | null) {
     const capabilities: A2ACapabilities = {
       methods: [
         'synthesize_performance_report',
@@ -46,7 +49,7 @@ export class PerformanceSynthesizerAgent extends EnhancedBaseA2AAgent {
       ]
     };
 
-    super('PerformanceSynthesizerAgent', A2AAgentDomain.PERFORMANCE, capabilities, 6, communicationBus);
+    super('PerformanceSynthesizerAgent', A2AAgentDomain.PERFORMANCE, capabilities, 6, communicationBus, llmClient);
   }
 
   // =====================================================
@@ -68,15 +71,18 @@ export class PerformanceSynthesizerAgent extends EnhancedBaseA2AAgent {
 
       console.log(`[PerformanceSynthesizer] ${totalProposed} proposed, ${totalVerified} verified, ${totalFalsePositives} false positives`);
 
-      // Step 1: Sort by severity then confidence
+      // Step 1: Filter to only confirmed findings
+      const confirmedFindings = verifiedFindings.filter(f => f.verificationStatus !== 'false_positive');
+
+      // Step 2: Sort by severity then confidence
       const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-      const sortedFindings = [...verifiedFindings].sort((a, b) => {
+      const sortedFindings = [...confirmedFindings].sort((a, b) => {
         const sevDiff = (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5);
         if (sevDiff !== 0) return sevDiff;
         return (b.confidence ?? 0) - (a.confidence ?? 0);
       });
 
-      // Step 2: Group findings by type for the report
+      // Step 3: Group findings by type for the report
       const findingsByType = new Map<string, Finding[]>();
       for (const f of sortedFindings) {
         const existing = findingsByType.get(f.type) ?? [];
@@ -84,18 +90,53 @@ export class PerformanceSynthesizerAgent extends EnhancedBaseA2AAgent {
         findingsByType.set(f.type, existing);
       }
 
-      // Step 3: Generate actionable recommendations
+      // Step 4: Try LLM-based report generation
+      let llmReport: any = null;
+      if (this.hasLLM() && sortedFindings.length > 0) {
+        try {
+          const prompt = performanceSynthesizerPrompt({
+            domain: 'performance',
+            verifiedFindings: sortedFindings.map(f => ({
+              id: f.id,
+              type: f.type,
+              severity: f.severity,
+              title: f.title,
+              description: f.description,
+              file: f.location?.file,
+              line: f.location?.line,
+              confidence: f.confidence,
+              verificationEvidence: f.verificationEvidence,
+              challengerNotes: f.challengerNotes
+            })),
+            repoName: request.parameters?.repoName ?? request.repoId
+          });
+
+          console.log(`[PerformanceSynthesizer] Calling LLM for report generation...`);
+          llmReport = await this.callLLM(prompt.system, prompt.user, {
+            jsonSchema: SynthesizerReportSchema
+          });
+
+          if (llmReport) {
+            console.log(`[PerformanceSynthesizer] LLM generated report with grade: ${llmReport.overallGrade}`);
+          }
+        } catch (llmError) {
+          console.error('[PerformanceSynthesizer] LLM report generation failed, using code-based:', llmError);
+          llmReport = null;
+        }
+      }
+
+      // Step 5: Generate actionable recommendations
       const recommendations: Recommendation[] = sortedFindings.map((finding, index) => {
         return this.buildActionableRecommendation(finding, index + 1);
       });
 
-      // Step 4: Add summary recommendation with debate metrics
+      // Step 6: Add summary recommendation with debate metrics
       recommendations.push({
         id: `perf_synth_summary_${uuidv4().slice(0, 8)}`,
         type: 'performance_summary',
         priority: sortedFindings.some(f => f.severity === 'critical') ? 'critical' : 'high',
         title: 'Performance Debate Summary',
-        description: [
+        description: llmReport?.executiveSummary || [
           `Debate analysis complete.`,
           `${totalProposed} findings proposed by analyzer.`,
           `${totalVerified} findings verified by challenger.`,
@@ -107,17 +148,19 @@ export class PerformanceSynthesizerAgent extends EnhancedBaseA2AAgent {
         ].join(' '),
         impact: `${totalVerified} actionable performance issues remain after verification`,
         effort: 'low',
-        implementation: [
-          'Address critical/high-severity bottlenecks first -- they have the largest scalability impact',
-          'Benchmark before and after each optimization to verify improvement',
-          'Schedule medium/low severity findings for upcoming sprints',
-          'Consider load testing after applying fixes to validate under production-like conditions'
-        ],
+        implementation: llmReport?.remediationPlan?.length > 0
+          ? llmReport.remediationPlan.map((p: any) => `Phase ${p.phase}: ${p.title} - ${(p.actions || []).join(', ')}`)
+          : [
+            'Address critical/high-severity bottlenecks first -- they have the largest scalability impact',
+            'Benchmark before and after each optimization to verify improvement',
+            'Schedule medium/low severity findings for upcoming sprints',
+            'Consider load testing after applying fixes to validate under production-like conditions'
+          ],
         relatedFindings: sortedFindings.map(f => f.id),
         estimatedValue: this.calculateOverallOptimizationValue(sortedFindings)
       });
 
-      // Step 5: Compute overall confidence
+      // Step 7: Compute overall confidence
       const overallConfidence = sortedFindings.length > 0
         ? sortedFindings.reduce((sum, f) => sum + (f.confidence ?? 0), 0) / sortedFindings.length
         : 0.5;
@@ -141,7 +184,8 @@ export class PerformanceSynthesizerAgent extends EnhancedBaseA2AAgent {
           mediumFindings: sortedFindings.filter(f => f.severity === 'medium').length,
           lowFindings: sortedFindings.filter(f => f.severity === 'low').length,
           performanceScore: this.calculatePerformanceScore(sortedFindings),
-          averageOptimizationPotential: this.calculateAverageOptimizationPotential(sortedFindings)
+          averageOptimizationPotential: this.calculateAverageOptimizationPotential(sortedFindings),
+          reportMethod: llmReport ? 'llm' : 'code-based'
         },
         businessImpact: this.generateBusinessImpact(sortedFindings, request.businessContext),
         rawData: {
@@ -153,7 +197,8 @@ export class PerformanceSynthesizerAgent extends EnhancedBaseA2AAgent {
           },
           findingsByType: Object.fromEntries(
             Array.from(findingsByType.entries()).map(([type, findings]) => [type, findings.length])
-          )
+          ),
+          llmReport: llmReport || null
         },
         executionTime: Date.now() - startTime
       };

@@ -1,6 +1,6 @@
 /**
  * Graph Page - Main Graph Visualization Interface
- * 
+ *
  * This is the primary interface for viewing and interacting with the code graph.
  * Integrates all the components we built: GraphCanvas, InspectorTabs, SavedViews, etc.
  */
@@ -14,7 +14,6 @@ import {
   Text,
   Button,
   Select,
-  Input,
   IconButton,
   Spinner,
   Alert,
@@ -28,7 +27,8 @@ import {
   DrawerCloseButton,
   useDisclosure
 } from '@chakra-ui/react';
-import { Search, Settings, Save, FolderOpen } from 'lucide-react';
+import { Settings, FolderOpen } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 
 // Import our world-class components
 import GraphCanvas from '../components/graph/GraphCanvas';
@@ -45,44 +45,54 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import type { GraphNode, GraphEdge, GraphMode, OverlayType } from '../types/graph';
 
 export default function GraphPage() {
+  // Get repositoryId from URL params
+  const [searchParams] = useSearchParams();
+  const repositoryId = searchParams.get('repositoryId') || undefined;
+
   // State management
   const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] }>({ nodes: [], edges: [] });
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<GraphMode>('architecture');
   const [activeOverlay, setActiveOverlay] = useState<OverlayType | null>(null);
-  
+
   // UI state
   const { isOpen: isInspectorOpen, onOpen: openInspector, onClose: closeInspector } = useDisclosure();
   const { isOpen: isSavedViewsOpen, onOpen: openSavedViews, onClose: closeSavedViews } = useDisclosure();
-  
+
   const toast = useToast();
 
   // WebSocket for real-time updates
-  const { on, off, subscribeToGraph } = useWebSocket();
+  const { socket, isConnected } = useWebSocket();
 
   // Load initial graph data
   const loadGraphData = useCallback(async () => {
+    if (!repositoryId) {
+      setGraphData({ nodes: [], edges: [] });
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
-      
+
       const data = await graphApi.getSeeds({
         mode,
         limit: 200,
-        repositoryId: 'current-repo' // You can make this dynamic
+        repositoryId
       });
-      
+
       setGraphData({
         nodes: data.nodes || [],
         edges: data.edges || []
       });
-      
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load graph data';
       setError(errorMessage);
-      
+
       toast({
         title: 'Graph Load Error',
         description: errorMessage,
@@ -90,11 +100,11 @@ export default function GraphPage() {
         duration: 5000,
         isClosable: true
       });
-      
+
     } finally {
       setIsLoading(false);
     }
-  }, [mode, toast]);
+  }, [mode, repositoryId, toast]);
 
   // Handle node selection
   const handleNodeSelect = useCallback((nodeId?: string) => {
@@ -113,23 +123,23 @@ export default function GraphPage() {
         depth: 1,
         limit: 50
       });
-      
+
       // Add new nodes and edges to the graph
       setGraphData(prevData => ({
         nodes: [
           ...prevData.nodes,
-          ...neighborhoodData.nodes.filter(newNode => 
+          ...neighborhoodData.nodes.filter(newNode =>
             !prevData.nodes.some(existingNode => existingNode.id === newNode.id)
           )
         ],
         edges: [
           ...prevData.edges,
-          ...neighborhoodData.edges.filter(newEdge => 
+          ...neighborhoodData.edges.filter(newEdge =>
             !prevData.edges.some(existingEdge => existingEdge.id === newEdge.id)
           )
         ]
       }));
-      
+
       toast({
         title: 'Node Expanded',
         description: `Added ${neighborhoodData.nodes.length} connected nodes`,
@@ -137,7 +147,7 @@ export default function GraphPage() {
         duration: 3000,
         isClosable: true
       });
-      
+
     } catch (err) {
       toast({
         title: 'Expansion Failed',
@@ -155,23 +165,23 @@ export default function GraphPage() {
       await loadGraphData();
       return;
     }
-    
+
     try {
       const searchResults = await graphApi.search({
         q: query,
         limit: 100
       });
-      
+
       // Filter current graph to show only matching nodes
       const matchingNodeIds = new Set(searchResults.results.map(r => r.id));
-      
+
       setGraphData(prevData => ({
         nodes: prevData.nodes.filter(node => matchingNodeIds.has(node.id)),
-        edges: prevData.edges.filter(edge => 
+        edges: prevData.edges.filter(edge =>
           matchingNodeIds.has(edge.source) && matchingNodeIds.has(edge.target)
         )
       }));
-      
+
     } catch (err) {
       toast({
         title: 'Search Failed',
@@ -190,20 +200,19 @@ export default function GraphPage() {
 
   // Subscribe to WebSocket updates
   useEffect(() => {
-    subscribeToGraph('current-repo');
-    
-    // Handle real-time node updates
+    if (!socket || !isConnected || !repositoryId) return;
+
+    socket.emit('subscribe:graph', { repositoryId });
+
     const handleNodeUpdate = (data: any) => {
       setGraphData(prevData => ({
         ...prevData,
-        nodes: prevData.nodes.map(node => 
+        nodes: prevData.nodes.map(node =>
           node.id === data.nodeId ? { ...node, ...data.changes } : node
         )
       }));
-      
-      // Refresh inspector if the updated node is selected
+
       if (selectedNodeId === data.nodeId) {
-        // InspectorTabs will automatically refetch data
         toast({
           title: 'Node Updated',
           description: 'Node data has been updated in real-time',
@@ -214,7 +223,7 @@ export default function GraphPage() {
       }
     };
 
-    const handleAnalysisComplete = (data: any) => {
+    const handleAnalysisComplete = () => {
       toast({
         title: 'Analysis Complete',
         description: 'Repository analysis finished. Refreshing graph...',
@@ -222,29 +231,46 @@ export default function GraphPage() {
         duration: 4000,
         isClosable: true
       });
-      
-      // Reload the entire graph
+
       loadGraphData();
     };
 
-    // Subscribe to WebSocket events
-    on('node.updated', handleNodeUpdate);
-    on('analysis.completed', handleAnalysisComplete);
+    socket.on('node.updated', handleNodeUpdate);
+    socket.on('analysis.completed', handleAnalysisComplete);
 
-    // Cleanup
     return () => {
-      off('node.updated', handleNodeUpdate);
-      off('analysis.completed', handleAnalysisComplete);
+      socket.off('node.updated', handleNodeUpdate);
+      socket.off('analysis.completed', handleAnalysisComplete);
     };
-  }, [on, off, subscribeToGraph, selectedNodeId, toast, loadGraphData]);
+  }, [socket, isConnected, repositoryId, selectedNodeId, toast, loadGraphData]);
+
+  // Render empty state when no repository selected
+  if (!repositoryId) {
+    return (
+      <Box
+        height="100vh"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        flexDirection="column"
+        gap={4}
+        p={6}
+      >
+        <Heading size="lg" color="gray.500">No Repository Selected</Heading>
+        <Text color="gray.400" textAlign="center" maxW="md">
+          Select a repository to view its dependency graph. You can ingest a repository from the Ingestion tab first.
+        </Text>
+      </Box>
+    );
+  }
 
   // Render loading state
   if (isLoading) {
     return (
-      <Box 
-        height="100vh" 
-        display="flex" 
-        alignItems="center" 
+      <Box
+        height="100vh"
+        display="flex"
+        alignItems="center"
         justifyContent="center"
         flexDirection="column"
         gap={4}
@@ -282,13 +308,14 @@ export default function GraphPage() {
             <Heading size="lg">Code Graph Visualization</Heading>
             <Text color="gray.600">
               {graphData.nodes.length} nodes, {graphData.edges.length} edges
+              {graphData.nodes.length === 0 && ' - No graph data for this repository yet'}
             </Text>
           </VStack>
-          
+
           <HStack spacing={3}>
             {/* Graph Mode Selector */}
-            <Select 
-              value={mode} 
+            <Select
+              value={mode}
               onChange={(e) => setMode(e.target.value as GraphMode)}
               width="200px"
             >
@@ -301,8 +328,8 @@ export default function GraphPage() {
             </Select>
 
             {/* Overlay Selector */}
-            <Select 
-              value={activeOverlay || ''} 
+            <Select
+              value={activeOverlay || ''}
               onChange={(e) => setActiveOverlay(e.target.value as OverlayType || null)}
               width="180px"
               placeholder="No overlay"
@@ -320,7 +347,7 @@ export default function GraphPage() {
               onClick={openSavedViews}
               variant="outline"
             />
-            
+
             <IconButton
               aria-label="Graph settings"
               icon={<Settings size={20} />}
@@ -330,7 +357,7 @@ export default function GraphPage() {
         </HStack>
 
         {/* Search and Toolbar */}
-        <GraphToolbar 
+        <GraphToolbar
           onSearch={handleSearch}
           mode={mode}
           onModeChange={setMode}
@@ -352,9 +379,9 @@ export default function GraphPage() {
               onNodeSelect={handleNodeSelect}
               onNodeDoubleClick={handleNodeExpand}
             />
-            
+
             {/* Status Bar */}
-            <GraphStatusBar 
+            <GraphStatusBar
               nodeCount={graphData.nodes.length}
               edgeCount={graphData.edges.length}
               selectedNodeId={selectedNodeId}

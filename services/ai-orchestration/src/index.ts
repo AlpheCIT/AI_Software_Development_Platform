@@ -30,6 +30,8 @@ import { DocQualityChallengerAgent } from './agents/doc-quality-challenger-agent
 import { AutoRemediationAgent } from './agents/auto-remediation-agent.js';
 import { SourceCodeProvider } from './services/source-code-provider.js';
 import { getDebateConfig } from './config/debate-registry.js';
+import { RunPersistenceService } from './services/run-persistence-service.js';
+import { AILearningsService } from './services/ai-learnings-service.js';
 
 interface OrchestrationConfig {
   port: number;
@@ -71,6 +73,8 @@ export class EnhancedAIOrchestrationService {
   private coordinationHub: AgentCoordinationHub;
   private agents: Map<string, any> = new Map();
   private sourceCodeProvider: SourceCodeProvider;
+  private runPersistence: RunPersistenceService;
+  private aiLearnings: AILearningsService;
   private isInitialized: boolean = false;
   private config: OrchestrationConfig;
 
@@ -99,6 +103,10 @@ export class EnhancedAIOrchestrationService {
         password: this.config.database.password
       }
     });
+
+    // Initialize persistence services
+    this.runPersistence = new RunPersistenceService(this.db);
+    this.aiLearnings = new AILearningsService(this.db);
   }
 
   private initializeCommunicationBus(): void {
@@ -139,6 +147,11 @@ export class EnhancedAIOrchestrationService {
 
       await this.createCollections();
       console.log('✅ Database collections verified');
+
+      // Initialize persistence services and wire to coordination hub
+      await this.runPersistence.initialize();
+      this.coordinationHub.setPersistenceServices(this.runPersistence, this.aiLearnings);
+      console.log('✅ Persistence services initialized');
 
       this.isInitialized = true;
       console.log('🎉 Enhanced AI Orchestration Service fully initialized!');
@@ -437,6 +450,71 @@ export class EnhancedAIOrchestrationService {
     this.app.get('/coordination/history', async (request, reply) => {
       const history = this.coordinationHub.getCoordinationHistory(50);
       return { coordination_history: history };
+    });
+
+    // =====================================================
+    // RUN HISTORY & LEARNINGS ENDPOINTS
+    // =====================================================
+
+    this.app.get('/runs', async (request, reply) => {
+      const query = request.query as { limit?: string; offset?: string };
+      const runs = await this.runPersistence.getRuns({
+        limit: query.limit ? parseInt(query.limit) : 50,
+        offset: query.offset ? parseInt(query.offset) : 0
+      });
+      return { runs };
+    });
+
+    this.app.get('/runs/:runId', async (request, reply) => {
+      const { runId } = request.params as { runId: string };
+      const run = await this.runPersistence.getRunById(runId);
+      if (!run) {
+        reply.code(404);
+        return { error: 'Run not found' };
+      }
+      return { run };
+    });
+
+    this.app.get('/runs/:runId/findings', async (request, reply) => {
+      const { runId } = request.params as { runId: string };
+      const query = request.query as { severity?: string };
+      const findings = await this.runPersistence.getRunFindings(runId, {
+        severity: query.severity
+      });
+      return { findings };
+    });
+
+    this.app.get('/runs/compare', async (request, reply) => {
+      const query = request.query as { run1?: string; run2?: string };
+      if (!query.run1 || !query.run2) {
+        reply.code(400);
+        return { error: 'Both run1 and run2 query parameters are required' };
+      }
+      const comparison = await this.runPersistence.compareRuns(query.run1, query.run2);
+      return { comparison };
+    });
+
+    this.app.get('/learnings', async (request, reply) => {
+      const query = request.query as { repositoryId?: string };
+      const learnings = await this.aiLearnings.getLearnings(query.repositoryId);
+      return { learnings };
+    });
+
+    this.app.get('/repositories/:repoId/runs', async (request, reply) => {
+      const { repoId } = request.params as { repoId: string };
+      const query = request.query as { limit?: string; offset?: string };
+      const runs = await this.runPersistence.getRuns({
+        repositoryId: repoId,
+        limit: query.limit ? parseInt(query.limit) : 50,
+        offset: query.offset ? parseInt(query.offset) : 0
+      });
+      return { runs };
+    });
+
+    this.app.get('/repositories/:repoId/learnings', async (request, reply) => {
+      const { repoId } = request.params as { repoId: string };
+      const summary = await this.aiLearnings.getLearningsSummary(repoId);
+      return { summary };
     });
 
     this.app.get('/metrics', async (request, reply) => {

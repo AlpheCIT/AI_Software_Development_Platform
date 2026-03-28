@@ -14,6 +14,17 @@ export default defineConfig({
     port: 3000,
     host: true,
     proxy: {
+      '/api/v1/ai-orchestration': {
+        target: 'http://localhost:8003',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path: string) => path.replace(/^\/api\/v1\/ai-orchestration/, ''),
+      },
+      '/api/v1/ingestion': {
+        target: 'http://localhost:8002',
+        changeOrigin: true,
+        secure: false,
+      },
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
