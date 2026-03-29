@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Grid,
@@ -59,6 +59,16 @@ const MainDashboard: React.FC = () => {
   } = useMCP();
 
   const { currentJob, jobHistory } = useIngestionStore();
+
+  // When RunManager dispatches qa-view-run, switch to QA Intelligence view
+  // (the QAIntelligenceDashboard will pick up the event and load the run)
+  useEffect(() => {
+    const handleViewRun = () => {
+      setCurrentView('qa-intelligence');
+    };
+    window.addEventListener('qa-view-run', handleViewRun);
+    return () => window.removeEventListener('qa-view-run', handleViewRun);
+  }, []);
 
   const { colorMode, toggleColorMode } = useColorMode();
   const bgColor = useColorModeValue('gray.50', 'gray.900');
