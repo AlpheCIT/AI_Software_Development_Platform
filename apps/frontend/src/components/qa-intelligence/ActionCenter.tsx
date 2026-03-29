@@ -800,18 +800,6 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
     }
   }, [runId]);
 
-  // No run selected
-  if (!runId) {
-    return (
-      <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={6}>
-        <VStack spacing={3}>
-          <Icon as={BarChart3} boxSize={8} color={subtextColor} />
-          <Text color={subtextColor}>Start a QA run to see the Action Center</Text>
-        </VStack>
-      </Box>
-    );
-  }
-
   // Loading
   if (loading && !data) {
     return (
