@@ -125,7 +125,7 @@ export default function BackendShowcase() {
       setIsLoading(true);
       
       // Load real data from QA engine and ArangoDB, fall back to demo data
-      const QA_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+      const QA_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
       await Promise.all([
         loadAIAgents(QA_URL),
         loadConversations(),
@@ -174,7 +174,7 @@ export default function BackendShowcase() {
 
   const loadConversations = async () => {
     try {
-      const QA_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+      const QA_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
       const res = await fetch(`${QA_URL}/chat/conversations`);
       if (res.ok) {
         const data = await res.json();
@@ -188,7 +188,7 @@ export default function BackendShowcase() {
 
   const loadJiraTickets = async () => {
     try {
-      const QA_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+      const QA_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
       const res = await fetch(`${QA_URL}/jira/tickets`);
       if (res.ok) {
         const data = await res.json();

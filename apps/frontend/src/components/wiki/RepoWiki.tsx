@@ -85,7 +85,7 @@ function repoName(url: string): string {
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
 const RepoWiki: React.FC<RepoWikiProps> = ({ runId: propRunId }) => {
   // Auto-fetch latest runId if none provided

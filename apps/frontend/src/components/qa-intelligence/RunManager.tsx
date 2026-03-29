@@ -96,7 +96,7 @@ interface RepoGroup {
   bestGrade: string | null;
 }
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
 const AGENT_NAMES = [
   { key: 'ingester', label: 'Ingester', icon: Database },

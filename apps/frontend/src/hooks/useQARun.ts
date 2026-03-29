@@ -251,7 +251,7 @@ export function useQARun(): UseQARunReturn {
   useEffect(() => {
     if (!runId || status === 'idle' || status === 'completed' || status === 'failed') return;
 
-    const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+    const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
     let socket: Socket | null = null;
 
     try {

@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { AgentName, AgentLogEntry } from '../services/qaService';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 const MAX_LOG_ENTRIES = 200;
 
 // ── Agent Color Map ────────────────────────────────────────────────────────

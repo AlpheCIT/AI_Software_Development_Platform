@@ -80,7 +80,7 @@ interface ProductData {
   };
 }
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
 const IMPACT_COLORS: Record<string, string> = {
   high: 'red',
