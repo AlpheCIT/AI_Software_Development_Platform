@@ -73,6 +73,42 @@ export const RepositoryIngestionDashboard: React.FC = () => {
   // WebSocket connection for real-time updates
   const { socket, isConnected } = useWebSocket('/');
 
+  // Load past QA runs into history on mount
+  useEffect(() => {
+    const loadPastRuns = async () => {
+      if (jobHistory.length > 0) return; // Already have history
+      try {
+        const res = await fetch('/api/v1/qa/runs');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.runs?.length) return;
+
+        const pastJobs = data.runs.slice(0, 10).map((run: any) => ({
+          id: run.runId || run.id,
+          repositoryUrl: run.repoUrl || run.repository || '',
+          status: run.status === 'completed' ? 'completed' as const : 'failed' as const,
+          progress: 100,
+          phase: 'Completed',
+          startTime: new Date(run.startedAt || run.date),
+          endTime: run.completedAt ? new Date(run.completedAt) : undefined,
+          collectionsPopulated: 0,
+          totalCollections: 0,
+          metrics: {
+            filesAnalyzed: run.filesAnalyzed || run.tests || 0,
+            entitiesExtracted: 0,
+            securityIssues: 0,
+            performanceIssues: 0,
+          },
+        }));
+
+        useIngestionStore.setState({ jobHistory: pastJobs });
+      } catch {
+        // QA engine may not be running
+      }
+    };
+    loadPastRuns();
+  }, []);
+
   useEffect(() => {
     if (socket) {
       socket.on('ingestion:progress', handleProgressUpdate);
