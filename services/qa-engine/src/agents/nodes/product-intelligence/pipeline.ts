@@ -8,6 +8,21 @@ import { uiUxAnalystNode, UIAuditReport } from '../ui-ux-analyst';
 import { businessContextAnalyzerNode, BusinessContext } from '../business-context-analyzer';
 import { QA_COLLECTIONS } from '../../../graph/collections';
 
+export interface DspySecurityFinding {
+  type: string;
+  severity: string;
+  line?: number;
+  evidence: string;
+  description: string;
+  remediation: string;
+  verified: boolean;
+  confidence: number;
+  verification_evidence: string;
+  business_impact: string;
+  priority: string;
+  remediation_effort: string;
+}
+
 export interface ProductIntelligenceResult {
   businessContext?: BusinessContext;
   roadmap: ProductRoadmap;
@@ -17,6 +32,7 @@ export interface ProductIntelligenceResult {
   apiValidation?: APIValidationReport;
   coverageAudit?: CoverageAuditReport;
   uiAudit?: UIAuditReport;
+  dspySecurityFindings?: DspySecurityFinding[];
   combinedPriorities: CombinedPriority[];
 }
 
@@ -141,6 +157,40 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     console.error('[ProductIntelligence] New agents failed:', error.message);
   }
 
+  // Step 4b: Optional DSPy Visionary Agent deep security analysis
+  // If the visionary-agent service is running on port 8010, call it for
+  // multi-step verified security findings. This is additive — pipeline
+  // continues normally if the service is unavailable.
+  let dspySecurityFindings: DspySecurityFinding[] = [];
+  try {
+    const dspyResponse = await fetch('http://localhost:8010/analyze/security-deep-dive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_list: enrichedCodeFiles
+          .filter(f => f.path !== '__business_context__')
+          .map(f => f.path)
+          .join('\n'),
+        file_contents: Object.fromEntries(
+          enrichedCodeFiles
+            .filter(f => f.content && f.path !== '__business_context__')
+            .slice(0, 50) // Limit files sent to DSPy
+            .map(f => [f.path, f.content.substring(0, 10000)])
+        ),
+        business_context: businessContext?.summary || '',
+      }),
+      signal: AbortSignal.timeout(120000), // 2 min timeout
+    });
+
+    if (dspyResponse.ok) {
+      const dspyData = await dspyResponse.json() as { findings?: DspySecurityFinding[] };
+      dspySecurityFindings = dspyData.findings || [];
+      console.log(`[Pipeline] DSPy security deep dive: ${dspySecurityFindings.length} verified findings`);
+    }
+  } catch (err: any) {
+    console.log(`[Pipeline] DSPy visionary agent not available (optional): ${err.message}`);
+  }
+
   // Step 5: Combine and prioritize
   const combinedPriorities = buildCombinedPriorities(roadmap, research);
 
@@ -207,7 +257,27 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     } catch { /* non-fatal */ }
   }
 
-  return { businessContext, roadmap, research, codeQuality, selfHealing, apiValidation, coverageAudit, uiAudit, combinedPriorities };
+  // Persist DSPy verified security findings (high-confidence, multi-step verified)
+  if (dspySecurityFindings.length > 0) {
+    try {
+      await dbClient.upsertDocument('qa_dspy_security_reports', {
+        _key: `dspy_security_${runId}`,
+        repositoryId,
+        runId,
+        findings: dspySecurityFindings,
+        totalFindings: dspySecurityFindings.length,
+        criticalCount: dspySecurityFindings.filter(f => f.priority === 'critical').length,
+        highCount: dspySecurityFindings.filter(f => f.priority === 'high').length,
+        averageConfidence: dspySecurityFindings.reduce((sum, f) => sum + (f.confidence || 0), 0) / dspySecurityFindings.length,
+        source: 'dspy-visionary-agent',
+        verificationMethod: 'multi-step-chain-of-thought',
+        createdAt: new Date().toISOString(),
+      });
+      console.log(`[ProductIntelligence] Persisted ${dspySecurityFindings.length} DSPy-verified security findings`);
+    } catch { /* non-fatal */ }
+  }
+
+  return { businessContext, roadmap, research, codeQuality, selfHealing, apiValidation, coverageAudit, uiAudit, dspySecurityFindings: dspySecurityFindings.length > 0 ? dspySecurityFindings : undefined, combinedPriorities };
 }
 
 function buildCombinedPriorities(
