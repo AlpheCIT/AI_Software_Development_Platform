@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import type { AgentState, AgentName } from '../../services/qaService';
 import type { AgentStreamingState, HandoffInfo } from '../../hooks/useAgentStream';
+import { useQARunStore } from '../../stores/qa-run-store';
 
 const MotionBox = motion(Box);
 const MotionFlex = motion(Flex);
@@ -433,7 +434,7 @@ const VerticalConnector: React.FC<{ agents: AgentState[] }> = ({ agents }) => {
 // ── Main Component ─────────────────────────────────────────────────────────
 
 const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
-  agents,
+  agents: propAgents,
   runId,
   streamingState,
   activeAgent,
@@ -446,6 +447,19 @@ const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
   const headerColor = useColorModeValue('gray.700', 'gray.200');
   const trackLabelColor = useColorModeValue('gray.500', 'gray.400');
   const trackBg = useColorModeValue('gray.50', 'gray.750');
+
+  // Merge store statuses with prop agents — prefer store data if more recent
+  const storeAgentStatuses = useQARunStore(s => s.agentStatuses);
+  const agents = propAgents.map(a => {
+    const storeStatus = storeAgentStatuses[a.name];
+    if (storeStatus && a.status === 'idle' && storeStatus.status === 'completed') {
+      return { ...a, status: 'completed' as const, progress: 100 };
+    }
+    if (storeStatus && a.status === 'idle' && storeStatus.status === 'running') {
+      return { ...a, status: 'active' as const };
+    }
+    return a;
+  });
 
   const allAgents = [...TRACK_1_AGENTS, ...TRACK_2_ROW_1, ...TRACK_2_ROW_2];
   const activeCount = allAgents.filter((n) => getAgentState(agents, n).status === 'active').length;
