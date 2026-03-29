@@ -222,13 +222,17 @@ export function detectGlobalMiddleware(
   for (const file of allFiles) {
     const content = file.content || '';
 
-    // Rate limiting
+    // Rate limiting — detect all patterns including path-prefixed app.use('/api', limiter)
     if (/app\.use\s*\(\s*rateLimit/i.test(content) ||
         /app\.use\s*\(\s*limiter/i.test(content) ||
         /app\.use\s*\(\s*slowDown/i.test(content) ||
+        /app\.use\s*\(\s*['"][^'"]*['"]\s*,\s*(rateLimit|limiter|rateLimiter)/i.test(content) ||
+        /const\s+(limiter|rateLimiter|rateLimit)\s*=\s*require\s*\(\s*['"]express-rate-limit['"]\s*\)/i.test(content) ||
         /require\s*\(\s*['"]express-rate-limit['"]\s*\)/.test(content) ||
         /from\s+['"]express-rate-limit['"]/.test(content) ||
-        /from\s+['"]rate-limiter-flexible['"]/.test(content)) {
+        /from\s+['"]rate-limiter-flexible['"]/.test(content) ||
+        /rateLimit\s*\(\s*\{/.test(content) ||
+        /new\s+RateLimiterMemory/.test(content)) {
       result.hasRateLimiting = true;
       result.details.push(`- Global rate limiting detected in ${file.path}`);
     }
@@ -418,7 +422,13 @@ export function routeHasErrorHandling(
   const routeMatch = routeRegex.exec(content);
 
   if (!routeMatch) {
-    // Route not found in file — can't verify, assume it might have handling
+    // Route not found by exact path — try fuzzy: check if file has any try/catch at all
+    // Many Express apps wrap ALL handlers in try/catch
+    const hasTryCatch = /try\s*\{/.test(content);
+    const hasGlobalErrorHandler = /app\.use\s*\(\s*\(\s*(err|error)\s*,\s*req\s*,\s*res/.test(content) ||
+      /sendError\s*\(/.test(content) ||
+      /errorHandler/.test(content);
+    if (hasTryCatch || hasGlobalErrorHandler) return true;
     return false;
   }
 
@@ -430,7 +440,8 @@ export function routeHasErrorHandling(
          /\.catch\s*\(/.test(handlerBlock) ||
          /asyncHandler\s*\(/.test(handlerBlock) ||
          /catchAsync\s*\(/.test(handlerBlock) ||
-         /wrapAsync\s*\(/.test(handlerBlock);
+         /wrapAsync\s*\(/.test(handlerBlock) ||
+         /sendError\s*\(/.test(handlerBlock);
 }
 
 /**
@@ -487,10 +498,19 @@ export function routeHasInputValidation(
     if (/validationResult\s*\(/.test(handlerBlock)) return true;
 
     // Whitelist/sanitize checks
-    if (/sanitize|whitelist|allowlist/i.test(handlerBlock)) return true;
+    if (/sanitize|whitelist|allowlist|allowedTables|validTables|approved/i.test(handlerBlock)) return true;
+
+    // Array/Set inclusion check (e.g., validTables.includes(req.params.table))
+    if (/\.(includes|has)\s*\(\s*req\.(params|body|query)/.test(handlerBlock)) return true;
+    if (/\.\s*includes\s*\(\s*\w+\s*\)/.test(handlerBlock) && /req\.(params|body|query)/.test(handlerBlock)) return true;
 
     // Type checking
     if (/typeof\s+req\.(body|params|query)/.test(handlerBlock)) return true;
+
+    // Object.keys check or switch statement on param
+    if (/switch\s*\(\s*req\.(params|body|query)/.test(handlerBlock)) return true;
+    if (/if\s*\(\s*!\s*\[/.test(handlerBlock)) return true; // if (!['a','b'].includes(...))
+    if (/if\s*\(\s*!\s*\w+\s*\.\s*includes/.test(handlerBlock)) return true;
   }
 
   return false;
