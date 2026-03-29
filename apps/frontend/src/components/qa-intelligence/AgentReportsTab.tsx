@@ -26,6 +26,8 @@ import APIValidatorPanel from './APIValidatorPanel';
 import CoverageAuditorPanel from './CoverageAuditorPanel';
 import UIUXAnalystPanel from './UIUXAnalystPanel';
 
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+
 interface AgentReportsTabProps {
   runId?: string;
 }
@@ -40,27 +42,41 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
   const bg = useColorModeValue('white', 'gray.800');
 
   useEffect(() => {
-    if (runId) loadReports();
+    loadReports();
   }, [runId]);
 
   async function loadReports() {
     setLoading(true);
     try {
-      const data = await qaService.getProductIntelligence(runId!);
+      let effectiveRunId = runId;
+
+      // If no runId provided, fetch the latest completed run
+      if (!effectiveRunId) {
+        try {
+          const runsResponse = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+          if (runsResponse.ok) {
+            const runsData = await runsResponse.json();
+            const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+            const latestRun = completedRuns[0];
+            if (latestRun) {
+              effectiveRunId = latestRun._key || latestRun.runId;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!effectiveRunId) {
+        setLoading(false);
+        return;
+      }
+
+      const data = await qaService.getProductIntelligence(effectiveRunId);
       setSelfHealing(data.selfHealing || null);
       setApiValidation(data.apiValidation || null);
       setCoverageAudit(data.coverageAudit || null);
       setUiAudit(data.uiAudit || null);
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }
-
-  if (!runId) {
-    return (
-      <Box p={6} textAlign="center">
-        <Text color="gray.500">Run a QA analysis to see specialist agent reports</Text>
-      </Box>
-    );
   }
 
   if (loading) {
