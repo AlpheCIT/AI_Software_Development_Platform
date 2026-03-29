@@ -2,6 +2,8 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../../config';
 import { persistConversation } from '../../persist-conversation';
 import { throttledInvoke, createModel } from '../../llm-throttle';
+import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from '../graph-helpers.js';
+import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from '../scoring-helpers.js';
 
 const CODE_QUALITY_SYSTEM_PROMPT = `You are a world-class Software Architect and Technical Debt specialist — the kind of engineer who gets called in to rescue codebases at companies like Google, Stripe, and Netflix. You have an encyclopedic knowledge of design patterns, SOLID principles, and clean code practices across every language and framework.
 
@@ -302,12 +304,22 @@ export async function codeQualityArchitectNode(
     step: 'Deep code quality audit — analyzing smells, duplication, complexity, and architecture',
   });
 
+  // Extract business context from enriched codeFiles
+  const bizContextFile = codeFiles.find((f: any) => f.path === '__business_context__');
+  const businessContextPrompt = bizContextFile?.content ? `## Business Context\n${bizContextFile.content}\n` : '';
+
+  // Build graph context
+  const graphRelationships = extractRelationships(codeFiles);
+  const graphContext = buildGraphContext(graphRelationships, codeFiles);
+  const graphPrompt = formatGraphContextForPrompt(graphContext);
+
   // Build detailed code context
   const filesByDir = new Map<string, number>();
   const filesByExt = new Map<string, number>();
   let totalLines = 0;
 
   for (const f of codeFiles) {
+    if (f.path === '__business_context__') continue;
     const dir = f.path?.split('/').slice(0, 2).join('/') || 'root';
     filesByDir.set(dir, (filesByDir.get(dir) || 0) + 1);
     const ext = f.path?.split('.').pop() || 'unknown';
@@ -328,19 +340,9 @@ export async function codeQualityArchitectNode(
 
   // Find large files
   const largeFiles = codeFiles
-    .filter((f: any) => f.content && f.content.split('\n').length > 200)
+    .filter((f: any) => f.content && f.path !== '__business_context__' && f.content.split('\n').length > 200)
     .map((f: any) => `${f.path} (${f.content.split('\n').length} lines)`)
     .slice(0, 20);
-
-  // Sample code for deep analysis (prioritize larger/more complex files)
-  const sortedBySize = [...codeFiles]
-    .filter((f: any) => f.content && f.path?.match(/\.(ts|tsx|js|jsx|py|java|cs|go|rs)$/))
-    .sort((a: any, b: any) => (b.content?.length || 0) - (a.content?.length || 0));
-
-  const sampleCode = sortedBySize
-    .slice(0, 20)
-    .map((f: any) => `### ${f.path} (${(f.content || '').split('\n').length} lines)\n\`\`\`\n${(f.content || '').substring(0, 2000)}\n\`\`\``)
-    .join('\n\n');
 
   // Documentation coverage statistics
   const sourceFiles = codeFiles.filter((f: any) =>
@@ -377,11 +379,53 @@ export async function codeQualityArchitectNode(
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'code-quality-architect',
-    progress: 30,
-    message: `Analyzed ${codeFiles.length} files, ${totalLines} lines. Found ${longFunctions.length} long functions, ${largeFiles.length} large files, ${todoCount} TODOs, ${anyCount} 'any' types`,
+    progress: 15,
+    message: `Phase A: Identifying largest/most complex files from ${codeFiles.length} total files`,
   });
 
-  const model = createModel({ temperature: 0.3, maxTokens: 8192 });
+  // === PHASE A: File identification (lightweight) ===
+  const identifyModel = createModel({ temperature: 0.2, maxTokens: 4096 });
+
+  const allFilePaths = codeFiles
+    .filter((f: any) => f.content && f.path !== '__business_context__')
+    .map((f: any) => `- ${f.path} (${f.language || f.path?.split('.').pop() || 'unknown'}, ${f.size || (f.content || '').length}b)`)
+    .join('\n');
+
+  const identifyResponse = await throttledInvoke(identifyModel, [
+    new SystemMessage('You are a world-class Software Architect. Given a repo file list, identify which 20 files are most important for a code quality audit: the largest/most complex files, core architecture files, shared utilities, base classes, and files likely to have code smells or duplication. Prioritize hub files (many connections) and large files. Return ONLY a JSON array of file paths.'),
+    new HumanMessage(`${businessContextPrompt}${graphPrompt}\n\n## Red Flags\n- Long functions: ${longFunctions.length}\n- Large files: ${largeFiles.length}\n- TODO/FIXME/HACK: ${todoCount}\n- 'any' types: ${anyCount}\n\n## Large Files\n${largeFiles.join('\n')}\n\n## Long Functions\n${longFunctions.join('\n')}\n\nFiles:\n${allFilePaths}`),
+  ], 'code-quality-identify', eventPublisher, runId);
+
+  let targetFiles: string[] = [];
+  try {
+    const cleaned = identifyResponse.content.toString().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    targetFiles = JSON.parse(cleaned);
+  } catch {
+    // Fallback: take largest source files
+    targetFiles = [...codeFiles]
+      .filter((f: any) => f.content && f.path?.match(/\.(ts|tsx|js|jsx|py|java|cs|go|rs)$/) && f.path !== '__business_context__')
+      .sort((a: any, b: any) => (b.content?.length || 0) - (a.content?.length || 0))
+      .slice(0, 20)
+      .map((f: any) => f.path);
+  }
+
+  console.log(`[CodeQualityArchitect] Phase A identified ${targetFiles.length} files for deep analysis`);
+
+  eventPublisher?.emit('qa:agent.progress', {
+    runId,
+    agent: 'code-quality-architect',
+    progress: 35,
+    message: `Phase B: Deep code quality analysis of ${targetFiles.length} identified files`,
+  });
+
+  // === PHASE B: Deep analysis with FULL file contents ===
+  const deepContext = targetFiles.map((path: string) => {
+    const file = codeFiles.find((f: any) => f.path === path);
+    if (!file?.content) return '';
+    return `### ${path} (${(file.content || '').split('\n').length} lines)\n\`\`\`\n${file.content}\n\`\`\``;
+  }).filter(Boolean).join('\n\n');
+
+  const analyzeModel = createModel({ temperature: 0.3, maxTokens: 16384 });
 
   const userMessage = `Perform a comprehensive code quality audit of this repository.
 
@@ -392,6 +436,8 @@ Total lines: ${totalLines}
 Total functions: ${functions.length}
 Total classes: ${classes.length}
 Total interfaces: ${interfaces.length}
+
+${businessContextPrompt}${graphPrompt}
 
 ## File Distribution
 ${Array.from(filesByExt.entries()).sort((a, b) => b[1] - a[1]).map(([ext, count]) => `${ext}: ${count} files`).join(', ')}
@@ -417,8 +463,8 @@ ${longFunctions.join('\n')}
 ## Large Files
 ${largeFiles.join('\n')}
 
-## Source Code (top 20 files by size)
-${sampleCode}
+## Full Source Code for Deep Analysis
+${deepContext}
 
 ## Key Entities
 ${codeEntities.slice(0, 80).map((e: any) => `${e.type} ${e.name} (${e.file})`).join('\n')}
@@ -429,21 +475,21 @@ Based on this comprehensive analysis:
 3. Find duplication that could be consolidated
 4. Flag complexity hotspots
 5. Identify architecture issues
-6. Create a prioritized refactoring roadmap (quick wins → strategic)
+6. Create a prioritized refactoring roadmap (quick wins -> strategic)
 7. List consolidation opportunities (shared utilities/modules to create)
 8. Find dead code
 9. Flag best practice violations
-10. Analyze documentation coverage — count documented vs undocumented files/functions, flag critical gaps (high complexity with no docs), and list directories missing READMEs
+10. Analyze documentation coverage -- count documented vs undocumented files/functions, flag critical gaps (high complexity with no docs), and list directories missing READMEs
 
-Be specific — reference actual files and code patterns. Every finding must have an actionable fix.
+Be specific -- reference actual files and code patterns. Every finding must have an actionable fix.
 
 Respond with ONLY valid JSON, no markdown fencing.`;
 
   const startMs = Date.now();
-  const response = await throttledInvoke(model, [
+  const response = await throttledInvoke(analyzeModel, [
     new SystemMessage(CODE_QUALITY_SYSTEM_PROMPT),
     new HumanMessage(userMessage),
-  ], 'code-quality-architect', eventPublisher, runId);
+  ], 'code-quality-architect-analyze', eventPublisher, runId);
   const durationMs = Date.now() - startMs;
 
   const cqResponseText = typeof response.content === 'string' ? response.content : '';
@@ -503,6 +549,26 @@ Respond with ONLY valid JSON, no markdown fencing.`;
       documentedFunctions: 0,
     };
   }
+
+  // Recalculate health score with calibrated scoring
+  const allFindings = [
+    ...report.codeSmells.map((s: any) => ({ severity: s.severity || 'medium', confidence: 0.8, verified: true })),
+    ...report.complexityHotspots.map(() => ({ severity: 'medium' as const, confidence: 0.7, verified: true })),
+    ...report.architectureIssues.map((a: any) => ({ severity: a.severity || 'medium', confidence: 0.7, verified: true })),
+    ...report.bestPracticeViolations.map((b: any) => ({ severity: b.severity || 'low', confidence: 0.6, verified: true })),
+  ];
+  const { score: calibratedScore, grade: calibratedGrade, gradeDescription } = calculateCalibratedScore(allFindings, codeFiles.length);
+  report.overallHealth.score = calibratedScore;
+  report.overallHealth.grade = calibratedGrade;
+
+  // Enrich findings with blast radius from graph context
+  // CodeSmell uses `location` as a string, so map to file for blast radius lookup
+  enrichFindingsWithBlastRadius(
+    report.codeSmells.map((s: any) => ({ ...s, file: s.file || (s.location || '').split(':')[0] })),
+    graphContext.dependentGraph
+  );
+  enrichFindingsWithBlastRadius(report.architectureIssues as any[], graphContext.dependentGraph);
+  enrichFindingsWithBlastRadius(report.complexityHotspots, graphContext.dependentGraph);
 
   const totalFindings =
     report.codeSmells.length +

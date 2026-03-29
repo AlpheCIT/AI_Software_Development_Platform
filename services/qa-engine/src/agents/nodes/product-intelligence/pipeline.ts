@@ -5,9 +5,11 @@ import { selfHealerNode, SelfHealingReport } from '../self-healer';
 import { apiValidatorNode, APIValidationReport } from '../api-validator';
 import { coverageAuditorNode, CoverageAuditReport } from '../coverage-auditor';
 import { uiUxAnalystNode, UIAuditReport } from '../ui-ux-analyst';
+import { businessContextAnalyzerNode, BusinessContext } from '../business-context-analyzer';
 import { QA_COLLECTIONS } from '../../../graph/collections';
 
 export interface ProductIntelligenceResult {
+  businessContext?: BusinessContext;
   roadmap: ProductRoadmap;
   research: ResearchInsights;
   codeQuality: CodeQualityReport;
@@ -40,6 +42,35 @@ export async function runProductIntelligencePipeline(
 ): Promise<ProductIntelligenceResult> {
   console.log(`[ProductIntelligence] Starting pipeline for ${repoUrl}`);
 
+  // Step 0: Discover business context (runs first, lightweight single LLM call)
+  eventPublisher?.emit('qa:agent.progress', {
+    runId,
+    agent: 'business-context',
+    progress: 0,
+    message: 'Business Context Analyzer discovering application type and critical flows...',
+  });
+
+  const businessContext = await businessContextAnalyzerNode(
+    codeFiles, codeEntities, repoUrl, runId, eventPublisher
+  );
+
+  // Build a context prompt string that all downstream agents can use
+  const businessContextPrompt = businessContext && businessContext.appType !== 'Unknown' ? `
+## Application Context
+This is a ${businessContext.appType}.
+Key domains: ${businessContext.businessDomains?.join(', ')}
+Critical flows: ${businessContext.criticalFlows?.join('; ')}
+Tech stack: ${businessContext.techStack?.join(', ')}
+
+IMPORTANT: Tailor your analysis to this specific application type. Generic findings like "add optional chaining" are not useful. Focus on issues that affect the business-critical flows.
+` : '';
+
+  // Attach businessContextPrompt to codeFiles metadata so agents can access it
+  // We pass it via a synthetic first entry that agents can detect
+  const enrichedCodeFiles = businessContextPrompt
+    ? [{ path: '__business_context__', language: 'metadata', size: 0, content: businessContextPrompt }, ...codeFiles]
+    : codeFiles;
+
   // Step 1: Code Quality Architect runs FIRST so PM gets the health score
   eventPublisher?.emit('qa:agent.progress', {
     runId,
@@ -49,7 +80,7 @@ export async function runProductIntelligencePipeline(
   });
 
   const codeQuality = await codeQualityArchitectNode(
-    codeFiles,
+    enrichedCodeFiles,
     codeEntities,
     repoUrl,
     runId,
@@ -66,7 +97,7 @@ export async function runProductIntelligencePipeline(
   });
 
   const roadmap = await productManagerNode(
-    codeFiles,
+    enrichedCodeFiles,
     codeEntities,
     repoUrl,
     runId,
@@ -85,7 +116,7 @@ export async function runProductIntelligencePipeline(
 
   const research = await researchAssistantNode(
     roadmap,
-    codeFiles,
+    enrichedCodeFiles,
     repoUrl,
     runId,
     dbClient,
@@ -102,10 +133,10 @@ export async function runProductIntelligencePipeline(
 
   try {
     // Run sequentially to avoid rate limit storms
-    try { selfHealing = await selfHealerNode(codeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[SelfHealer] Failed:', e.message); }
-    try { apiValidation = await apiValidatorNode(codeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[APIValidator] Failed:', e.message); }
-    try { coverageAudit = await coverageAuditorNode(codeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[CoverageAuditor] Failed:', e.message); }
-    try { uiAudit = await uiUxAnalystNode(codeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[UIUXAnalyst] Failed:', e.message); }
+    try { selfHealing = await selfHealerNode(enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[SelfHealer] Failed:', e.message); }
+    try { apiValidation = await apiValidatorNode(enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[APIValidator] Failed:', e.message); }
+    try { coverageAudit = await coverageAuditorNode(enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[CoverageAuditor] Failed:', e.message); }
+    try { uiAudit = await uiUxAnalystNode(enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[UIUXAnalyst] Failed:', e.message); }
   } catch (error: any) {
     console.error('[ProductIntelligence] New agents failed:', error.message);
   }
@@ -176,7 +207,7 @@ export async function runProductIntelligencePipeline(
     } catch { /* non-fatal */ }
   }
 
-  return { roadmap, research, codeQuality, selfHealing, apiValidation, coverageAudit, uiAudit, combinedPriorities };
+  return { businessContext, roadmap, research, codeQuality, selfHealing, apiValidation, coverageAudit, uiAudit, combinedPriorities };
 }
 
 function buildCombinedPriorities(

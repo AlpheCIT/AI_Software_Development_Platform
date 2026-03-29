@@ -281,7 +281,7 @@ export async function repoIngesterNode(
       `FOR f IN code_files
          FILTER f.repositoryId == @repoId
          LIMIT 200
-         RETURN { path: f.path, language: f.language, size: f.size, content: SUBSTRING(f.content, 0, 2000) }`,
+         RETURN { path: f.path, language: f.language, size: f.size, content: f.content }`,
       { repoId: repositoryId },
     );
 
@@ -413,7 +413,7 @@ export async function repoIngesterNode(
         path: relPath,
         language,
         size: stat.size,
-        content: content ? content.slice(0, 2000) : undefined,
+        content: content || undefined,
         hasDocumentation: content ? hasDocumentation(content, language) : undefined,
       });
 
