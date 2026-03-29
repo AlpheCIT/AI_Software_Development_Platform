@@ -169,7 +169,7 @@ function findCircularDependencies(graph: Map<string, string[]>): string[][] {
     recursionStack.delete(node);
   }
 
-  for (const node of graph.keys()) {
+  for (const node of Array.from(graph.keys())) {
     if (!visited.has(node)) {
       dfs(node, []);
     }
