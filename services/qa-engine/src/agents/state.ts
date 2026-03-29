@@ -103,6 +103,20 @@ export interface QAAgentState {
   status: 'running' | 'completed' | 'failed';
   errors: string[];
 
+  // Business context (populated by business-context-analyzer, consumed by all agents)
+  businessContext?: {
+    appType: string;
+    businessDomains: string[];
+    criticalFlows: string[];
+    techStack: string[];
+    summary: string;
+  };
+  relationships?: Array<{
+    from: string;
+    to: string;
+    type: 'import' | 'call' | 'extends' | 'dependency';
+  }>;
+
   // Timestamps
   startedAt: string;
   completedAt?: string;
@@ -126,6 +140,8 @@ export function createInitialState(runId: string, config: QARunConfig): QAAgentS
     shouldLoop: false,
     status: 'running',
     errors: [],
+    businessContext: undefined,
+    relationships: [],
     startedAt: new Date().toISOString(),
   };
 }
