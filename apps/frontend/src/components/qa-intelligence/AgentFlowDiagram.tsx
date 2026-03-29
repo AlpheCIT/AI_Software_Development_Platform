@@ -171,10 +171,12 @@ interface AgentNodeProps {
   agents: AgentState[];
   selectedAgent: string | null;
   onAgentClick: (name: string) => void;
+  isSkipped?: boolean;
+  skipReason?: string;
 }
 
 const AgentNode: React.FC<AgentNodeProps> = React.memo(
-  ({ agentName, agents, selectedAgent, onAgentClick }) => {
+  ({ agentName, agents, selectedAgent, onAgentClick, isSkipped, skipReason }) => {
     const config = AGENT_CONFIG[agentName];
     if (!config) return null;
 
@@ -183,15 +185,18 @@ const AgentNode: React.FC<AgentNodeProps> = React.memo(
     const isCompleted = agent.status === 'completed';
     const isFailed = agent.status === 'failed';
     const isLooping = agent.status === 'looping';
-    const isSelected = selectedAgent === agentName;
+    const isSelectedAgent = selectedAgent === agentName;
 
     const cardBg = useColorModeValue('white', 'gray.800');
+    const skippedBg = useColorModeValue('gray.50', 'gray.900');
     const idleBorder = useColorModeValue('gray.200', 'gray.600');
     const mutedText = useColorModeValue('gray.400', 'gray.500');
     const AgentIcon = config.icon;
 
     // Determine border color
-    const borderColor = isSelected
+    const borderColor = isSkipped
+      ? useColorModeValue('gray.200', 'gray.700')
+      : isSelectedAgent
       ? `${config.color}.500`
       : isActive || isLooping
       ? `${config.color}.400`
@@ -202,14 +207,18 @@ const AgentNode: React.FC<AgentNodeProps> = React.memo(
       : idleBorder;
 
     // Determine bg
-    const bg = isSelected
+    const bg = isSkipped
+      ? skippedBg
+      : isSelectedAgent
       ? useColorModeValue(`${config.color}.50`, `${config.color}.900`)
       : isActive
       ? useColorModeValue(`${config.color}.50`, `${config.color}.900`)
       : cardBg;
 
     // Status badge color
-    const badgeColor = isActive
+    const badgeColor = isSkipped
+      ? 'gray'
+      : isActive
       ? config.color
       : isCompleted
       ? 'green'
@@ -224,20 +233,24 @@ const AgentNode: React.FC<AgentNodeProps> = React.memo(
       ? `0 0 8px var(--chakra-colors-${config.color}-300)`
       : 'none';
 
+    const tooltipLabel = isSkipped
+      ? `Skipped: ${skipReason || 'requirements not met'}`
+      : config.description;
+
     return (
-      <Tooltip label={config.description} fontSize="xs" hasArrow placement="top">
-        <Box position="relative" display="inline-block">
+      <Tooltip label={tooltipLabel} fontSize="xs" hasArrow placement="top">
+        <Box position="relative" display="inline-block" opacity={isSkipped ? 0.45 : 1}>
           <MotionBox
             px={3}
             py={2}
             borderRadius="lg"
-            border={isSelected ? '2px solid' : '1px solid'}
+            border={isSelectedAgent ? '2px solid' : '1px solid'}
             borderColor={borderColor}
             bg={bg}
             boxShadow={glowShadow}
-            cursor="pointer"
-            onClick={() => onAgentClick(agentName)}
-            whileHover={{ scale: 1.03 }}
+            cursor={isSkipped ? 'default' : 'pointer'}
+            onClick={() => !isSkipped && onAgentClick(agentName)}
+            whileHover={isSkipped ? {} : { scale: 1.03 }}
             animate={
               isActive
                 ? { scale: [1, 1.05, 1] }
@@ -250,21 +263,21 @@ const AgentNode: React.FC<AgentNodeProps> = React.memo(
             }
             minW={{ base: '100px', md: '110px' }}
             textAlign="center"
-            _hover={{ shadow: 'md' }}
+            _hover={isSkipped ? {} : { shadow: 'md' }}
           >
             <VStack spacing={1}>
               <Flex
                 w="28px"
                 h="28px"
                 borderRadius="md"
-                bg={agent.status === 'idle' ? 'gray.100' : `${config.color}.100`}
+                bg={isSkipped || agent.status === 'idle' ? 'gray.100' : `${config.color}.100`}
                 align="center"
                 justify="center"
               >
                 <AgentIcon
                   size={14}
                   color={
-                    agent.status === 'idle'
+                    isSkipped || agent.status === 'idle'
                       ? `var(--chakra-colors-gray-400)`
                       : `var(--chakra-colors-${config.color}-500)`
                   }
@@ -273,8 +286,9 @@ const AgentNode: React.FC<AgentNodeProps> = React.memo(
               <Text
                 fontSize="xs"
                 fontWeight="bold"
-                color={agent.status === 'idle' ? mutedText : undefined}
+                color={isSkipped || agent.status === 'idle' ? mutedText : undefined}
                 noOfLines={1}
+                textDecoration={isSkipped ? 'line-through' : undefined}
               >
                 {config.label}
               </Text>
@@ -285,20 +299,20 @@ const AgentNode: React.FC<AgentNodeProps> = React.memo(
                 px={1.5}
                 borderRadius="full"
               >
-                {agent.status}
+                {isSkipped ? 'skipped' : agent.status}
               </Badge>
             </VStack>
           </MotionBox>
 
           {/* Completed checkmark overlay */}
-          {isCompleted && (
+          {isCompleted && !isSkipped && (
             <Box position="absolute" top="-4px" right="-4px">
               <CheckCircle size={14} color="var(--chakra-colors-green-500)" fill="white" />
             </Box>
           )}
 
           {/* Failed X overlay */}
-          {isFailed && (
+          {isFailed && !isSkipped && (
             <Box position="absolute" top="-4px" right="-4px">
               <XCircle size={14} color="var(--chakra-colors-red-500)" fill="white" />
             </Box>
@@ -450,6 +464,8 @@ const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
 
   // Merge store statuses with prop agents — prefer store data if more recent
   const storeAgentStatuses = useQARunStore(s => s.agentStatuses);
+  const storeSelectedAgents = useQARunStore(s => s.selectedAgents);
+  const storeSkippedAgents = useQARunStore(s => s.skippedAgents);
   const agents = propAgents.map(a => {
     const storeStatus = storeAgentStatuses[a.name];
     if (storeStatus && a.status === 'idle' && storeStatus.status === 'completed') {
@@ -461,11 +477,24 @@ const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
     return a;
   });
 
+  // Build a set of skipped agent IDs and their reasons for quick lookup
+  const skippedAgentMap = new Map(
+    storeSkippedAgents.map(a => [a.id, a.reason])
+  );
+  const hasDynamicSelection = storeSelectedAgents.length > 0;
+
+  // Helper to check if an agent was skipped
+  const isAgentSkipped = (agentName: string) => hasDynamicSelection && skippedAgentMap.has(agentName);
+  const getSkipReason = (agentName: string) => skippedAgentMap.get(agentName) || 'requirements not met';
+
   const allAgents = [...TRACK_1_AGENTS, ...TRACK_2_ROW_1, ...TRACK_2_ROW_2];
   const activeCount = allAgents.filter((n) => getAgentState(agents, n).status === 'active').length;
   const completedCount = allAgents.filter(
     (n) => getAgentState(agents, n).status === 'completed'
   ).length;
+  const totalRegisteredAgents = hasDynamicSelection
+    ? storeSelectedAgents.length + storeSkippedAgents.length
+    : allAgents.length;
 
   return (
     <Box
@@ -482,9 +511,15 @@ const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
         <Text fontSize="sm" fontWeight="bold" color={headerColor}>
           Agent Flow Diagram
         </Text>
-        <Badge colorScheme="purple" variant="subtle" fontSize="2xs">
-          {allAgents.length} Agents
-        </Badge>
+        {hasDynamicSelection ? (
+          <Badge colorScheme="purple" variant="subtle" fontSize="2xs">
+            {storeSelectedAgents.length} of {totalRegisteredAgents} agents selected
+          </Badge>
+        ) : (
+          <Badge colorScheme="purple" variant="subtle" fontSize="2xs">
+            {allAgents.length} Agents
+          </Badge>
+        )}
         {completedCount > 0 && (
           <Badge colorScheme="green" variant="subtle" fontSize="2xs">
             {completedCount} done
@@ -601,6 +636,8 @@ const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
             agents={agents}
             selectedAgent={selectedAgent}
             onAgentClick={onAgentClick}
+            isSkipped={isAgentSkipped('product-manager')}
+            skipReason={getSkipReason('product-manager')}
           />
           <FlowArrow
             fromAgent="product-manager"
@@ -613,6 +650,8 @@ const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
             agents={agents}
             selectedAgent={selectedAgent}
             onAgentClick={onAgentClick}
+            isSkipped={isAgentSkipped('research-assistant')}
+            skipReason={getSkipReason('research-assistant')}
           />
         </Flex>
 
@@ -646,6 +685,8 @@ const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
               agents={agents}
               selectedAgent={selectedAgent}
               onAgentClick={onAgentClick}
+              isSkipped={isAgentSkipped(name)}
+              skipReason={getSkipReason(name)}
             />
           ))}
         </Flex>
@@ -663,6 +704,8 @@ const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
                 agents={agents}
                 selectedAgent={selectedAgent}
                 onAgentClick={onAgentClick}
+                isSkipped={isAgentSkipped(name)}
+                skipReason={getSkipReason(name)}
               />
             </Flex>
           ))}
