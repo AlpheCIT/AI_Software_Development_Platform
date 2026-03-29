@@ -3,6 +3,8 @@ import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
 import { extractAllRoutes, fileExistsInCodeFiles } from './verification-helpers.js';
+import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from './graph-helpers.js';
+import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from './scoring-helpers.js';
 
 const COVERAGE_AUDITOR_SYSTEM_PROMPT = `You are an expert at cross-referencing backend APIs with frontend consumers. Your job is to find features that exist on one side but not the other — preventing "hidden features" and "broken calls".
 
@@ -127,36 +129,14 @@ export async function coverageAuditorNode(
     step: 'Cross-referencing backend API surface with frontend consumers',
   });
 
-  // Backend route files
-  const backendFiles = codeFiles.filter((f: any) =>
-    f.path?.match(/(route|controller|handler|api)\.(ts|js)$/i) ||
-    f.path?.match(/\/(routes|controllers|handlers)\//)
-  );
-  const backendContext = backendFiles
-    .slice(0, 15)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 2000)}\n\`\`\``)
-    .join('\n\n');
+  // Extract business context from enriched codeFiles
+  const bizContextFile = codeFiles.find((f: any) => f.path === '__business_context__');
+  const businessContextPrompt = bizContextFile?.content ? `## Business Context\n${bizContextFile.content}\n` : '';
 
-  // Frontend service/API files
-  const frontendFiles = codeFiles.filter((f: any) =>
-    (f.path?.match(/(service|api|client|fetch|hook)\.(ts|tsx|js|jsx)$/i) ||
-     f.path?.match(/\/(services|api|hooks|lib)\//)) &&
-    f.content?.match(/fetch|axios|api|endpoint|url/i)
-  );
-  const frontendContext = frontendFiles
-    .slice(0, 15)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 2000)}\n\`\`\``)
-    .join('\n\n');
-
-  // Frontend UI files that make data calls
-  const uiFiles = codeFiles.filter((f: any) =>
-    f.path?.match(/\.(tsx|jsx)$/) &&
-    f.content?.match(/useEffect|fetch|axios|service\./i)
-  );
-  const uiContext = uiFiles
-    .slice(0, 10)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 1500)}\n\`\`\``)
-    .join('\n\n');
+  // Build graph context
+  const graphRelationships = extractRelationships(codeFiles);
+  const graphContext = buildGraphContext(graphRelationships, codeFiles);
+  const graphPrompt = formatGraphContextForPrompt(graphContext);
 
   // Build complete route inventory BEFORE the LLM call
   const allRoutes = extractAllRoutes(codeFiles);
@@ -165,27 +145,68 @@ export async function coverageAuditorNode(
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'coverage-auditor',
-    progress: 30,
-    message: `Found ${backendFiles.length} backend route files, ${frontendFiles.length} frontend service files, ${allRoutes.length} total routes`,
+    progress: 15,
+    message: `Phase A: Identifying backend route and frontend API client files from ${codeFiles.length} total files`,
   });
 
-  const model = createModel({ temperature: 0.2, maxTokens: 8192 });
+  // === PHASE A: File identification (lightweight) ===
+  const identifyModel = createModel({ temperature: 0.2, maxTokens: 4096 });
+
+  const allFilePaths = codeFiles
+    .filter((f: any) => f.content && f.path !== '__business_context__')
+    .map((f: any) => `- ${f.path} (${f.language || f.path?.split('.').pop() || 'unknown'}, ${f.size || (f.content || '').length}b)`)
+    .join('\n');
+
+  const identifyResponse = await throttledInvoke(identifyModel, [
+    new SystemMessage('You are a full-stack coverage expert. Given a repo file list, identify ALL files relevant to backend-frontend coverage analysis: backend route definitions, controllers, API handlers, frontend service/API client files, frontend hooks that make HTTP calls, and UI components that fetch data. Return ONLY a JSON array of file paths. Include up to 25 files.'),
+    new HumanMessage(`${businessContextPrompt}${graphPrompt}\n\nFiles:\n${allFilePaths}`),
+  ], 'coverage-auditor-identify', eventPublisher, runId);
+
+  let targetFiles: string[] = [];
+  try {
+    const cleaned = identifyResponse.content.toString().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    targetFiles = JSON.parse(cleaned);
+  } catch {
+    // Fallback: heuristic selection
+    const backendFiles = codeFiles.filter((f: any) =>
+      f.content && (f.path?.match(/(route|controller|handler|api)\.(ts|js)$/i) || f.path?.match(/\/(routes|controllers|handlers)\//))
+    ).slice(0, 12);
+    const frontendFiles = codeFiles.filter((f: any) =>
+      f.content && (f.path?.match(/(service|api|client|fetch|hook)\.(ts|tsx|js|jsx)$/i) || f.path?.match(/\/(services|api|hooks|lib)\//)) &&
+      f.content?.match(/fetch|axios|api|endpoint|url/i)
+    ).slice(0, 13);
+    targetFiles = [...backendFiles, ...frontendFiles].map((f: any) => f.path);
+  }
+
+  console.log(`[CoverageAuditor] Phase A identified ${targetFiles.length} files for deep analysis`);
+
+  eventPublisher?.emit('qa:agent.progress', {
+    runId,
+    agent: 'coverage-auditor',
+    progress: 35,
+    message: `Phase B: Deep coverage analysis of ${targetFiles.length} identified files`,
+  });
+
+  // === PHASE B: Deep analysis with FULL file contents ===
+  const deepContext = targetFiles.map((path: string) => {
+    const file = codeFiles.find((f: any) => f.path === path);
+    if (!file?.content) return '';
+    return `### ${path}\n\`\`\`\n${file.content}\n\`\`\``;
+  }).filter(Boolean).join('\n\n');
+
+  const analyzeModel = createModel({ temperature: 0.2, maxTokens: 16384 });
 
   const userMessage = `Cross-reference the backend API with frontend consumers to find coverage gaps.
 
 ## Repository: ${repoUrl}
 
+${businessContextPrompt}${graphPrompt}
+
 ## Complete Backend Route Inventory (${allRoutes.length} routes extracted programmatically)
 ${routeInventory || '(no routes extracted)'}
 
-## Backend Route/Controller Files (${backendFiles.length})
-${backendContext}
-
-## Frontend Service/API Files (${frontendFiles.length})
-${frontendContext}
-
-## Frontend UI Components Making Data Calls (${uiFiles.length})
-${uiContext}
+## Full Source Code for Deep Analysis
+${deepContext}
 
 Find:
 1. Backend endpoints with no frontend consumer
@@ -199,10 +220,10 @@ IMPORTANT: Use the Complete Backend Route Inventory above as the source of truth
 Respond with ONLY valid JSON, no markdown fencing.`;
 
   const startMs = Date.now();
-  const response = await throttledInvoke(model, [
+  const response = await throttledInvoke(analyzeModel, [
     new SystemMessage(COVERAGE_AUDITOR_SYSTEM_PROMPT),
     new HumanMessage(userMessage),
-  ], 'coverage-auditor', eventPublisher, runId);
+  ], 'coverage-auditor-analyze', eventPublisher, runId);
   const durationMs = Date.now() - startMs;
 
   const responseText = typeof response.content === 'string' ? response.content : '';
@@ -296,8 +317,18 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     return true;
   });
 
-  // Recalculate
-  report.coverageScore = Math.max(report.coverageScore, Math.round(100 - (report.brokenFrontendCalls?.length || 0) * 10));
+  // Recalculate with calibrated scoring
+  const allFindings = [
+    ...report.brokenFrontendCalls.map(() => ({ severity: 'high' as const, confidence: 0.8, verified: true })),
+    ...report.dataShapeMismatches.map(() => ({ severity: 'high' as const, confidence: 0.7, verified: true })),
+    ...report.orphanedRoutes.map(() => ({ severity: 'low' as const, confidence: 0.6, verified: true })),
+  ];
+  const { score: calibratedScore } = calculateCalibratedScore(allFindings, codeFiles.length);
+  report.coverageScore = calibratedScore;
+
+  // Enrich findings with blast radius from graph context
+  enrichFindingsWithBlastRadius(report.brokenFrontendCalls, graphContext.dependentGraph);
+  enrichFindingsWithBlastRadius(report.dataShapeMismatches, graphContext.dependentGraph);
 
   const filteredCount = preVerifyBrokenCalls - report.brokenFrontendCalls.length;
   if (filteredCount > 0) {

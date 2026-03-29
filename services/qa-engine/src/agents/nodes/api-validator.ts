@@ -3,6 +3,8 @@ import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
 import { detectGlobalMiddleware, routeHasErrorHandling, routeHasInputValidation } from './verification-helpers.js';
+import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from './graph-helpers.js';
+import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from './scoring-helpers.js';
 
 const API_VALIDATOR_SYSTEM_PROMPT = `You are an API security and reliability expert. Your job is to discover all API routes from a codebase and validate them for correctness, security, and completeness.
 
@@ -112,35 +114,14 @@ export async function apiValidatorNode(
     step: 'Discovering and validating all API endpoints',
   });
 
-  // Find route/controller files
-  const routeFiles = codeFiles.filter((f: any) =>
-    f.path?.match(/(route|controller|handler|endpoint|api|middleware)\.(ts|js)$/i) ||
-    f.path?.match(/routes\//) ||
-    f.path?.match(/controllers\//)
-  );
+  // Extract business context from enriched codeFiles
+  const bizContextFile = codeFiles.find((f: any) => f.path === '__business_context__');
+  const businessContextPrompt = bizContextFile?.content ? `## Business Context\n${bizContextFile.content}\n` : '';
 
-  const routeContext = routeFiles
-    .slice(0, 20)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 2500)}\n\`\`\``)
-    .join('\n\n');
-
-  // Find middleware files
-  const middlewareFiles = codeFiles.filter((f: any) =>
-    f.path?.match(/middleware/i)
-  );
-  const middlewareContext = middlewareFiles
-    .slice(0, 5)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 1500)}\n\`\`\``)
-    .join('\n\n');
-
-  // Server entry files
-  const serverFiles = codeFiles.filter((f: any) =>
-    f.path?.match(/(index|server|app|main)\.(ts|js)$/) && f.content?.includes('express')
-  );
-  const serverContext = serverFiles
-    .slice(0, 3)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 2000)}\n\`\`\``)
-    .join('\n\n');
+  // Build graph context
+  const graphRelationships = extractRelationships(codeFiles);
+  const graphContext = buildGraphContext(graphRelationships, codeFiles);
+  const graphPrompt = formatGraphContextForPrompt(graphContext);
 
   // Detect global middleware BEFORE the LLM call to provide context
   const globalMiddleware = detectGlobalMiddleware(codeFiles);
@@ -151,24 +132,65 @@ export async function apiValidatorNode(
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'api-validator',
-    progress: 25,
-    message: `Found ${routeFiles.length} route files, ${middlewareFiles.length} middleware files`,
+    progress: 15,
+    message: `Phase A: Identifying route, middleware, and auth files from ${codeFiles.length} total files`,
   });
 
-  const model = createModel({ temperature: 0.2, maxTokens: 8192 });
+  // === PHASE A: File identification (lightweight) ===
+  const identifyModel = createModel({ temperature: 0.2, maxTokens: 4096 });
+
+  const allFilePaths = codeFiles
+    .filter((f: any) => f.content && f.path !== '__business_context__')
+    .map((f: any) => `- ${f.path} (${f.language || f.path?.split('.').pop() || 'unknown'}, ${f.size || (f.content || '').length}b)`)
+    .join('\n');
+
+  const identifyResponse = await throttledInvoke(identifyModel, [
+    new SystemMessage('You are an API security expert. Given a repo file list, identify which 20 files are most relevant for API validation: route definitions, controllers, middleware, authentication, authorization, validation schemas, server entry points, and CORS configuration. Return ONLY a JSON array of file paths.'),
+    new HumanMessage(`${businessContextPrompt}${graphPrompt}\n${globalMiddlewareContext}\n\nFiles:\n${allFilePaths}`),
+  ], 'api-validator-identify', eventPublisher, runId);
+
+  let targetFiles: string[] = [];
+  try {
+    const cleaned = identifyResponse.content.toString().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    targetFiles = JSON.parse(cleaned);
+  } catch {
+    // Fallback: heuristic selection of route/middleware/server files
+    targetFiles = codeFiles
+      .filter((f: any) => f.content && (
+        f.path?.match(/(route|controller|handler|endpoint|api|middleware|auth|server|app|index)\.(ts|js)$/i) ||
+        f.path?.match(/(routes|controllers|handlers|middleware)\//)
+      ))
+      .slice(0, 20)
+      .map((f: any) => f.path);
+  }
+
+  console.log(`[APIValidator] Phase A identified ${targetFiles.length} files for deep analysis`);
+
+  eventPublisher?.emit('qa:agent.progress', {
+    runId,
+    agent: 'api-validator',
+    progress: 35,
+    message: `Phase B: Deep API validation of ${targetFiles.length} identified files`,
+  });
+
+  // === PHASE B: Deep analysis with FULL file contents ===
+  const deepContext = targetFiles.map((path: string) => {
+    const file = codeFiles.find((f: any) => f.path === path);
+    if (!file?.content) return '';
+    return `### ${path}\n\`\`\`\n${file.content}\n\`\`\``;
+  }).filter(Boolean).join('\n\n');
+
+  const analyzeModel = createModel({ temperature: 0.2, maxTokens: 16384 });
 
   const userMessage = `Discover and validate all API endpoints in this codebase.
 
 ## Repository: ${repoUrl}
+
+${businessContextPrompt}${graphPrompt}
 ${globalMiddlewareContext}
-## Route/Controller Files (${routeFiles.length} found)
-${routeContext}
 
-## Middleware
-${middlewareContext || '(none found)'}
-
-## Server Entry Points
-${serverContext || '(none found)'}
+## Full Source Code for Deep Analysis
+${deepContext}
 
 ## All Code Entities
 ${codeEntities.filter((e: any) => e.type === 'function' || e.type === 'method').slice(0, 60).map((e: any) => `${e.type} ${e.name} (${e.file})`).join('\n')}
@@ -178,10 +200,10 @@ Discover every API endpoint, then validate each for error handling, input valida
 Respond with ONLY valid JSON, no markdown fencing.`;
 
   const startMs = Date.now();
-  const response = await throttledInvoke(model, [
+  const response = await throttledInvoke(analyzeModel, [
     new SystemMessage(API_VALIDATOR_SYSTEM_PROMPT),
     new HumanMessage(userMessage),
-  ], 'api-validator', eventPublisher, runId);
+  ], 'api-validator-analyze', eventPublisher, runId);
   const durationMs = Date.now() - startMs;
 
   const responseText = typeof response.content === 'string' ? response.content : '';
@@ -259,9 +281,18 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     return true;
   });
 
-  // Recalculate health score
-  const verifiedGaps = (report.securityGaps?.length || 0) + (report.missingErrorHandling?.length || 0);
-  report.apiHealthScore = Math.max(report.apiHealthScore, Math.round(100 - verifiedGaps * 4));
+  // Recalculate health score with calibrated scoring
+  const allFindings = [
+    ...report.securityGaps.map((g: any) => ({ severity: g.severity || 'medium', confidence: 0.8, verified: true })),
+    ...report.missingErrorHandling.map((g: any) => ({ severity: g.severity || 'medium', confidence: 0.7, verified: true })),
+    ...report.schemaIssues.map((g: any) => ({ severity: g.severity || 'medium', confidence: 0.6, verified: true })),
+  ];
+  const { score: calibratedScore } = calculateCalibratedScore(allFindings, codeFiles.length);
+  report.apiHealthScore = calibratedScore;
+
+  // Enrich findings with blast radius from graph context
+  enrichFindingsWithBlastRadius(report.securityGaps, graphContext.dependentGraph);
+  enrichFindingsWithBlastRadius(report.missingErrorHandling, graphContext.dependentGraph);
 
   const filteredCount =
     (preVerifyCount.securityGaps - report.securityGaps.length) +

@@ -3,6 +3,8 @@ import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
 import { packageExistsInManifests } from './verification-helpers.js';
+import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from './graph-helpers.js';
+import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from './scoring-helpers.js';
 
 const UI_UX_SYSTEM_PROMPT = `You are a senior UI/UX auditor and accessibility specialist. Your job is to analyze React/frontend code for usability issues, accessibility violations, and UX anti-patterns.
 
@@ -147,34 +149,30 @@ export async function uiUxAnalystNode(
     step: 'Analyzing React components for accessibility, UX patterns, and user flows',
   });
 
-  // Find UI component files
-  const componentFiles = codeFiles.filter((f: any) =>
+  // Extract business context from enriched codeFiles
+  const bizContextFile = codeFiles.find((f: any) => f.path === '__business_context__');
+  const businessContextPrompt = bizContextFile?.content ? `## Business Context\n${bizContextFile.content}\n` : '';
+
+  // Build graph context
+  const graphRelationships = extractRelationships(codeFiles);
+  const graphContext = buildGraphContext(graphRelationships, codeFiles);
+  const graphPrompt = formatGraphContextForPrompt(graphContext);
+
+  // Find all UI component files for counting
+  const allComponentFiles = codeFiles.filter((f: any) =>
     f.path?.match(/\.(tsx|jsx)$/) && f.content
   );
-
-  const componentContext = componentFiles
-    .slice(0, 25)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 2000)}\n\`\`\``)
-    .join('\n\n');
 
   // CSS/style files
   const styleFiles = codeFiles.filter((f: any) =>
     f.path?.match(/\.(css|scss|less)$/) || f.path?.match(/theme|tokens|design/)
   );
-  const styleContext = styleFiles
-    .slice(0, 5)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 1500)}\n\`\`\``)
-    .join('\n\n');
 
   // Route/navigation files
   const routeFiles = codeFiles.filter((f: any) =>
     f.content?.match(/Route|Router|navigate|Link|useNavigate/i) &&
     f.path?.match(/\.(tsx|jsx|ts|js)$/)
   );
-  const routeContext = routeFiles
-    .slice(0, 5)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 1500)}\n\`\`\``)
-    .join('\n\n');
 
   // Detect UI framework to reduce false positives about built-in a11y
   const hasChakra = packageExistsInManifests(codeFiles, '@chakra-ui/react');
@@ -209,29 +207,68 @@ export async function uiUxAnalystNode(
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'ui-ux-analyst',
-    progress: 25,
-    message: `Found ${componentFiles.length} UI components, ${styleFiles.length} style files, ${routeFiles.length} route files` +
+    progress: 15,
+    message: `Phase A: Identifying complex UI components from ${allComponentFiles.length} total components` +
       (detectedFrameworks.length > 0 ? `. UI frameworks: ${detectedFrameworks.join(', ')}` : ''),
   });
 
-  const model = createModel({ temperature: 0.3, maxTokens: 8192 });
+  // === PHASE A: File identification (lightweight) ===
+  const identifyModel = createModel({ temperature: 0.2, maxTokens: 4096 });
+
+  const allFilePaths = codeFiles
+    .filter((f: any) => f.content && f.path !== '__business_context__')
+    .map((f: any) => `- ${f.path} (${f.language || f.path?.split('.').pop() || 'unknown'}, ${f.size || (f.content || '').length}b)`)
+    .join('\n');
+
+  const identifyResponse = await throttledInvoke(identifyModel, [
+    new SystemMessage('You are a UI/UX and accessibility expert. Given a repo file list, identify which 20 files are most important for UI/UX auditing: complex React components (especially large ones), form components, navigation/routing files, style/theme files, and components with user interactions (modals, dialogs, data tables). Return ONLY a JSON array of file paths.'),
+    new HumanMessage(`${businessContextPrompt}${graphPrompt}\n${frameworkContext}\n\nFiles:\n${allFilePaths}`),
+  ], 'ui-ux-analyst-identify', eventPublisher, runId);
+
+  let targetFiles: string[] = [];
+  try {
+    const cleaned = identifyResponse.content.toString().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    targetFiles = JSON.parse(cleaned);
+  } catch {
+    // Fallback: take largest component files + style + route files
+    targetFiles = [
+      ...allComponentFiles.sort((a: any, b: any) => (b.content?.length || 0) - (a.content?.length || 0)).slice(0, 15),
+      ...styleFiles.slice(0, 3),
+      ...routeFiles.slice(0, 2),
+    ].map((f: any) => f.path);
+  }
+
+  console.log(`[UIUXAnalyst] Phase A identified ${targetFiles.length} files for deep analysis`);
+
+  eventPublisher?.emit('qa:agent.progress', {
+    runId,
+    agent: 'ui-ux-analyst',
+    progress: 35,
+    message: `Phase B: Deep UI/UX analysis of ${targetFiles.length} identified files`,
+  });
+
+  // === PHASE B: Deep analysis with FULL file contents ===
+  const deepContext = targetFiles.map((path: string) => {
+    const file = codeFiles.find((f: any) => f.path === path);
+    if (!file?.content) return '';
+    return `### ${path}\n\`\`\`\n${file.content}\n\`\`\``;
+  }).filter(Boolean).join('\n\n');
+
+  const analyzeModel = createModel({ temperature: 0.3, maxTokens: 16384 });
 
   const userMessage = `Audit this React frontend for accessibility, UX patterns, and user flow issues.
 
 ## Repository: ${repoUrl}
-UI Components: ${componentFiles.length}
+UI Components: ${allComponentFiles.length}
 Style Files: ${styleFiles.length}
 Route Files: ${routeFiles.length}
 ${detectedFrameworks.length > 0 ? `UI Frameworks: ${detectedFrameworks.join(', ')}` : ''}
 ${frameworkContext}
-## React Components
-${componentContext}
 
-## Styles/Theme
-${styleContext || '(none found)'}
+${businessContextPrompt}${graphPrompt}
 
-## Routes/Navigation
-${routeContext || '(none found)'}
+## Full Source Code for Deep Analysis
+${deepContext}
 
 ## UI Entities
 ${codeEntities.filter((e: any) => e.file?.match(/\.(tsx|jsx)$/)).slice(0, 40).map((e: any) => `${e.type} ${e.name} (${e.file})`).join('\n')}
@@ -246,10 +283,10 @@ Audit for:
 Respond with ONLY valid JSON, no markdown fencing.`;
 
   const startMs = Date.now();
-  const response = await throttledInvoke(model, [
+  const response = await throttledInvoke(analyzeModel, [
     new SystemMessage(UI_UX_SYSTEM_PROMPT),
     new HumanMessage(userMessage),
-  ], 'ui-ux-analyst', eventPublisher, runId);
+  ], 'ui-ux-analyst-analyze', eventPublisher, runId);
   const durationMs = Date.now() - startMs;
 
   const responseText = typeof response.content === 'string' ? response.content : '';
@@ -396,10 +433,28 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     return true;
   });
 
-  // Recalculate accessibility score
+  // Recalculate scores with calibrated scoring
   const filteredA11yCount = preVerifyA11y - report.accessibilityIssues.length;
+
+  const a11yFindings = report.accessibilityIssues.map((i: any) => ({
+    severity: i.severity || 'medium', confidence: 0.8, verified: true
+  }));
+  const { score: a11yScore } = calculateCalibratedScore(a11yFindings, codeFiles.length);
+  report.accessibilityScore = a11yScore;
+
+  const uxFindings = [
+    ...report.uxAntiPatterns.map(() => ({ severity: 'medium' as const, confidence: 0.7, verified: true })),
+    ...report.componentIssues.map((i: any) => ({ severity: i.severity || 'medium', confidence: 0.7, verified: true })),
+    ...report.userFlowIssues.map(() => ({ severity: 'medium' as const, confidence: 0.6, verified: true })),
+  ];
+  const { score: uxCalibratedScore } = calculateCalibratedScore(uxFindings, codeFiles.length);
+  report.uxScore = uxCalibratedScore;
+
+  // Enrich findings with blast radius from graph context
+  enrichFindingsWithBlastRadius(report.accessibilityIssues, graphContext.dependentGraph);
+  enrichFindingsWithBlastRadius(report.componentIssues, graphContext.dependentGraph);
+
   if (filteredA11yCount > 0) {
-    report.accessibilityScore = Math.max(report.accessibilityScore, Math.round(100 - report.accessibilityIssues.length * 3));
     console.log(`[UIUXAnalyst] Verification pass filtered ${filteredA11yCount} framework-handled a11y false positives`);
     report.summary = `[Verified] ${report.summary} (${filteredA11yCount} false positives removed — UI framework handles a11y)`;
   }
