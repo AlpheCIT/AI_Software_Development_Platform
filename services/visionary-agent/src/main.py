@@ -1,8 +1,14 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Optional
 import dspy
 import os
 import json
+
+from modules.behavioral import FrontendBehavioralAnalysis, BackendBehavioralAnalysis, MiddlewareAnalysis
+from modules.synthesis import FullStackSynthesis, FullStackAudit
+from modules.gherkin import GherkinGeneration
+from modules.changes import ChangeAnalysis
 
 app = FastAPI(title="Visionary Agent", version="2.0.0")
 
@@ -202,6 +208,246 @@ def security_deep_dive(req: SecurityDeepDiveRequest):
     except Exception:
         findings = []
     return {"findings": findings, "total": len(findings)}
+
+
+# --- Behavioral Analysis Request Models ------------------------------------
+
+class FrontendBehavioralRequest(BaseModel):
+    file_list: str = Field(description="Newline-separated list of all files in the repository")
+    routes: str = Field(default="", description="Route definitions or router config content")
+    file_contents: dict = Field(description="Map of file path -> file content for screen components")
+    handler_code: Optional[str] = Field(default=None, description="Backend handler code to verify frontend claims against")
+
+
+class BackendBehavioralRequest(BaseModel):
+    file_list: str = Field(description="Newline-separated list of all files in the repository")
+    file_contents: dict = Field(description="Map of file path -> file content for route files")
+    framework_hint: str = Field(default="", description="Framework name hint (Express, Fastify, Django, etc.)")
+
+
+class MiddlewareRequest(BaseModel):
+    entry_file_content: str = Field(description="Content of the server entry file (app.ts/index.ts)")
+    middleware_files: list = Field(default=[], description="Array of {path, content} for middleware files")
+    route_files_summary: str = Field(default="", description="Summary of route files and their prefixes")
+    auth_middleware_code: str = Field(default="", description="Auth middleware source code")
+    auth_route_code: str = Field(default="", description="Auth route handler code")
+
+
+class SynthesisRequest(BaseModel):
+    frontend_specs: str = Field(description="JSON string of frontend behavioral specs")
+    backend_specs: str = Field(description="JSON string of backend endpoint specs")
+    middleware_map: str = Field(default="{}", description="JSON string of middleware-to-route map")
+
+
+class GherkinRequest(BaseModel):
+    component_specs: list = Field(description="Array of BehavioralSpec objects (dicts)")
+    user_flows: str = Field(default="[]", description="JSON string of user flows")
+
+
+class ChangeAnalysisRequest(BaseModel):
+    previous_specs: str = Field(description="JSON string of previous behavioral specs")
+    current_specs: str = Field(description="JSON string of current behavioral specs")
+    user_flows: str = Field(default="[]", description="JSON string of user flows")
+
+
+class FullStackAuditRequest(BaseModel):
+    frontend_specs: str = Field(description="JSON string of frontend behavioral specs")
+    backend_specs: str = Field(description="JSON string of backend endpoint specs")
+    middleware_map: str = Field(default="{}", description="JSON string of middleware map")
+
+
+# --- Behavioral Analysis Endpoints -----------------------------------------
+
+@app.post("/analyze/behavioral-frontend")
+def analyze_behavioral_frontend(req: FrontendBehavioralRequest):
+    analyzer = FrontendBehavioralAnalysis()
+    result = analyzer(
+        file_list=req.file_list,
+        routes=req.routes,
+        file_contents=req.file_contents,
+        handler_code=req.handler_code,
+    )
+    try:
+        specs = json.loads(result.specs)
+    except Exception:
+        specs = []
+    try:
+        user_flows = json.loads(result.user_flows)
+    except Exception:
+        user_flows = []
+    try:
+        verified_claims = json.loads(result.verified_claims)
+    except Exception:
+        verified_claims = []
+    response = {
+        "specs": specs,
+        "userFlows": user_flows,
+        "verifiedClaims": verified_claims,
+        "totalScreens": len(specs),
+    }
+    if hasattr(result, "error"):
+        response["error"] = result.error
+    return response
+
+
+@app.post("/analyze/behavioral-backend")
+def analyze_behavioral_backend(req: BackendBehavioralRequest):
+    analyzer = BackendBehavioralAnalysis()
+    result = analyzer(
+        file_list=req.file_list,
+        file_contents=req.file_contents,
+        framework_hint=req.framework_hint,
+    )
+    try:
+        endpoints = json.loads(result.endpoints)
+    except Exception:
+        endpoints = []
+    try:
+        db_operations = json.loads(result.db_operations)
+    except Exception:
+        db_operations = []
+    response = {
+        "endpoints": endpoints,
+        "dbOperations": db_operations,
+        "totalEndpoints": len(endpoints),
+        "totalDbOperations": len(db_operations),
+    }
+    if hasattr(result, "error"):
+        response["error"] = result.error
+    return response
+
+
+@app.post("/analyze/middleware")
+def analyze_middleware(req: MiddlewareRequest):
+    analyzer = MiddlewareAnalysis()
+    result = analyzer(
+        entry_file_content=req.entry_file_content,
+        middleware_files=req.middleware_files,
+        route_files_summary=req.route_files_summary,
+        auth_middleware_code=req.auth_middleware_code,
+        auth_route_code=req.auth_route_code,
+    )
+    try:
+        middleware = json.loads(result.middleware)
+    except Exception:
+        middleware = []
+    try:
+        route_map = json.loads(result.route_middleware_map)
+    except Exception:
+        route_map = []
+    try:
+        auth_flows = json.loads(result.auth_flows)
+    except Exception:
+        auth_flows = []
+    response = {
+        "middleware": middleware,
+        "routeMiddlewareMap": route_map,
+        "authFlows": auth_flows,
+    }
+    if hasattr(result, "error"):
+        response["error"] = result.error
+    return response
+
+
+@app.post("/analyze/synthesis")
+def analyze_synthesis(req: SynthesisRequest):
+    analyzer = FullStackSynthesis()
+    result = analyzer(
+        frontend_specs=req.frontend_specs,
+        backend_specs=req.backend_specs,
+        middleware_map=req.middleware_map,
+    )
+    try:
+        flows = json.loads(result.flows)
+    except Exception:
+        flows = []
+    response = {"flows": flows, "totalFlows": len(flows)}
+    if hasattr(result, "error"):
+        response["error"] = result.error
+    return response
+
+
+@app.post("/analyze/gherkin")
+def analyze_gherkin(req: GherkinRequest):
+    analyzer = GherkinGeneration()
+    result = analyzer(
+        component_specs=req.component_specs,
+        user_flows=req.user_flows,
+    )
+    try:
+        features = json.loads(result.features)
+    except Exception:
+        features = []
+    total_scenarios = sum(f.get("scenarioCount", 0) for f in features)
+    return {
+        "features": features,
+        "totalFeatures": len(features),
+        "totalScenarios": total_scenarios,
+    }
+
+
+@app.post("/analyze/changes")
+def analyze_changes(req: ChangeAnalysisRequest):
+    analyzer = ChangeAnalysis()
+    result = analyzer(
+        previous_specs=req.previous_specs,
+        current_specs=req.current_specs,
+        user_flows=req.user_flows,
+    )
+    try:
+        changes = json.loads(result.changes)
+    except Exception:
+        changes = []
+    try:
+        risk_assessments = json.loads(result.risk_assessments)
+    except Exception:
+        risk_assessments = []
+    try:
+        prioritized_actions = json.loads(result.prioritized_actions)
+    except Exception:
+        prioritized_actions = []
+    try:
+        stats = json.loads(result.stats)
+    except Exception:
+        stats = {}
+    response = {
+        "changes": changes,
+        "riskAssessments": risk_assessments,
+        "summary": result.summary,
+        "prioritizedActions": prioritized_actions,
+        "stats": stats,
+    }
+    if hasattr(result, "error"):
+        response["error"] = result.error
+    return response
+
+
+@app.post("/analyze/fullstack-audit")
+def analyze_fullstack_audit(req: FullStackAuditRequest):
+    analyzer = FullStackAudit()
+    result = analyzer(
+        frontend_specs=req.frontend_specs,
+        backend_specs=req.backend_specs,
+        middleware_map=req.middleware_map,
+    )
+    try:
+        mismatches = json.loads(result.mismatches)
+    except Exception:
+        mismatches = []
+    try:
+        gaps = json.loads(result.gaps)
+    except Exception:
+        gaps = []
+    response = {
+        "mismatches": mismatches,
+        "gaps": gaps,
+        "totalMismatches": len(mismatches),
+        "totalGaps": len(gaps),
+    }
+    if hasattr(result, "error"):
+        response["error"] = result.error
+    return response
+
 
 if __name__ == "__main__":
     import uvicorn

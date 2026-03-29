@@ -65,6 +65,7 @@ export async function ensureCollections(dbClient: any): Promise<void> {
     'qa_product_roadmaps', 'qa_research_insights', 'qa_product_priorities',
     'qa_code_quality_reports', 'qa_self_healing_reports', 'qa_api_validation_reports',
     'qa_coverage_audit_reports', 'qa_ui_audit_reports',
+    'qa_behavioral_specs', 'qa_gherkin_features', 'qa_behavior_changes', 'qa_fullstack_audit_reports',
   ];
 
   let created = 0;

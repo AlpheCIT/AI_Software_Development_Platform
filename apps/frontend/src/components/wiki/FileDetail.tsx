@@ -5,7 +5,7 @@
  * documentation status, and missing-docs warnings.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Box,
   VStack,
@@ -30,6 +30,8 @@ import {
   StatNumber,
   StatHelpText,
   Heading,
+  Spinner,
+  Collapse,
 } from '@chakra-ui/react';
 import {
   FileCode,
@@ -38,6 +40,8 @@ import {
   Book,
   Code,
   Shield,
+  Eye,
+  GitBranch,
 } from 'lucide-react';
 import type { WikiFile, WikiEntity } from '../../hooks/useRepoWiki';
 
@@ -95,6 +99,16 @@ function severityColor(sev: string): string {
   return 'gray';
 }
 
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
+// ── Behavior data types ───────────────────────────────────────────────────
+
+interface FileBehavior {
+  description?: string;
+  gherkinScenarios?: string[];
+  flows?: Array<{ name: string; stepCount: number }>;
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 const FileDetail: React.FC<FileDetailProps> = ({ file, entities, testCount }) => {
@@ -102,6 +116,76 @@ const FileDetail: React.FC<FileDetailProps> = ({ file, entities, testCount }) =>
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
   const codeBg = useColorModeValue('gray.50', 'gray.900');
+
+  // ── Behavioral data for this file ────────────────────────────────────
+  const [behavior, setBehavior] = useState<FileBehavior | null>(null);
+  const [behaviorLoading, setBehaviorLoading] = useState(false);
+
+  useEffect(() => {
+    loadFileBehavior();
+  }, [file.path]);
+
+  async function loadFileBehavior() {
+    setBehaviorLoading(true);
+    try {
+      // Find latest completed run
+      const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+      if (!runsRes.ok) { setBehaviorLoading(false); return; }
+      const runsData = await runsRes.json();
+      const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+      if (!completed[0]) { setBehaviorLoading(false); return; }
+      const runId = completed[0]._key || completed[0].runId;
+
+      // Fetch behavioral specs
+      let response = await fetch(`${QA_ENGINE_URL}/qa/behavioral-specs/${runId}`);
+      if (!response.ok) {
+        response = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`);
+      }
+      if (!response.ok) { setBehaviorLoading(false); return; }
+
+      const data = await response.json();
+      const specs = data.behavioralSpecs || data.specs || data;
+      const filePath = file.path.toLowerCase();
+
+      // Extract behavior relevant to this file
+      const result: FileBehavior = {};
+
+      // Check frontend screens
+      for (const screen of specs.frontend?.screens || []) {
+        if (screen.path?.toLowerCase().includes(filePath) || filePath.includes(screen.path?.toLowerCase() || '')) {
+          result.description = screen.description || `Screen: ${screen.name} with ${screen.elements?.length || 0} interactive elements`;
+          const scenarios = (screen.elements || []).map(
+            (el: any) => `Scenario: User interacts with ${el.name}\n  Given the user is on "${screen.name}"\n  Then they see "${el.name}" (${el.type})`
+          );
+          if (scenarios.length > 0) result.gherkinScenarios = scenarios;
+          break;
+        }
+      }
+
+      // Check backend routes
+      if (!result.description) {
+        for (const rf of specs.backend?.routes || []) {
+          if (rf.filePath?.toLowerCase().includes(filePath) || filePath.includes(rf.filePath?.toLowerCase() || '')) {
+            result.description = `Route handler with ${rf.endpoints?.length || 0} endpoints`;
+            break;
+          }
+        }
+      }
+
+      // Find flows this file participates in
+      const matchingFlows = (specs.flows || []).filter((flow: any) =>
+        flow.steps?.some((step: any) => step.filePath?.toLowerCase().includes(filePath))
+      );
+      if (matchingFlows.length > 0) {
+        result.flows = matchingFlows.map((f: any) => ({ name: f.name, stepCount: f.steps?.length || 0 }));
+      }
+
+      if (result.description || result.gherkinScenarios || result.flows) {
+        setBehavior(result);
+      }
+    } catch { /* ignore errors silently */ }
+    finally { setBehaviorLoading(false); }
+  }
 
   const risk = riskLabel(file.riskScore);
   const langColor = LANG_COLORS[file.language] || 'gray';
@@ -239,6 +323,74 @@ const FileDetail: React.FC<FileDetailProps> = ({ file, entities, testCount }) =>
           {fileSummary}
         </Text>
       </Box>
+
+      {/* Behavior section */}
+      {behaviorLoading && (
+        <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4}>
+          <HStack spacing={2}>
+            <Spinner size="sm" />
+            <Text fontSize="sm" color={subtextColor}>Loading behavioral data...</Text>
+          </HStack>
+        </Box>
+      )}
+      {!behaviorLoading && behavior && (
+        <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4}>
+          <HStack spacing={2} mb={3}>
+            <Icon as={Eye} boxSize={4} color="purple.400" />
+            <Heading size="sm">Behavior</Heading>
+          </HStack>
+
+          {/* User-facing description */}
+          {behavior.description && (
+            <Text fontSize="sm" color={subtextColor} mb={3}>
+              {behavior.description}
+            </Text>
+          )}
+
+          {/* Gherkin scenarios */}
+          {behavior.gherkinScenarios && behavior.gherkinScenarios.length > 0 && (
+            <Box mb={3}>
+              <Text fontSize="xs" fontWeight="bold" mb={1}>Gherkin Scenarios</Text>
+              <VStack spacing={1} align="stretch">
+                {behavior.gherkinScenarios.slice(0, 5).map((scenario, idx) => (
+                  <Box
+                    key={idx}
+                    p={2}
+                    bg={codeBg}
+                    borderRadius="md"
+                    fontFamily="mono"
+                    fontSize="xs"
+                    whiteSpace="pre-wrap"
+                  >
+                    {scenario}
+                  </Box>
+                ))}
+                {behavior.gherkinScenarios.length > 5 && (
+                  <Text fontSize="xs" color={subtextColor}>
+                    +{behavior.gherkinScenarios.length - 5} more scenarios
+                  </Text>
+                )}
+              </VStack>
+            </Box>
+          )}
+
+          {/* End-to-end flows */}
+          {behavior.flows && behavior.flows.length > 0 && (
+            <Box>
+              <Text fontSize="xs" fontWeight="bold" mb={1}>End-to-End Flows</Text>
+              <VStack spacing={1} align="stretch">
+                {behavior.flows.map((flow, idx) => (
+                  <HStack key={idx} spacing={2} p={2} bg={codeBg} borderRadius="md">
+                    <Icon as={GitBranch} boxSize={3} color="purple.400" />
+                    <Text fontSize="sm" fontWeight="medium">{flow.name}</Text>
+                    <Badge colorScheme="purple" fontSize="2xs">{flow.stepCount} steps</Badge>
+                  </HStack>
+                ))}
+              </VStack>
+            </Box>
+          )}
+        </Box>
+      )}
 
       {/* Entities table */}
       {entities.length > 0 && (
