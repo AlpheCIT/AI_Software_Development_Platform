@@ -27,6 +27,18 @@ interface ActivityLogEntry {
   type: 'info' | 'warn' | 'error' | 'success';
 }
 
+interface SelectedAgentInfo {
+  id: string;
+  name: string;
+  track: string;
+}
+
+interface SkippedAgentInfo {
+  id: string;
+  name: string;
+  reason: string;
+}
+
 interface QARunStore {
   // Run state
   currentRunId: string | null;
@@ -47,6 +59,10 @@ interface QARunStore {
   // Agent states
   agentStatuses: Record<string, AgentStatus>;
 
+  // Dynamic pipeline selection metadata
+  selectedAgents: SelectedAgentInfo[];
+  skippedAgents: SkippedAgentInfo[];
+
   // Activity log (keep last 100)
   activityLog: ActivityLogEntry[];
 
@@ -64,11 +80,12 @@ interface QARunStore {
   addActivityLog: (entry: Omit<ActivityLogEntry, 'timestamp'>) => void;
   setCodeHealth: (health: CodeHealth) => void;
   setRecentRuns: (runs: any[]) => void;
+  setSelectedAgents: (selected: SelectedAgentInfo[], skipped: SkippedAgentInfo[]) => void;
   loadCompletedRun: (runData: any) => void;
   reset: () => void;
 }
 
-export type { CodeHealth, AgentStatus, ActivityLogEntry };
+export type { CodeHealth, AgentStatus, ActivityLogEntry, SelectedAgentInfo, SkippedAgentInfo };
 
 export const useQARunStore = create<QARunStore>()(
   persist(
@@ -84,6 +101,8 @@ export const useQARunStore = create<QARunStore>()(
       mutationScore: 0,
       codeHealth: null,
       agentStatuses: {},
+      selectedAgents: [],
+      skippedAgents: [],
       activityLog: [],
       recentRuns: [],
       lastUpdated: 0,
@@ -99,6 +118,8 @@ export const useQARunStore = create<QARunStore>()(
         syntaxValid: 0,
         mutationScore: 0,
         agentStatuses: {},
+        selectedAgents: [],
+        skippedAgents: [],
         activityLog: [],
         lastUpdated: Date.now(),
       }),
@@ -135,6 +156,12 @@ export const useQARunStore = create<QARunStore>()(
 
       setRecentRuns: (runs) => set({ recentRuns: runs }),
 
+      setSelectedAgents: (selected, skipped) => set({
+        selectedAgents: selected,
+        skippedAgents: skipped,
+        lastUpdated: Date.now(),
+      }),
+
       loadCompletedRun: (runData) => set({
         currentRunId: runData.runId || runData._key || runData.id,
         runStatus: 'completed',
@@ -145,6 +172,8 @@ export const useQARunStore = create<QARunStore>()(
         failedTests: runData.testsFailed || runData.failedTests || 0,
         syntaxValid: runData.testsExecuted || 0,
         mutationScore: runData.mutationScore || runData.mutation?.score || 0,
+        selectedAgents: runData.selectedAgents || [],
+        skippedAgents: runData.skippedAgents || [],
         lastUpdated: Date.now(),
       }),
 
@@ -158,6 +187,8 @@ export const useQARunStore = create<QARunStore>()(
         mutationScore: 0,
         codeHealth: null,
         agentStatuses: {},
+        selectedAgents: [],
+        skippedAgents: [],
         activityLog: [],
         lastUpdated: 0,
       }),

@@ -122,6 +122,11 @@ export interface QAAgentState {
   gherkinFeatures?: any;
   behaviorChanges?: any;
 
+  // Dynamic pipeline selection metadata
+  selectedAgents?: Array<{ id: string; name: string; track: string }>;
+  skippedAgents?: Array<{ id: string; name: string; reason: string }>;
+  repoProfile?: any;
+
   // Timestamps
   startedAt: string;
   completedAt?: string;

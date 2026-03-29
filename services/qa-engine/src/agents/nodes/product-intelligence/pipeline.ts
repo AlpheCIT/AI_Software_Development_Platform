@@ -1,15 +1,14 @@
 import { productManagerNode, ProductRoadmap } from './product-manager';
 import { researchAssistantNode, ResearchInsights } from './research-assistant';
-import { codeQualityArchitectNode, CodeQualityReport } from './code-quality-architect';
-import { selfHealerNode, SelfHealingReport } from '../self-healer';
-import { apiValidatorNode, APIValidationReport } from '../api-validator';
-import { coverageAuditorNode, CoverageAuditReport } from '../coverage-auditor';
-import { uiUxAnalystNode, UIAuditReport } from '../ui-ux-analyst';
-import { businessContextAnalyzerNode, BusinessContext } from '../business-context-analyzer';
-import { behavioralAnalystNode } from '../behavioral-analyst';
-import { gherkinWriterNode } from '../gherkin-writer';
-import { changeTrackerNode } from '../change-tracker';
-import { QA_COLLECTIONS } from '../../../graph/collections';
+import { CodeQualityReport } from './code-quality-architect';
+import { SelfHealingReport } from '../self-healer';
+import { APIValidationReport } from '../api-validator';
+import { CoverageAuditReport } from '../coverage-auditor';
+import { UIAuditReport } from '../ui-ux-analyst';
+import { BusinessContext } from '../business-context-analyzer';
+import { agentRegistry, AgentContext } from '../../agent-registry.js';
+import { buildRepoProfile, selectAgents, RepoProfile } from '../../dynamic-router.js';
+import { executePipeline, ExecutionLogEntry } from '../../pipeline-executor.js';
 
 export interface DspySecurityFinding {
   type: string;
@@ -40,6 +39,10 @@ export interface ProductIntelligenceResult {
   gherkinFeatures?: any;
   behaviorChanges?: any;
   combinedPriorities: CombinedPriority[];
+  selectedAgents?: Array<{ id: string; name: string; track: string }>;
+  skippedAgents?: Array<{ id: string; name: string; reason: string }>;
+  executionLog?: ExecutionLogEntry[];
+  repoProfile?: RepoProfile;
 }
 
 export interface CombinedPriority {
@@ -62,19 +65,43 @@ export async function runProductIntelligencePipeline(
   dbClient: any,
   eventPublisher?: any
 ): Promise<ProductIntelligenceResult> {
-  console.log(`[ProductIntelligence] Starting pipeline for ${repoUrl}`);
+  console.log(`[ProductIntelligence] Starting dynamic pipeline for ${repoUrl}`);
 
-  // Step 0: Discover business context (runs first, lightweight single LLM call)
-  eventPublisher?.emit('qa:agent.progress', {
+  // ── Step 1: Build repo profile and select agents ───────────────────────
+  const profile = buildRepoProfile(codeFiles, undefined); // businessContext comes from the agent itself
+  const selectedAgents = selectAgents(agentRegistry, profile);
+
+  const skippedAgentDefs = agentRegistry.filter(a => !selectedAgents.find(s => s.id === a.id));
+
+  console.log(`[Pipeline] Selected ${selectedAgents.length}/${agentRegistry.length} agents for ${repoUrl}`);
+  console.log(`[Pipeline] Running: ${selectedAgents.map(a => a.id).join(', ')}`);
+  console.log(`[Pipeline] Skipped: ${skippedAgentDefs.map(a => a.id).join(', ')}`);
+
+  // ── Step 2: Build context and execute dynamic pipeline ─────────────────
+  const context: AgentContext = {
+    codeFiles,
+    codeEntities,
+    repoUrl,
     runId,
-    agent: 'business-context',
-    progress: 0,
-    message: 'Business Context Analyzer discovering application type and critical flows...',
-  });
+    repositoryId,
+    dbClient,
+    eventPublisher,
+    previousResults: {},
+  };
 
-  const businessContext = await businessContextAnalyzerNode(
-    codeFiles, codeEntities, repoUrl, runId, eventPublisher
-  );
+  const pipelineResult = await executePipeline(selectedAgents, context, eventPublisher);
+  const results = pipelineResult.results;
+
+  // ── Step 3: Extract results by agent ID ────────────────────────────────
+  const businessContext = results['business-context'] as BusinessContext | undefined;
+  const codeQuality = results['code-quality'] as CodeQualityReport | undefined;
+  const selfHealing = results['self-healer'] as SelfHealingReport | undefined;
+  const apiValidation = results['api-validator'] as APIValidationReport | undefined;
+  const coverageAudit = results['coverage-auditor'] as CoverageAuditReport | undefined;
+  const uiAudit = results['ui-ux-analyst'] as UIAuditReport | undefined;
+  const behavioralSpecs = results['behavioral-analyst'] || null;
+  const gherkinFeatures = results['gherkin-writer'] || null;
+  const behaviorChanges = results['change-tracker'] || null;
 
   // Build a context prompt string that all downstream agents can use
   const businessContextPrompt = businessContext && businessContext.appType !== 'Unknown' ? `
@@ -87,30 +114,16 @@ Tech stack: ${businessContext.techStack?.join(', ')}
 IMPORTANT: Tailor your analysis to this specific application type. Generic findings like "add optional chaining" are not useful. Focus on issues that affect the business-critical flows.
 ` : '';
 
-  // Attach businessContextPrompt to codeFiles metadata so agents can access it
-  // We pass it via a synthetic first entry that agents can detect
+  // Build enriched code files for PM and Research agents (which are not in the registry)
   const enrichedCodeFiles = businessContextPrompt
     ? [{ path: '__business_context__', language: 'metadata', size: 0, content: businessContextPrompt }, ...codeFiles]
     : codeFiles;
 
-  // Step 1: Code Quality Architect runs FIRST so PM gets the health score
-  eventPublisher?.emit('qa:agent.progress', {
-    runId,
-    agent: 'code-quality-architect',
-    progress: 0,
-    message: 'Code Quality Architect auditing codebase for smells, duplication, and refactoring...',
-  });
+  // ── Step 4: Run Product Manager and Research Assistant ─────────────────
+  // These are NOT in the agent registry because they have special signatures:
+  // PM takes codeQualityReport, Research takes productRoadmap output.
+  // They run after the dynamic pipeline so they can use code-quality results.
 
-  const codeQuality = await codeQualityArchitectNode(
-    enrichedCodeFiles,
-    codeEntities,
-    repoUrl,
-    runId,
-    dbClient,
-    eventPublisher
-  );
-
-  // Step 2: Product Manager analyzes the codebase WITH code health context
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'product-manager',
@@ -128,7 +141,6 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     codeQuality  // Pass code quality report so PM can factor in health score
   );
 
-  // Step 3: Research Assistant takes the PM's analysis and researches trends
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'research-assistant',
@@ -145,28 +157,7 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     eventPublisher
   );
 
-  // Step 4: Run new analysis agents
-  // Uses throttled LLM calls — run sequentially to respect rate limits
-  // The throttle system handles parallel limits internally
-  let selfHealing: SelfHealingReport | undefined;
-  let apiValidation: APIValidationReport | undefined;
-  let coverageAudit: CoverageAuditReport | undefined;
-  let uiAudit: UIAuditReport | undefined;
-
-  try {
-    // Run sequentially to avoid rate limit storms
-    try { selfHealing = await selfHealerNode(enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[SelfHealer] Failed:', e.message); }
-    try { apiValidation = await apiValidatorNode(enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[APIValidator] Failed:', e.message); }
-    try { coverageAudit = await coverageAuditorNode(enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[CoverageAuditor] Failed:', e.message); }
-    try { uiAudit = await uiUxAnalystNode(enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher); } catch (e: any) { console.error('[UIUXAnalyst] Failed:', e.message); }
-  } catch (error: any) {
-    console.error('[ProductIntelligence] New agents failed:', error.message);
-  }
-
-  // Step 4b: Optional DSPy Visionary Agent deep security analysis
-  // If the visionary-agent service is running on port 8010, call it for
-  // multi-step verified security findings. This is additive — pipeline
-  // continues normally if the service is unavailable.
+  // ── Step 4b: Optional DSPy Visionary Agent deep security analysis ──────
   let dspySecurityFindings: DspySecurityFinding[] = [];
   try {
     const dspyResponse = await fetch('http://localhost:8010/analyze/security-deep-dive', {
@@ -197,45 +188,17 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     console.log(`[Pipeline] DSPy visionary agent not available (optional): ${err.message}`);
   }
 
-  // Step 5: Behavioral Analysis (DSPy-powered, optional)
-  // If the DSPy visionary-agent service is running, perform full-stack behavioral
-  // analysis, Gherkin generation, and change tracking. Pipeline continues if unavailable.
-  let behavioralSpecs = null;
-  let gherkinFeatures = null;
-  let behaviorChanges = null;
-
-  try {
-    // 5a: Behavioral analysis (frontend + backend + middleware + synthesis + audit)
-    behavioralSpecs = await behavioralAnalystNode(
-      enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher
-    );
-
-    // 5b: Gherkin generation (from behavioral specs)
-    if (behavioralSpecs?.frontendSpecs) {
-      gherkinFeatures = await gherkinWriterNode(
-        behavioralSpecs, repoUrl, runId, dbClient, eventPublisher
-      );
-    }
-
-    // 5c: Change tracking (compare with previous run)
-    behaviorChanges = await changeTrackerNode(
-      behavioralSpecs, repoUrl, runId, dbClient, eventPublisher
-    );
-  } catch (err: any) {
-    console.log(`[Pipeline] Behavioral analysis: ${err.message} (DSPy service may not be running)`);
-  }
-
-  // Step 6: Combine and prioritize
+  // ── Step 5: Combine and prioritize ─────────────────────────────────────
   const combinedPriorities = buildCombinedPriorities(roadmap, research);
 
-  // Step 7: Persist to ArangoDB
+  // ── Step 6: Persist to ArangoDB ────────────────────────────────────────
   await persistProductIntelligence(
     dbClient,
     repositoryId,
     runId,
     roadmap,
     research,
-    codeQuality,
+    codeQuality!,
     combinedPriorities
   );
 
@@ -247,13 +210,15 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
       monopolyStrategies: research.monopolyStrategies.length,
       gameChangerTrends: research.trendInsights.filter(t => t.relevance === 'game-changer').length,
       domain: roadmap.appDomain,
-      codeHealthScore: codeQuality.overallHealth.score,
-      codeHealthGrade: codeQuality.overallHealth.grade,
+      codeHealthScore: codeQuality?.overallHealth?.score,
+      codeHealthGrade: codeQuality?.overallHealth?.grade,
+      selectedAgentCount: selectedAgents.length,
+      totalRegisteredAgents: agentRegistry.length,
     },
   });
 
-  // Persist new agent results
-  if (selfHealing) {
+  // Persist agent-specific reports (only for agents that actually produced results)
+  if (results['self-healer']) {
     try {
       await dbClient.upsertDocument('qa_self_healing_reports', {
         _key: `selfheal_${runId}`,
@@ -262,7 +227,7 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
       });
     } catch { /* non-fatal */ }
   }
-  if (apiValidation) {
+  if (results['api-validator']) {
     try {
       await dbClient.upsertDocument('qa_api_validation_reports', {
         _key: `apivalidation_${runId}`,
@@ -271,7 +236,7 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
       });
     } catch { /* non-fatal */ }
   }
-  if (coverageAudit) {
+  if (results['coverage-auditor']) {
     try {
       await dbClient.upsertDocument('qa_coverage_audit_reports', {
         _key: `coverage_${runId}`,
@@ -280,8 +245,7 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
       });
     } catch { /* non-fatal */ }
   }
-
-  if (uiAudit) {
+  if (results['ui-ux-analyst']) {
     try {
       await dbClient.upsertDocument('qa_ui_audit_reports', {
         _key: `uiaudit_${runId}`,
@@ -311,14 +275,35 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     } catch { /* non-fatal */ }
   }
 
+  // Persist selected/skipped agents metadata for the run
+  const selectedAgentsMeta = selectedAgents.map(a => ({ id: a.id, name: a.name, track: a.track }));
+  const skippedAgentsMeta = skippedAgentDefs.map(a => ({ id: a.id, name: a.name, reason: 'requirements not met' }));
+
+  try {
+    await dbClient.upsertDocument('qa_runs', {
+      _key: runId,
+      selectedAgents: selectedAgentsMeta,
+      skippedAgents: skippedAgentsMeta,
+      repoProfile: profile,
+      executionLog: pipelineResult.executionLog,
+      pipelineDurationMs: pipelineResult.totalDurationMs,
+      pipelineSuccess: pipelineResult.success,
+    });
+  } catch { /* non-fatal — run doc may already exist */ }
+
   return {
-    businessContext, roadmap, research, codeQuality,
+    businessContext, roadmap, research,
+    codeQuality: codeQuality!,
     selfHealing, apiValidation, coverageAudit, uiAudit,
     dspySecurityFindings: dspySecurityFindings.length > 0 ? dspySecurityFindings : undefined,
     behavioralSpecs: behavioralSpecs || undefined,
     gherkinFeatures: gherkinFeatures || undefined,
     behaviorChanges: behaviorChanges || undefined,
     combinedPriorities,
+    selectedAgents: selectedAgentsMeta,
+    skippedAgents: skippedAgentsMeta,
+    executionLog: pipelineResult.executionLog,
+    repoProfile: profile,
   };
 }
 
@@ -471,32 +456,34 @@ async function persistProductIntelligence(
       createdAt: new Date().toISOString(),
     });
 
-    // Store code quality report
-    await dbClient.upsertDocument('qa_code_quality_reports', {
-      _key: `quality_${runId}`,
-      repositoryId,
-      runId,
-      overallHealth: codeQuality.overallHealth,
-      codeSmells: codeQuality.codeSmells,
-      duplicationHotspots: codeQuality.duplicationHotspots,
-      complexityHotspots: codeQuality.complexityHotspots,
-      architectureIssues: codeQuality.architectureIssues,
-      refactoringRoadmap: codeQuality.refactoringRoadmap,
-      consolidationOpportunities: codeQuality.consolidationOpportunities,
-      deadCode: codeQuality.deadCode,
-      bestPracticeViolations: codeQuality.bestPracticeViolations,
-      totalFindings:
-        codeQuality.codeSmells.length +
-        codeQuality.duplicationHotspots.length +
-        codeQuality.complexityHotspots.length +
-        codeQuality.architectureIssues.length +
-        codeQuality.deadCode.length +
-        codeQuality.bestPracticeViolations.length,
-      createdAt: new Date().toISOString(),
-    });
+    // Store code quality report (only if code-quality agent ran)
+    if (codeQuality) {
+      await dbClient.upsertDocument('qa_code_quality_reports', {
+        _key: `quality_${runId}`,
+        repositoryId,
+        runId,
+        overallHealth: codeQuality.overallHealth,
+        codeSmells: codeQuality.codeSmells,
+        duplicationHotspots: codeQuality.duplicationHotspots,
+        complexityHotspots: codeQuality.complexityHotspots,
+        architectureIssues: codeQuality.architectureIssues,
+        refactoringRoadmap: codeQuality.refactoringRoadmap,
+        consolidationOpportunities: codeQuality.consolidationOpportunities,
+        deadCode: codeQuality.deadCode,
+        bestPracticeViolations: codeQuality.bestPracticeViolations,
+        totalFindings:
+          codeQuality.codeSmells.length +
+          codeQuality.duplicationHotspots.length +
+          codeQuality.complexityHotspots.length +
+          codeQuality.architectureIssues.length +
+          codeQuality.deadCode.length +
+          codeQuality.bestPracticeViolations.length,
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     console.log(
-      `[ProductIntelligence] Persisted roadmap + research + quality (${codeQuality.overallHealth.grade}) + ${priorities.length} priorities`
+      `[ProductIntelligence] Persisted roadmap + research + quality (${codeQuality?.overallHealth?.grade || 'N/A'}) + ${priorities.length} priorities`
     );
   } catch (error: any) {
     console.error('[ProductIntelligence] Failed to persist:', error.message);
