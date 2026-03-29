@@ -158,7 +158,7 @@ export async function behavioralAnalystNode(
           frontend_specs: JSON.stringify(frontendSpecs),
           backend_specs: JSON.stringify(backendSpecs),
           middleware_map: JSON.stringify(middlewareMap || {}),
-          end_to_end_flows: JSON.stringify(synthesis?.flows || []),
+          end_to_end_flows: JSON.stringify((synthesis as any)?.flows || []),
         }),
         signal: AbortSignal.timeout(TIMEOUT),
       });
