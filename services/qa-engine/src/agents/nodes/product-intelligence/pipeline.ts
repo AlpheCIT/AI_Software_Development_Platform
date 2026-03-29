@@ -6,6 +6,9 @@ import { apiValidatorNode, APIValidationReport } from '../api-validator';
 import { coverageAuditorNode, CoverageAuditReport } from '../coverage-auditor';
 import { uiUxAnalystNode, UIAuditReport } from '../ui-ux-analyst';
 import { businessContextAnalyzerNode, BusinessContext } from '../business-context-analyzer';
+import { behavioralAnalystNode } from '../behavioral-analyst';
+import { gherkinWriterNode } from '../gherkin-writer';
+import { changeTrackerNode } from '../change-tracker';
 import { QA_COLLECTIONS } from '../../../graph/collections';
 
 export interface DspySecurityFinding {
@@ -33,6 +36,9 @@ export interface ProductIntelligenceResult {
   coverageAudit?: CoverageAuditReport;
   uiAudit?: UIAuditReport;
   dspySecurityFindings?: DspySecurityFinding[];
+  behavioralSpecs?: any;
+  gherkinFeatures?: any;
+  behaviorChanges?: any;
   combinedPriorities: CombinedPriority[];
 }
 
@@ -191,10 +197,38 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     console.log(`[Pipeline] DSPy visionary agent not available (optional): ${err.message}`);
   }
 
-  // Step 5: Combine and prioritize
+  // Step 5: Behavioral Analysis (DSPy-powered, optional)
+  // If the DSPy visionary-agent service is running, perform full-stack behavioral
+  // analysis, Gherkin generation, and change tracking. Pipeline continues if unavailable.
+  let behavioralSpecs = null;
+  let gherkinFeatures = null;
+  let behaviorChanges = null;
+
+  try {
+    // 5a: Behavioral analysis (frontend + backend + middleware + synthesis + audit)
+    behavioralSpecs = await behavioralAnalystNode(
+      enrichedCodeFiles, codeEntities, repoUrl, runId, dbClient, eventPublisher
+    );
+
+    // 5b: Gherkin generation (from behavioral specs)
+    if (behavioralSpecs?.frontendSpecs) {
+      gherkinFeatures = await gherkinWriterNode(
+        behavioralSpecs, repoUrl, runId, dbClient, eventPublisher
+      );
+    }
+
+    // 5c: Change tracking (compare with previous run)
+    behaviorChanges = await changeTrackerNode(
+      behavioralSpecs, repoUrl, runId, dbClient, eventPublisher
+    );
+  } catch (err: any) {
+    console.log(`[Pipeline] Behavioral analysis: ${err.message} (DSPy service may not be running)`);
+  }
+
+  // Step 6: Combine and prioritize
   const combinedPriorities = buildCombinedPriorities(roadmap, research);
 
-  // Step 6: Persist to ArangoDB
+  // Step 7: Persist to ArangoDB
   await persistProductIntelligence(
     dbClient,
     repositoryId,
@@ -277,7 +311,15 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     } catch { /* non-fatal */ }
   }
 
-  return { businessContext, roadmap, research, codeQuality, selfHealing, apiValidation, coverageAudit, uiAudit, dspySecurityFindings: dspySecurityFindings.length > 0 ? dspySecurityFindings : undefined, combinedPriorities };
+  return {
+    businessContext, roadmap, research, codeQuality,
+    selfHealing, apiValidation, coverageAudit, uiAudit,
+    dspySecurityFindings: dspySecurityFindings.length > 0 ? dspySecurityFindings : undefined,
+    behavioralSpecs: behavioralSpecs || undefined,
+    gherkinFeatures: gherkinFeatures || undefined,
+    behaviorChanges: behaviorChanges || undefined,
+    combinedPriorities,
+  };
 }
 
 function buildCombinedPriorities(

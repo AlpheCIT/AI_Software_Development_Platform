@@ -117,6 +117,11 @@ export interface QAAgentState {
     type: 'import' | 'call' | 'extends' | 'dependency';
   }>;
 
+  // Behavioral analysis (DSPy-powered, optional)
+  behavioralSpecs?: any;
+  gherkinFeatures?: any;
+  behaviorChanges?: any;
+
   // Timestamps
   startedAt: string;
   completedAt?: string;
@@ -142,6 +147,9 @@ export function createInitialState(runId: string, config: QARunConfig): QAAgentS
     errors: [],
     businessContext: undefined,
     relationships: [],
+    behavioralSpecs: undefined,
+    gherkinFeatures: undefined,
+    behaviorChanges: undefined,
     startedAt: new Date().toISOString(),
   };
 }
