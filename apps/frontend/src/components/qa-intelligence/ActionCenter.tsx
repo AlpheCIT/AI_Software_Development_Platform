@@ -59,6 +59,7 @@ import {
 import ActionItem from './ActionItem';
 import ActionableSummary from './ActionableSummary';
 import CodeHealthGauge from './CodeHealthGauge';
+import { useQARunStore } from '../../stores/qa-run-store';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -735,6 +736,12 @@ const ExecutiveView: React.FC<{ data: ProductData }> = ({ data }) => {
 
 // ── Main ActionCenter ────────────────────────────────────────────────────────
 
+// Wrapper that injects unified health from store into ActionableSummary
+const ActionableSummaryWithStore: React.FC<React.ComponentProps<typeof ActionableSummary>> = (props) => {
+  const storeCodeHealth = useQARunStore(s => s.codeHealth);
+  return <ActionableSummary {...props} unifiedHealth={storeCodeHealth} />;
+};
+
 const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
   const [role, setRole] = useState<Role>('developer');
   const [data, setData] = useState<ProductData | null>(null);
@@ -856,7 +863,7 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
   return (
     <VStack spacing={4} align="stretch">
       {/* Actionable Summary Banner */}
-      <ActionableSummary
+      <ActionableSummaryWithStore
         codeHealth={codeHealthScore}
         mutationScore={mutationScore}
         criticalSmells={criticalSmellCount}

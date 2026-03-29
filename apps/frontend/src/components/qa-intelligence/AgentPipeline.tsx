@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import type { AgentState, AgentName } from '../../services/qaService';
 import type { AgentStreamingState } from '../../hooks/useAgentStream';
+import { useQARunStore } from '../../stores/qa-run-store';
 import AgentConversationPanel from './AgentConversationPanel';
 import LiveReasoningStream from './LiveReasoningStream';
 
@@ -387,13 +388,26 @@ interface AgentPipelineProps {
   streamingState?: AgentStreamingState | null;
 }
 
-const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents, runId, streamingState }) => {
+const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId, streamingState }) => {
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const headerColor = useColorModeValue('gray.700', 'gray.200');
 
-  // All 9 agents in pipeline order
+  // Merge store statuses with prop agents for persistence
+  const storeAgentStatuses = useQARunStore(s => s.agentStatuses);
+  const agents = propAgents.map(a => {
+    const storeStatus = storeAgentStatuses[a.name];
+    if (storeStatus && a.status === 'idle' && storeStatus.status === 'completed') {
+      return { ...a, status: 'completed' as const, progress: 100 };
+    }
+    if (storeStatus && a.status === 'idle' && storeStatus.status === 'running') {
+      return { ...a, status: 'active' as const };
+    }
+    return a;
+  });
+
+  // All 13 agents in pipeline order
   const allAgents: string[] = [
     'repo-ingester', 'strategist', 'generator', 'critic', 'executor', 'mutation',
     'product-manager', 'research-assistant', 'code-quality-architect',
