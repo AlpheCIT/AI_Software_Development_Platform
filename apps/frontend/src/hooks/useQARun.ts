@@ -85,7 +85,8 @@ async function fetchAndComputeCodeHealth(runId: string, store: ReturnType<typeof
     if (data.selfHealing?.healthScore != null) scores.selfHealer = data.selfHealing.healthScore;
     if (data.apiValidation?.apiHealthScore != null) scores.apiValidator = data.apiValidation.apiHealthScore;
     if (data.coverageAudit?.coverageScore != null) scores.coverage = data.coverageAudit.coverageScore;
-    if (data.codeQuality?.summary?.overallScore != null) scores.codeQuality = data.codeQuality.summary.overallScore;
+    if (data.codeQuality?.overallHealth?.score != null) scores.codeQuality = data.codeQuality.overallHealth.score;
+    else if (data.codeQuality?.summary?.overallScore != null) scores.codeQuality = data.codeQuality.summary.overallScore;
     if (data.uiAudit?.accessibilityScore != null) scores.accessibility = data.uiAudit.accessibilityScore;
     if (data.uiAudit?.uxScore != null) scores.ux = data.uiAudit.uxScore;
 
