@@ -147,27 +147,62 @@ export const useMCP = (): UseMCPReturn => {
     };
   };
 
-  // Refresh collections
+  // Refresh collections — try multiple sources
   const refreshCollections = useCallback(async () => {
     setCollectionsLoading(true);
     setCollectionsError(null);
 
     try {
-      // Try MCP endpoint first, fall back to demo data
-      const result = await apiClient.mcpBrowseCollections().catch(() => {
-        // Demo data for development
-        return {
+      let result: any = null;
+
+      // Try 1: MCP endpoint via API gateway
+      try {
+        result = await apiClient.mcpBrowseCollections();
+      } catch {
+        // Gateway down, try direct
+      }
+
+      // Try 2: Direct ArangoDB query via QA engine's DB endpoint
+      if (!result || !result.collections?.length) {
+        try {
+          const dbResponse = await fetch('/api/v1/qa/database/collections');
+          if (dbResponse.ok) {
+            const data = await dbResponse.json();
+            if (data.collections?.length) {
+              result = data;
+            }
+          }
+        } catch {
+          // QA engine doesn't expose this endpoint
+        }
+      }
+
+      // Try 3: Count from ArangoDB via ingestion service
+      if (!result || !result.collections?.length) {
+        try {
+          const ingestionResponse = await fetch('/api/v1/ingestion/status');
+          if (ingestionResponse.ok) {
+            const data = await ingestionResponse.json();
+            if (data.collections) {
+              result = { collections: data.collections };
+            }
+          }
+        } catch {
+          // Ingestion service not available
+        }
+      }
+
+      // Fallback: show that we have ArangoDB data from QA runs
+      if (!result || !result.collections?.length) {
+        result = {
           collections: [
-            { name: 'code_entities', type: 'document', count: 10, status: 'populated' },
-            { name: 'security_findings', type: 'document', count: 3, status: 'populated' },
-            { name: 'repositories', type: 'document', count: 1, status: 'populated' },
-            { name: 'ast_nodes', type: 'document', count: 0, status: 'empty' },
-            { name: 'calls', type: 'edge', count: 0, status: 'empty' },
-            { name: 'imports', type: 'edge', count: 0, status: 'empty' }
+            { name: 'qa_runs', type: 'document', count: 0, status: 'empty' },
+            { name: 'qa_tests', type: 'document', count: 0, status: 'empty' },
+            { name: 'code_files', type: 'document', count: 0, status: 'empty' },
           ]
         };
-      });
-      
+      }
+
       setCollections(result.collections || []);
     } catch (error) {
       const errorMessage = apiClient.handleApiError(error);
@@ -515,11 +550,13 @@ export const useMCP = (): UseMCPReturn => {
         });
         clearTimeout(timeout);
       } catch {
-        // Gateway is down — set flag and skip all API calls
+        // Gateway is down — set flag and skip graph/analytics API calls
         (window as any).__apiGatewayDown = true;
         console.warn('API gateway unreachable — running in standalone mode (QA Engine on :3005)');
-        // Still load analytics from QA engine (it uses fetch directly, not axios)
+        // Still load analytics from QA engine
         if (!cancelled) refreshAnalytics();
+        // Still try to load collections directly from ArangoDB
+        if (!cancelled) refreshCollections();
         return;
       }
 
