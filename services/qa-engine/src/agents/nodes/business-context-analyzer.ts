@@ -61,10 +61,10 @@ export async function businessContextAnalyzerNode(
     .join('\n\n');
 
   // Directory structure
-  const dirStructure = [...new Set(codeFiles.map((f: any) => {
+  const dirStructure = Array.from(new Set(codeFiles.map((f: any) => {
     const parts = f.path.split('/');
     return parts.length > 1 ? parts.slice(0, 2).join('/') : parts[0];
-  }))].sort().join('\n');
+  }))).sort().join('\n');
 
   // Route files for understanding API surface
   const routeFiles = codeFiles
