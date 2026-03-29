@@ -281,8 +281,41 @@ Respond with ONLY valid JSON, no markdown fencing.`;
 
   // Verify broken imports
   report.brokenImports = report.brokenImports.filter(imp => {
-    const match = imp.importStatement?.match(/from\s+['"]([^'"]+)['"]/);
-    const importPath = match?.[1];
+    // Try multiple ways to extract the import path — LLM format is unreliable
+    let importPath: string | undefined;
+
+    // 1. Try extracting from importStatement field
+    const fromMatch = imp.importStatement?.match(/from\s+['"]([^'"]+)['"]/);
+    if (fromMatch) importPath = fromMatch[1];
+
+    // 2. Try extracting from issue field (LLM sometimes puts the path there)
+    if (!importPath) {
+      const issueMatch = imp.issue?.match(/['"]([^'"]+\.(js|jsx|ts|tsx|json))['"]/);
+      if (issueMatch) importPath = issueMatch[1];
+    }
+
+    // 3. Try extracting bare filename from importStatement or issue
+    if (!importPath) {
+      const bareMatch = (imp.importStatement || imp.issue || '').match(/(\w[\w.-]*\.(js|jsx|ts|tsx))/);
+      if (bareMatch) importPath = './' + bareMatch[1];
+    }
+
+    // 4. Check if it mentions a file that exists anywhere in codeFiles by name
+    const mentionedFile = (imp.importStatement || imp.issue || imp.fix || '').match(/(\w[\w/.-]*\.(js|jsx|ts|tsx))/g);
+    if (mentionedFile) {
+      for (const mf of mentionedFile) {
+        // Search all codeFiles for a path ending with this filename
+        const found = codeFiles.some(f => {
+          const norm = (f.path || '').replace(/\\/g, '/');
+          return norm.endsWith('/' + mf) || norm === mf || norm.endsWith(mf);
+        });
+        if (found) {
+          console.log(`[SelfHealer] Filtered false positive: ${imp.file} — mentioned file ${mf} exists in codebase`);
+          return false;
+        }
+      }
+    }
+
     if (!importPath) return true; // can't verify, keep it
 
     const exists = fileExistsInCodeFiles(codeFiles, importPath, imp.file);
@@ -290,6 +323,17 @@ Respond with ONLY valid JSON, no markdown fencing.`;
       console.log(`[SelfHealer] Filtered false positive: ${imp.file} import of ${importPath} — file exists`);
       return false;
     }
+
+    // Also check: does ANY file in codeFiles end with this filename?
+    const basename = importPath.split('/').pop() || '';
+    if (basename) {
+      const anyMatch = codeFiles.some(f => (f.path || '').endsWith(basename));
+      if (anyMatch) {
+        console.log(`[SelfHealer] Filtered false positive: ${imp.file} import of ${importPath} — file ${basename} exists somewhere in repo`);
+        return false;
+      }
+    }
+
     return true;
   });
 
