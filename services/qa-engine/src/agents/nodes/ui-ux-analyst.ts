@@ -353,6 +353,49 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     });
   }
 
+  // Verify component issues — check if claimed files actually exist and match claims
+  report.componentIssues = (report.componentIssues || []).filter(issue => {
+    if (!issue.file) return true;
+    const normalizedPath = issue.file.replace(/\\/g, '/');
+    const matchingFile = codeFiles.find(f =>
+      f.path && f.path.replace(/\\/g, '/').endsWith(normalizedPath)
+    );
+    if (!matchingFile) {
+      // File doesn't exist in codebase — false positive
+      console.log(`[UIUXAnalyst] Filtered component issue: ${issue.file} not found in codebase`);
+      return false;
+    }
+    return true;
+  });
+
+  // Verify UX anti-patterns — check if the file actually has the claimed issue
+  report.uxAntiPatterns = (report.uxAntiPatterns || []).filter(pattern => {
+    if (!pattern.file) return true;
+    const normalizedPath = pattern.file.replace(/\\/g, '/');
+    const matchingFile = codeFiles.find(f =>
+      f.path && f.path.replace(/\\/g, '/').endsWith(normalizedPath)
+    );
+    if (!matchingFile) {
+      console.log(`[UIUXAnalyst] Filtered UX anti-pattern: ${pattern.file} not found in codebase`);
+      return false;
+    }
+    // If claiming missing-error-boundary but file has ErrorBoundary, filter it
+    if (pattern.type === 'missing-error-boundary' && matchingFile.content) {
+      if (/ErrorBoundary|error.?boundary|componentDidCatch/i.test(matchingFile.content)) {
+        console.log(`[UIUXAnalyst] Filtered: ${pattern.file} has ErrorBoundary`);
+        return false;
+      }
+    }
+    // If claiming missing-loading but file has loading/spinner, filter it
+    if (pattern.type === 'missing-loading' && matchingFile.content) {
+      if (/loading|isLoading|spinner|Spinner|skeleton|Skeleton|CircularProgress/i.test(matchingFile.content)) {
+        console.log(`[UIUXAnalyst] Filtered: ${pattern.file} has loading state`);
+        return false;
+      }
+    }
+    return true;
+  });
+
   // Recalculate accessibility score
   const filteredA11yCount = preVerifyA11y - report.accessibilityIssues.length;
   if (filteredA11yCount > 0) {
