@@ -393,9 +393,12 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const headerColor = useColorModeValue('gray.700', 'gray.200');
+  const skippedBg = useColorModeValue('gray.50', 'gray.900');
 
   // Merge store statuses with prop agents for persistence
   const storeAgentStatuses = useQARunStore(s => s.agentStatuses);
+  const storeSelectedAgents = useQARunStore(s => s.selectedAgents);
+  const storeSkippedAgents = useQARunStore(s => s.skippedAgents);
   const agents = propAgents.map(a => {
     const storeStatus = storeAgentStatuses[a.name];
     if (storeStatus && a.status === 'idle' && storeStatus.status === 'completed') {
@@ -406,6 +409,14 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
     }
     return a;
   });
+
+  // Build skipped agent lookup
+  const skippedAgentMap = new Map(
+    storeSkippedAgents.map(a => [a.id, a.reason])
+  );
+  const hasDynamicSelection = storeSelectedAgents.length > 0;
+  const isAgentSkipped = (name: string) => hasDynamicSelection && skippedAgentMap.has(name);
+  const getSkipReason = (name: string) => skippedAgentMap.get(name) || 'requirements not met';
 
   // All 13 agents in pipeline order
   const allAgents: string[] = [
@@ -428,6 +439,9 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
   const activeCount = allAgents.filter(n => getAgent(n).status === 'active').length;
   const completedCount = allAgents.filter(n => getAgent(n).status === 'completed').length;
   const anyRunning = activeCount > 0;
+  const totalRegisteredAgents = hasDynamicSelection
+    ? storeSelectedAgents.length + storeSkippedAgents.length
+    : allAgents.length;
 
   return (
     <Box
@@ -442,9 +456,15 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
         <Text fontSize="sm" fontWeight="bold" color={headerColor}>
           Agent Pipeline
         </Text>
-        <Badge colorScheme="purple" variant="subtle" fontSize="2xs">
-          {allAgents.length} Agents
-        </Badge>
+        {hasDynamicSelection ? (
+          <Badge colorScheme="purple" variant="subtle" fontSize="2xs">
+            {storeSelectedAgents.length} of {totalRegisteredAgents} agents selected
+          </Badge>
+        ) : (
+          <Badge colorScheme="purple" variant="subtle" fontSize="2xs">
+            {allAgents.length} Agents
+          </Badge>
+        )}
         {completedCount > 0 && (
           <Badge colorScheme="green" variant="subtle" fontSize="2xs">
             {completedCount} done
@@ -467,16 +487,19 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
           const agent = getAgent(name);
           const config = AGENT_CONFIG[name];
           if (!config) return null;
-          const isActive = agent.status === 'active';
-          const StatusIcon = STATUS_ICONS[agent.status] || Circle;
-          const statusColor = agent.status === 'completed' ? 'green' : agent.status === 'active' ? config.color : agent.status === 'failed' ? 'red' : agent.status === 'looping' ? 'orange' : 'gray';
+          const skipped = isAgentSkipped(name);
+          const isActive = !skipped && agent.status === 'active';
+          const StatusIcon = skipped ? Circle : (STATUS_ICONS[agent.status] || Circle);
+          const statusColor = skipped ? 'gray' : agent.status === 'completed' ? 'green' : agent.status === 'active' ? config.color : agent.status === 'failed' ? 'red' : agent.status === 'looping' ? 'orange' : 'gray';
           const AgentIcon = config.icon;
 
           const isExpanded = expandedAgent === name;
-          const isClickable = agent.status !== 'idle';
+          const isClickable = !skipped && agent.status !== 'idle';
           const isStreaming = streamingState?.agent === name || streamingState?.agent === (name === 'mutation' ? 'mutation-verifier' : name);
 
-          const tooltipLabel = isActive
+          const tooltipLabel = skipped
+            ? `Skipped: ${getSkipReason(name)}`
+            : isActive
             ? 'Click to watch live reasoning'
             : agent.status === 'completed'
             ? 'Click to view conversation & chat'
@@ -495,11 +518,12 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
             <MotionBox
               layout
               border="1px solid"
-              borderColor={isExpanded ? `${config.color}.500` : isActive ? `${config.color}.300` : borderColor}
-              bg={isExpanded ? `${config.color}.50` : isActive ? `${config.color}.50` : cardBg}
+              borderColor={skipped ? borderColor : isExpanded ? `${config.color}.500` : isActive ? `${config.color}.300` : borderColor}
+              bg={skipped ? skippedBg : isExpanded ? `${config.color}.50` : isActive ? `${config.color}.50` : cardBg}
               borderRadius="md"
               p={2}
               cursor={isClickable ? 'pointer' : 'default'}
+              opacity={skipped ? 0.45 : 1}
               onClick={() => {
                 if (isClickable) {
                   setExpandedAgent(isExpanded ? null : name);
@@ -512,7 +536,7 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
                   w="28px"
                   h="28px"
                   borderRadius="md"
-                  bg={`${config.color}.100`}
+                  bg={skipped ? 'gray.100' : `${config.color}.100`}
                   align="center"
                   justify="center"
                   flexShrink={0}
@@ -520,12 +544,18 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
                   {isActive ? (
                     <PulsingDot color={config.color} />
                   ) : (
-                    <AgentIcon size={14} />
+                    <AgentIcon size={14} color={skipped ? 'var(--chakra-colors-gray-400)' : undefined} />
                   )}
                 </Flex>
                 <Box flex={1} minW={0}>
                   <HStack spacing={1}>
-                    <Text fontSize="xs" fontWeight="bold" noOfLines={1}>
+                    <Text
+                      fontSize="xs"
+                      fontWeight="bold"
+                      noOfLines={1}
+                      textDecoration={skipped ? 'line-through' : undefined}
+                      color={skipped ? 'gray.400' : undefined}
+                    >
                       {config.label}
                     </Text>
                     <Badge
@@ -535,7 +565,9 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
                       px={1}
                       borderRadius="full"
                     >
-                      {isActive ? (
+                      {skipped ? (
+                        <StatusIcon size={8} />
+                      ) : isActive ? (
                         <MotionBox
                           animate={{ rotate: [0, 360] }}
                           transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
@@ -548,7 +580,10 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
                       )}
                     </Badge>
                   </HStack>
-                  {isActive && agent.progress > 0 && (
+                  {skipped && (
+                    <Text fontSize="2xs" color="gray.400" noOfLines={1}>skipped</Text>
+                  )}
+                  {!skipped && isActive && agent.progress > 0 && (
                     <Progress
                       value={agent.progress}
                       size="xs"
@@ -560,7 +595,7 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
                     />
                   )}
                   {/* Streaming preview */}
-                  {isActive && isStreaming && streamingState && (
+                  {!skipped && isActive && isStreaming && streamingState && (
                     <HStack spacing={1} mt={1}>
                       <TypingIndicator />
                       <Text fontSize="2xs" color="gray.500" noOfLines={1} flex={1}>
@@ -570,14 +605,14 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
                       </Text>
                     </HStack>
                   )}
-                  {isActive && !isStreaming && (
+                  {!skipped && isActive && !isStreaming && (
                     <HStack spacing={1} mt={1}>
                       <TypingIndicator />
                       <Text fontSize="2xs" color="gray.500">Thinking...</Text>
                     </HStack>
                   )}
                 </Box>
-                {agent.progress > 0 && isActive && (
+                {!skipped && agent.progress > 0 && isActive && (
                   <Text fontSize="2xs" fontWeight="bold" color={`${config.color}.500`}>
                     {Math.round(agent.progress)}%
                   </Text>

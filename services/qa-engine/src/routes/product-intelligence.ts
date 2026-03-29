@@ -11,7 +11,7 @@ export function createProductIntelligenceRouter(dbClient: any) {
     try {
       const { runId } = req.params;
 
-      const [roadmap, research, priorities, codeQuality, selfHealing, apiValidation, coverageAudit, uiAudit] = await Promise.all([
+      const [roadmap, research, priorities, codeQuality, selfHealing, apiValidation, coverageAudit, uiAudit, qaRun] = await Promise.all([
         dbClient.getDocument('qa_product_roadmaps', `roadmap_${runId}`).catch(() => null),
         dbClient.getDocument('qa_research_insights', `research_${runId}`).catch(() => null),
         dbClient.getDocument('qa_product_priorities', `priorities_${runId}`).catch(() => null),
@@ -20,6 +20,7 @@ export function createProductIntelligenceRouter(dbClient: any) {
         dbClient.getDocument('qa_api_validation_reports', `apivalidation_${runId}`).catch(() => null),
         dbClient.getDocument('qa_coverage_audit_reports', `coverage_${runId}`).catch(() => null),
         dbClient.getDocument('qa_ui_audit_reports', `uiaudit_${runId}`).catch(() => null),
+        dbClient.getDocument('qa_runs', runId).catch(() => null),
       ]);
 
       if (!roadmap && !research) {
@@ -38,6 +39,10 @@ export function createProductIntelligenceRouter(dbClient: any) {
         coverageAudit,
         uiAudit,
         priorities: priorities?.priorities || [],
+        selectedAgents: qaRun?.selectedAgents || [],
+        skippedAgents: qaRun?.skippedAgents || [],
+        repoProfile: qaRun?.repoProfile || null,
+        executionLog: qaRun?.executionLog || [],
         summary: {
           appDomain: roadmap?.appDomain || 'Unknown',
           totalFeatures: roadmap?.totalFeatures || 0,
@@ -53,6 +58,10 @@ export function createProductIntelligenceRouter(dbClient: any) {
           coverageScore: coverageAudit?.coverageScore ?? null,
           accessibilityScore: uiAudit?.accessibilityScore ?? null,
           uxScore: uiAudit?.uxScore ?? null,
+          selectedAgentCount: qaRun?.selectedAgents?.length ?? null,
+          totalRegisteredAgents: qaRun?.selectedAgents && qaRun?.skippedAgents
+            ? qaRun.selectedAgents.length + qaRun.skippedAgents.length
+            : null,
         },
       });
     } catch (error: any) {
