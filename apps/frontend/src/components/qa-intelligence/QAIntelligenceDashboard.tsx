@@ -23,6 +23,7 @@ import {
   TabPanel,
   Button,
   IconButton,
+  Select,
   useColorModeValue,
   Flex,
   SimpleGrid,
@@ -45,6 +46,7 @@ import {
   Heart,
   Play,
   Brain,
+  History,
 } from 'lucide-react';
 
 import QARunControl from './QARunControl';
@@ -208,6 +210,18 @@ const QAIntelligenceDashboard: React.FC = () => {
   const bgColor = useColorModeValue('gray.50', 'gray.900');
   const headerColor = useColorModeValue('gray.800', 'gray.100');
 
+  // Listen for qa-view-run events dispatched by RunManager
+  useEffect(() => {
+    const handleViewRun = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.runId) {
+        qaRun.loadRun(detail.runId);
+      }
+    };
+    window.addEventListener('qa-view-run', handleViewRun);
+    return () => window.removeEventListener('qa-view-run', handleViewRun);
+  }, [qaRun.loadRun]);
+
   // Escape key closes terminal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -260,6 +274,37 @@ const QAIntelligenceDashboard: React.FC = () => {
               </Badge>
             )}
           </HStack>
+
+          {/* Past runs selector */}
+          {qaRun.recentRuns.length > 0 && (
+            <HStack spacing={2}>
+              <History size={14} />
+              <Select
+                placeholder="Load past run..."
+                size="sm"
+                maxW="340px"
+                value={qaRun.runId || ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    qaRun.loadRun(e.target.value);
+                  }
+                }}
+              >
+                {qaRun.recentRuns.map((run) => {
+                  const runKey = run.id || (run as any)._key || (run as any).runId;
+                  const date = run.startedAt ? new Date(run.startedAt).toLocaleString() : 'Unknown date';
+                  const tests = run.totalTests || 0;
+                  const mutScore = run.mutation?.score || 0;
+                  const statusLabel = run.status === 'completed' ? '' : ` [${run.status}]`;
+                  return (
+                    <option key={runKey} value={runKey}>
+                      {date} — {tests} tests, {Math.round(mutScore)}% mutation{statusLabel}
+                    </option>
+                  );
+                })}
+              </Select>
+            </HStack>
+          )}
 
           {/* Right side: Terminal toggle + Notification bell */}
           <HStack spacing={2}>
