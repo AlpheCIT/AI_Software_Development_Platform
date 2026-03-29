@@ -69,6 +69,7 @@ import LearningsPanel from './LearningsPanel';
 import { useQARun } from '../../hooks/useQARun';
 import { useAgentStream } from '../../hooks/useAgentStream';
 import { useNotifications } from '../../hooks/useNotifications';
+import { useQARunStore } from '../../stores/qa-run-store';
 
 // ── Placeholder Components for Bottom Tabs ─────────────────────────────────
 
@@ -232,14 +233,22 @@ const QAIntelligenceDashboard: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showTerminal]);
 
-  // Merge real-time agent status from Socket.IO stream into agent tiles
+  // Merge real-time agent status from Socket.IO stream + persistent store into agent tiles
+  const storeAgentStatuses = useQARunStore(s => s.agentStatuses);
   const liveAgents = qaRun.agents.map(a => {
     const backendName = a.name === 'mutation' ? 'mutation-verifier' : a.name;
+    // Live stream takes priority
     if (agentStream.activeAgent === a.name || agentStream.activeAgent === backendName) {
       return { ...a, status: 'active' as const, message: a.message || `${a.name} is working...` };
     }
     if (agentStream.handoffData[a.name] || agentStream.handoffData[backendName]) {
       return { ...a, status: a.status === 'idle' ? 'completed' as const : a.status, progress: 100 };
+    }
+    // Fall back to store for persisted statuses (survives navigation)
+    const storeStatus = storeAgentStatuses[a.name];
+    if (storeStatus && a.status === 'idle') {
+      if (storeStatus.status === 'completed') return { ...a, status: 'completed' as const, progress: 100 };
+      if (storeStatus.status === 'running') return { ...a, status: 'active' as const };
     }
     return a;
   });

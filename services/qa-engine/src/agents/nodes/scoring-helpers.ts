@@ -30,18 +30,30 @@ export function calculateCalibratedScore(
   }
 
   let deductions = 0;
-  for (const f of findings) {
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
     const weight = SEVERITY_WEIGHTS[f.severity] || 0;
     const confidence = f.confidence || 0.5;
-    const verifiedMultiplier = f.verified === false ? 0.3 : 1.0; // unverified findings count less
-    deductions += weight * confidence * verifiedMultiplier;
+    const verifiedMultiplier = f.verified === false ? 0.3 : 1.0;
+
+    // Cap per-finding deduction to prevent single finding from dominating
+    const rawDeduction = weight * confidence * verifiedMultiplier;
+    const cappedDeduction = Math.min(rawDeduction, 15);
+
+    // Diminishing returns: after 10 findings, each additional one has less impact
+    // Prevents score crash when LLM reports many similar findings
+    const diminishingFactor = i < 10 ? 1.0 : Math.max(0.3, 1.0 - (i - 10) * 0.07);
+
+    deductions += cappedDeduction * diminishingFactor;
   }
 
-  // Normalize by repo size (log scale — a 200-file repo shouldn't be penalized 10x vs a 20-file repo)
-  const sizeNormalizer = Math.max(Math.log10(totalFiles + 1) / Math.log10(200), 0.5);
+  // Normalize by repo size (log scale)
+  // Floor at 0.7 to prevent small repos from being unfairly penalized
+  const sizeNormalizer = Math.max(Math.log10(totalFiles + 10) / Math.log10(200), 0.7);
   const normalizedDeductions = deductions / sizeNormalizer;
 
-  const score = Math.max(0, Math.min(100, Math.round(100 - normalizedDeductions)));
+  // Floor at 20 — no agent should score below 20/100 (even severely problematic code has SOME merit)
+  const score = Math.max(20, Math.min(100, Math.round(100 - normalizedDeductions)));
   const { grade, gradeDescription } = getGrade(score);
 
   return { score, grade, gradeDescription };
