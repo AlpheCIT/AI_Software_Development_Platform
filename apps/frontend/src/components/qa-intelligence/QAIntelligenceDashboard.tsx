@@ -47,6 +47,8 @@ import {
   Play,
   Brain,
   History,
+  BookOpen,
+  GitCompare,
 } from 'lucide-react';
 
 import QARunControl from './QARunControl';
@@ -66,6 +68,9 @@ import NotificationBell from './NotificationBell';
 import AgentReportsTab from './AgentReportsTab';
 import AgentDebateView from './AgentDebateView';
 import LearningsPanel from './LearningsPanel';
+import BehaviorSpecsTab from './BehaviorSpecsTab';
+import BehaviorChangesTab from './BehaviorChangesTab';
+import BehaviorExportButton from './BehaviorExportButton';
 import { useQARun } from '../../hooks/useQARun';
 import { useAgentStream } from '../../hooks/useAgentStream';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -342,6 +347,9 @@ const QAIntelligenceDashboard: React.FC = () => {
               </Button>
             )}
 
+            {/* Export behavioral specs */}
+            <BehaviorExportButton runId={qaRun.runId || undefined} />
+
             {/* Terminal mode */}
             <Button
               size="xs"
@@ -491,6 +499,18 @@ const QAIntelligenceDashboard: React.FC = () => {
                 <Text>AI Learnings</Text>
               </HStack>
             </Tab>
+            <Tab>
+              <HStack spacing={1}>
+                <BookOpen size={14} />
+                <Text>Behavior Specs</Text>
+              </HStack>
+            </Tab>
+            <Tab>
+              <HStack spacing={1}>
+                <GitCompare size={14} />
+                <Text>Changes</Text>
+              </HStack>
+            </Tab>
           </TabList>
 
           <TabPanels>
@@ -514,6 +534,12 @@ const QAIntelligenceDashboard: React.FC = () => {
             </TabPanel>
             <TabPanel px={0}>
               <LearningsPanel repositoryId={qaRun.runId || undefined} />
+            </TabPanel>
+            <TabPanel px={0}>
+              <BehaviorSpecsTab runId={qaRun.runId || undefined} />
+            </TabPanel>
+            <TabPanel px={0}>
+              <BehaviorChangesTab runId={qaRun.runId || undefined} />
             </TabPanel>
           </TabPanels>
         </Tabs>
