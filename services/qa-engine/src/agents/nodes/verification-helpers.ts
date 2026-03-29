@@ -331,7 +331,7 @@ export function extractAllRoutes(
 
     // Determine prefix for this file
     let prefix = '';
-    for (const [mountFile, mountPrefix] of routerMounts.entries()) {
+    for (const [mountFile, mountPrefix] of Array.from(routerMounts.entries())) {
       if (filePath.includes(mountFile) || filePath.endsWith(mountFile)) {
         prefix = mountPrefix;
         break;
@@ -532,7 +532,7 @@ export function isStandardDevProxy(
     if (!config.content) continue;
     // Check for proxy configuration — this is a normal dev setup
     if (/proxy\s*:\s*\{/.test(config.content) ||
-        /server\s*:\s*\{[^}]*proxy/s.test(config.content)) {
+        /server\s*:\s*\{[\s\S]*?proxy/.test(config.content)) {
       return true;
     }
   }
