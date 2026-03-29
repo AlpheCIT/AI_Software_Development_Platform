@@ -146,15 +146,35 @@ const RiskHeatmap: React.FC<RiskHeatmapProps> = ({ runId }) => {
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
 
   useEffect(() => {
-    if (!runId) return;
     setLoading(true);
 
     const fetchData = async () => {
       try {
+        // Resolve effective runId: use provided or fall back to latest completed run
+        let effectiveRunId = runId;
+        if (!effectiveRunId) {
+          try {
+            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+            if (runsRes.ok) {
+              const runsData = await runsRes.json();
+              const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+              const latestRun = completedRuns[0];
+              if (latestRun) {
+                effectiveRunId = latestRun._key || latestRun.runId;
+              }
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (!effectiveRunId) {
+          setLoading(false);
+          return;
+        }
+
         // Fetch test results and code quality data for risk analysis
         const [resultsRes, qualityRes] = await Promise.all([
-          fetch(`${QA_ENGINE_URL}/qa/results/${runId}`).catch(() => null),
-          fetch(`${QA_ENGINE_URL}/qa/product/${runId}`).catch(() => null),
+          fetch(`${QA_ENGINE_URL}/qa/results/${effectiveRunId}`).catch(() => null),
+          fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`).catch(() => null),
         ]);
 
         const results = resultsRes?.ok ? await resultsRes.json() : null;
@@ -235,17 +255,6 @@ const RiskHeatmap: React.FC<RiskHeatmapProps> = ({ runId }) => {
 
     fetchData();
   }, [runId]);
-
-  if (!runId) {
-    return (
-      <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={6} textAlign="center">
-        <VStack spacing={3}>
-          <Target size={24} color="#718096" />
-          <Text color={subtextColor}>Start a QA run to see the Risk Heatmap</Text>
-        </VStack>
-      </Box>
-    );
-  }
 
   if (loading) {
     return (

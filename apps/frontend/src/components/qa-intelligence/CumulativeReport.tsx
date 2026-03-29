@@ -890,18 +890,6 @@ const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
     window.print();
   };
 
-  // No run selected
-  if (!runId) {
-    return (
-      <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={6}>
-        <VStack spacing={3}>
-          <Icon as={FileText} boxSize={8} color={subtextColor} />
-          <Text color={subtextColor}>Start a QA run to generate the Cumulative Report</Text>
-        </VStack>
-      </Box>
-    );
-  }
-
   // Loading
   if (loading && !data) {
     return (

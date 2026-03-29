@@ -109,13 +109,36 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
   useEffect(() => {
-    if (runId) loadScores();
+    loadScores();
   }, [runId]);
 
   async function loadScores() {
     setLoading(true);
     try {
-      const data = await qaService.getProductIntelligence(runId!);
+      let effectiveRunId = runId;
+
+      // If no runId provided, fetch the latest completed run
+      if (!effectiveRunId) {
+        try {
+          const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+          const runsResponse = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+          if (runsResponse.ok) {
+            const runsData = await runsResponse.json();
+            const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+            const latestRun = completedRuns[0];
+            if (latestRun) {
+              effectiveRunId = latestRun._key || latestRun.runId;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!effectiveRunId) {
+        setLoading(false);
+        return;
+      }
+
+      const data = await qaService.getProductIntelligence(effectiveRunId);
       setScores({
         codeQuality: data.summary?.codeHealthScore ?? null,
         selfHealing: data.summary?.selfHealingScore ?? null,
@@ -169,7 +192,7 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
             </Badge>
           )}
         </HStack>
-        {!runId && (
+        {!scores && !loading && (
           <Text fontSize="sm" color="gray.500">Run a QA analysis to see health scores</Text>
         )}
       </VStack>

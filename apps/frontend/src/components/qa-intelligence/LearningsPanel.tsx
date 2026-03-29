@@ -75,13 +75,35 @@ export default function LearningsPanel({ repositoryId }: LearningsPanelProps) {
   };
 
   useEffect(() => {
-    if (repositoryId) loadData();
+    loadData();
   }, [repositoryId]);
 
   async function loadData() {
     setLoading(true);
     try {
-      const res = await fetch(`${QA_ENGINE_URL}/qa/learnings/${repositoryId}`);
+      let effectiveId = repositoryId;
+
+      // If no repositoryId provided, fetch the latest completed run
+      if (!effectiveId) {
+        try {
+          const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+          if (runsRes.ok) {
+            const runsData = await runsRes.json();
+            const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+            const latestRun = completedRuns[0];
+            if (latestRun) {
+              effectiveId = latestRun._key || latestRun.runId;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!effectiveId) {
+        setLoading(false);
+        return;
+      }
+
+      const res = await fetch(`${QA_ENGINE_URL}/qa/learnings/${effectiveId}`);
       if (res.ok) {
         const data = await res.json();
         setLearnings(data.learnings || []);
@@ -89,19 +111,6 @@ export default function LearningsPanel({ repositoryId }: LearningsPanelProps) {
       }
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }
-
-  if (!repositoryId) {
-    return (
-      <Box p={8} textAlign="center" border="2px dashed" borderColor="gray.300" borderRadius="lg">
-        <Brain size={32} style={{ margin: '0 auto 12px' }} />
-        <Text fontWeight="bold" color="gray.600" mb={2}>AI Learning Engine</Text>
-        <Text fontSize="sm" color="gray.500">
-          Run QA analyses to build up patterns. The AI learns from each run —
-          identifying recurring code smells, test gaps, and mutation survival patterns.
-        </Text>
-      </Box>
-    );
   }
 
   if (loading) {
