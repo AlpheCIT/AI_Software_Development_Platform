@@ -279,6 +279,24 @@ Respond with ONLY valid JSON, no markdown fencing.`;
   report.typeMismatches = report.typeMismatches || [];
   report.autoFixes = report.autoFixes || [];
 
+  // Verify type mismatches — filter claims about missing exports if exports exist
+  report.typeMismatches = report.typeMismatches.filter(tm => {
+    const desc = (tm.actual || '') + ' ' + (tm.expected || '');
+    // If it claims something "is not exported" — check if it actually is
+    const notExportedMatch = desc.match(/(\w+)\s+(?:is\s+)?not\s+exported\s+from\s+(\S+)/i);
+    if (notExportedMatch) {
+      const exportName = notExportedMatch[1];
+      const fromFile = notExportedMatch[2].replace(/['"`]/g, '');
+      // Check if the export exists in the file content
+      const targetFile = codeFiles.find((f: any) => (f.path || '').includes(fromFile.replace(/^\.\//, '')));
+      if (targetFile?.content && targetFile.content.includes(exportName)) {
+        console.log(`[SelfHealer] Filtered type mismatch: ${exportName} found in ${fromFile}`);
+        return false;
+      }
+    }
+    return true;
+  });
+
   // Verify broken imports
   report.brokenImports = report.brokenImports.filter(imp => {
     // Try multiple ways to extract the import path — LLM format is unreliable
@@ -320,14 +338,45 @@ Respond with ONLY valid JSON, no markdown fencing.`;
 
     const exists = fileExistsInCodeFiles(codeFiles, importPath, imp.file);
     if (exists) {
-      console.log(`[SelfHealer] Filtered false positive: ${imp.file} import of ${importPath} — file exists`);
-      return false;
+      // File exists — now check if the LLM claims specific exports are missing
+      // Extract named imports from the import statement
+      const namedImportMatch = imp.importStatement?.match(/\{([^}]+)\}/);
+      if (namedImportMatch) {
+        const namedImports = namedImportMatch[1].split(',').map((s: string) => s.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
+        // Verify each named export against the actual file
+        // Note: codeFiles only has first 2000 chars, so export check may miss exports later in file
+        // If we can't verify (truncated content), give benefit of the doubt and filter
+        const allExportsVerified = namedImports.every((name: string) => exportExistsInFile(codeFiles, importPath, name));
+        if (allExportsVerified) {
+          console.log(`[SelfHealer] Filtered: ${imp.file} — all named exports verified in ${importPath}`);
+          return false;
+        }
+        // If exports NOT found, it could be because content is truncated (2000 chars)
+        // Check if any of the named imports appear anywhere in the file content
+        const targetFile = codeFiles.find((f: any) => (f.path || '').replace(/\\/g, '/').includes(importPath.replace(/^\.\//, '')));
+        if (targetFile?.content) {
+          const allNamesInContent = namedImports.every((name: string) => targetFile.content.includes(name));
+          if (allNamesInContent) {
+            console.log(`[SelfHealer] Filtered: ${imp.file} — named imports found in ${importPath} content (may be truncated)`);
+            return false;
+          }
+        } else {
+          // Can't read file content at all — file exists but content unavailable
+          // This is likely a truncation issue, filter as probable false positive
+          console.log(`[SelfHealer] Filtered: ${imp.file} — file ${importPath} exists, content not available for export verification`);
+          return false;
+        }
+      } else {
+        // No named imports (default import or side-effect import) — file exists, filter it
+        console.log(`[SelfHealer] Filtered false positive: ${imp.file} import of ${importPath} — file exists`);
+        return false;
+      }
     }
 
     // Also check: does ANY file in codeFiles end with this filename?
     const basename = importPath.split('/').pop() || '';
     if (basename) {
-      const anyMatch = codeFiles.some(f => (f.path || '').endsWith(basename));
+      const anyMatch = codeFiles.some((f: any) => (f.path || '').endsWith(basename));
       if (anyMatch) {
         console.log(`[SelfHealer] Filtered false positive: ${imp.file} import of ${importPath} — file ${basename} exists somewhere in repo`);
         return false;
@@ -339,6 +388,11 @@ Respond with ONLY valid JSON, no markdown fencing.`;
 
   // Verify missing deps
   report.missingDeps = report.missingDeps.filter(dep => {
+    // If the LLM itself says it's in package.json, filter it
+    if (dep.inPackageJson === true) {
+      console.log(`[SelfHealer] Filtered false positive: ${dep.package} — LLM confirms in package.json`);
+      return false;
+    }
     const exists = packageExistsInManifests(codeFiles, dep.package);
     if (exists) {
       console.log(`[SelfHealer] Filtered false positive: ${dep.package} — found in package.json`);
