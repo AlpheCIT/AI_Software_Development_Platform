@@ -65,6 +65,7 @@ export interface UseQARunReturn {
   cancelRun: () => Promise<void>;
   refreshStatus: () => Promise<void>;
   loadRecentRuns: () => Promise<void>;
+  loadRun: (runId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -204,6 +205,29 @@ export function useQARun(): UseQARunReturn {
     }
   }, []);
 
+  const loadRun = useCallback(async (id: string) => {
+    try {
+      stopPolling();
+      setError(null);
+      const run = await qaService.getRunStatus(id);
+      setRunId(run.id || id);
+      applyRunData(run);
+      // Also try to fetch full results for completed runs
+      if (run.status === 'completed') {
+        try {
+          const results = await qaService.getResults(id);
+          if (results.tests?.length) setTestResults(results.tests);
+          if (results.mutation) setMutation(results.mutation);
+        } catch {
+          // Results endpoint might not exist; status already has the data
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load run';
+      setError(message);
+    }
+  }, [stopPolling, applyRunData]);
+
   const reset = useCallback(() => {
     stopPolling();
     setRunId(null);
@@ -308,6 +332,7 @@ export function useQARun(): UseQARunReturn {
     cancelRun,
     refreshStatus,
     loadRecentRuns,
+    loadRun,
     reset,
   };
 }

@@ -13,6 +13,7 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    allowedHosts: ['p1gen6', 'p1gen6.local', 'localhost'],
     proxy: {
       '/api': {
         target: 'http://localhost:3001',
