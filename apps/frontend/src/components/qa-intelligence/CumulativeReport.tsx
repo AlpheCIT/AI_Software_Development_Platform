@@ -81,7 +81,7 @@ interface ProductData {
   };
 }
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
 // ── Color Maps ───────────────────────────────────────────────────────────────
 
@@ -1137,7 +1137,7 @@ const ReportChat: React.FC<{ runId: string }> = ({ runId }) => {
     setLoading(true);
 
     try {
-      const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+      const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
       const resp = await fetch(`${QA_ENGINE_URL}/qa/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

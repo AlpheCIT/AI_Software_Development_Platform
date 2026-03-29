@@ -26,7 +26,7 @@ import APIValidatorPanel from './APIValidatorPanel';
 import CoverageAuditorPanel from './CoverageAuditorPanel';
 import UIUXAnalystPanel from './UIUXAnalystPanel';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
 interface AgentReportsTabProps {
   runId?: string;

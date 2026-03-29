@@ -3,7 +3,7 @@
  * Connects to the QA Intelligence Engine for AI-driven test generation and mutation testing
  */
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
