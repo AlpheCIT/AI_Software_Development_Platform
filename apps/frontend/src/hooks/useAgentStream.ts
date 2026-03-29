@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { AgentName, AgentLogEntry } from '../services/qaService';
+import { useQARunStore } from '../stores/qa-run-store';
 
 const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 const MAX_LOG_ENTRIES = 200;
@@ -94,6 +95,13 @@ export function useAgentStream(runId: string | null): UseAgentStreamReturn {
   const logIdCounter = useRef(0);
   const streamingBufferRef = useRef<string>('');
 
+  // Store reference for persisting agent status
+  const storeRef = useRef(useQARunStore.getState());
+  useEffect(() => {
+    const unsub = useQARunStore.subscribe(state => { storeRef.current = state; });
+    return unsub;
+  }, []);
+
   const addTimelineEntry = useCallback((event: string, agent: string, data: Record<string, unknown> = {}) => {
     setAgentTimeline(prev => [...prev, { event, agent, data, timestamp: new Date().toISOString() }]);
   }, []);
@@ -179,6 +187,9 @@ export function useAgentStream(runId: string | null): UseAgentStreamReturn {
         streamingBufferRef.current = ''; // Reset buffer for new agent
         addLogEntry(data.agent, data.message || `${AGENT_LABELS[data.agent]} started`, 'info');
         addTimelineEntry('agent.started', data.agent, data as any);
+        // Sync to persistent store
+        storeRef.current.updateAgentStatus(data.agent, { status: 'running' });
+        storeRef.current.addActivityLog({ agent: data.agent, message: data.message || `${AGENT_LABELS[data.agent]} started`, type: 'info' });
       });
 
       socket.on('qa:agent.progress', (data: { agent: AgentName; message: string; progress: number; data?: Record<string, unknown> }) => {
@@ -188,6 +199,9 @@ export function useAgentStream(runId: string | null): UseAgentStreamReturn {
 
       socket.on('qa:agent.failed', (data: { agent: AgentName; message: string; error: string }) => {
         addLogEntry(data.agent, data.error || data.message, 'error');
+        // Sync to persistent store
+        storeRef.current.updateAgentStatus(data.agent, { status: 'error' });
+        storeRef.current.addActivityLog({ agent: data.agent, message: data.error || data.message, type: 'error' });
       });
 
       socket.on('qa:agent.loop', (data: { from: AgentName; to: AgentName; reason: string; iteration: number }) => {
@@ -218,6 +232,9 @@ export function useAgentStream(runId: string | null): UseAgentStreamReturn {
         streamingBufferRef.current = '';
         addLogEntry(data.agent, data.message || `${AGENT_LABELS[data.agent]} completed`, 'info');
         addTimelineEntry('agent.completed', data.agent, data as any);
+        // Sync to persistent store
+        storeRef.current.updateAgentStatus(data.agent, { status: 'completed', result: data.result, completedAt: new Date().toISOString() });
+        storeRef.current.addActivityLog({ agent: data.agent, message: data.message || `${AGENT_LABELS[data.agent]} completed`, type: 'success' });
 
         // Build handoff data from completion results
         if (data.result) {

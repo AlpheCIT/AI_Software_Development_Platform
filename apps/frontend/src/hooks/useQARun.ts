@@ -1,6 +1,7 @@
 /**
  * useQARun - React hook for managing QA Intelligence runs
  * Combines fetch + polling + WebSocket for real-time QA run tracking
+ * Now backed by Zustand store for persistence across navigation
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -14,6 +15,7 @@ import {
   type MutationResult,
   type AgentState,
 } from '../services/qaService';
+import { useQARunStore, type CodeHealth } from '../stores/qa-run-store';
 
 // ── Default States ─────────────────────────────────────────────────────────
 
@@ -40,6 +42,64 @@ const DEFAULT_MUTATION: MutationResult = {
   timeout: 0,
   score: 0,
 };
+
+// ── Code Health Computation ───────────────────────────────────────────────
+
+function computeUnifiedCodeHealth(agentScores: Record<string, number>): CodeHealth {
+  const weights: Record<string, number> = {
+    selfHealer: 0.15,
+    apiValidator: 0.25,
+    coverage: 0.15,
+    codeQuality: 0.20,
+    accessibility: 0.10,
+    ux: 0.15,
+  };
+
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  for (const [key, weight] of Object.entries(weights)) {
+    const score = agentScores[key];
+    if (score != null && score >= 0 && !isNaN(score)) {
+      weightedSum += score * weight;
+      totalWeight += weight;
+    }
+  }
+
+  const score = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 50;
+
+  let grade = 'F', gradeDescription = 'Critical issues';
+  if (score >= 90) { grade = 'A'; gradeDescription = 'Production-ready'; }
+  else if (score >= 75) { grade = 'B'; gradeDescription = 'Good quality'; }
+  else if (score >= 60) { grade = 'C'; gradeDescription = 'Acceptable'; }
+  else if (score >= 40) { grade = 'D'; gradeDescription = 'Below average'; }
+
+  return { score, grade, gradeDescription, breakdown: agentScores };
+}
+
+async function fetchAndComputeCodeHealth(runId: string, store: ReturnType<typeof useQARunStore.getState>) {
+  try {
+    const data = await qaService.getProductIntelligence(runId);
+    const scores: Record<string, number> = {};
+
+    if (data.selfHealing?.healthScore != null) scores.selfHealer = data.selfHealing.healthScore;
+    if (data.apiValidation?.apiHealthScore != null) scores.apiValidator = data.apiValidation.apiHealthScore;
+    if (data.coverageAudit?.coverageScore != null) scores.coverage = data.coverageAudit.coverageScore;
+    if (data.codeQuality?.summary?.overallScore != null) scores.codeQuality = data.codeQuality.summary.overallScore;
+    if (data.uiAudit?.accessibilityScore != null) scores.accessibility = data.uiAudit.accessibilityScore;
+    if (data.uiAudit?.uxScore != null) scores.ux = data.uiAudit.uxScore;
+
+    // Also try summary-level scores as fallback
+    if (!scores.codeQuality && data.summary?.codeHealthScore != null) scores.codeQuality = data.summary.codeHealthScore;
+    if (!scores.selfHealer && data.summary?.selfHealingScore != null) scores.selfHealer = data.summary.selfHealingScore;
+    if (!scores.apiValidator && data.summary?.apiHealthScore != null) scores.apiValidator = data.summary.apiHealthScore;
+
+    const health = computeUnifiedCodeHealth(scores);
+    store.setCodeHealth(health);
+  } catch {
+    // Non-fatal — product intelligence may not be available yet
+  }
+}
 
 // ── Hook Interface ─────────────────────────────────────────────────────────
 
@@ -72,6 +132,8 @@ export interface UseQARunReturn {
 // ── Hook Implementation ────────────────────────────────────────────────────
 
 export function useQARun(): UseQARunReturn {
+  const store = useQARunStore();
+
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<QARunStatus>('idle');
   const [agents, setAgents] = useState<AgentState[]>(DEFAULT_AGENTS);
@@ -88,8 +150,25 @@ export function useQARun(): UseQARunReturn {
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isPollingRef = useRef(false);
+  const restoredFromStoreRef = useRef(false);
 
   const isRunning = status === 'running' || status === 'queued';
+
+  // ── Restore from store on mount ────────────────────────────────────────
+  // If the store has persisted data, restore it so dashboard shows previous state
+
+  useEffect(() => {
+    if (restoredFromStoreRef.current) return;
+    restoredFromStoreRef.current = true;
+
+    if (store.lastUpdated > 0 && store.currentRunId) {
+      setRunId(store.currentRunId);
+      setStatus(store.runStatus === 'running' ? 'running' : store.runStatus === 'completed' ? 'completed' : store.runStatus === 'failed' ? 'failed' : 'idle');
+      setTotalTests(store.totalTests);
+      setPassedTests(store.passedTests);
+      setFailedTests(store.failedTests);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Apply run data to state ────────────────────────────────────────────
 
@@ -124,6 +203,22 @@ export function useQARun(): UseQARunReturn {
       // Stop polling when run completes
       if (run.status === 'completed' || run.status === 'failed') {
         stopPolling();
+
+        // Sync to store on completion
+        if (run.status === 'completed') {
+          store.completeRun({
+            tests: run.totalTests || 0,
+            passed: run.passedTests || 0,
+            failed: run.failedTests || 0,
+            syntaxValid: run.passedTests || 0,
+            mutation: run.mutation?.score || 0,
+          });
+          // Fetch code health after run completes
+          fetchAndComputeCodeHealth(id, useQARunStore.getState());
+        } else {
+          store.failRun('Run failed');
+        }
+
         // Fetch final results
         try {
           const results = await qaService.getResults(id);
@@ -136,7 +231,7 @@ export function useQARun(): UseQARunReturn {
     } catch (err) {
       console.warn('Failed to poll QA run status:', err);
     }
-  }, [applyRunData, stopPolling]);
+  }, [applyRunData, stopPolling, store]);
 
   const startPolling = useCallback((id: string) => {
     if (isPollingRef.current) return;
@@ -171,12 +266,16 @@ export function useQARun(): UseQARunReturn {
       setRunId(newRunId);
       setStatus('running');
       startPolling(newRunId);
+
+      // Sync to store
+      store.startRun(newRunId, config.repoUrl || '', config.branch || '');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start QA run';
       setError(message);
       setStatus('failed');
+      store.failRun(message);
     }
-  }, [startPolling]);
+  }, [startPolling, store]);
 
   const cancelRun = useCallback(async () => {
     if (!runId) return;
@@ -185,10 +284,11 @@ export function useQARun(): UseQARunReturn {
       stopPolling();
       setStatus('failed');
       setError('Run cancelled by user');
+      store.failRun('Run cancelled by user');
     } catch (err) {
       console.error('Failed to cancel QA run:', err);
     }
-  }, [runId, stopPolling]);
+  }, [runId, stopPolling, store]);
 
   const refreshStatus = useCallback(async () => {
     if (!runId) return;
@@ -199,11 +299,12 @@ export function useQARun(): UseQARunReturn {
     try {
       const runs = await qaService.listRuns(10);
       setRecentRuns(runs);
+      store.setRecentRuns(runs);
     } catch {
       // Silently fail - recent runs are not critical
       setRecentRuns([]);
     }
-  }, []);
+  }, [store]);
 
   const loadRun = useCallback(async (id: string) => {
     try {
@@ -212,6 +313,10 @@ export function useQARun(): UseQARunReturn {
       const run = await qaService.getRunStatus(id);
       setRunId(run.id || id);
       applyRunData(run);
+
+      // Sync to store
+      store.loadCompletedRun(run);
+
       // Also try to fetch full results for completed runs
       if (run.status === 'completed') {
         try {
@@ -221,12 +326,14 @@ export function useQARun(): UseQARunReturn {
         } catch {
           // Results endpoint might not exist; status already has the data
         }
+        // Fetch code health for loaded run
+        fetchAndComputeCodeHealth(run.id || id, useQARunStore.getState());
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load run';
       setError(message);
     }
-  }, [stopPolling, applyRunData]);
+  }, [stopPolling, applyRunData, store]);
 
   const reset = useCallback(() => {
     stopPolling();
@@ -242,7 +349,8 @@ export function useQARun(): UseQARunReturn {
     setStartedAt(null);
     setCompletedAt(null);
     setError(null);
-  }, [stopPolling]);
+    store.reset();
+  }, [stopPolling, store]);
 
   // ── Socket.IO: Run lifecycle events only ──────────────────────────────
   // Agent-level updates come from useAgentStream (merged in dashboard)
@@ -269,6 +377,7 @@ export function useQARun(): UseQARunReturn {
         setStatus('failed');
         setError(data.error || 'Run failed');
         stopPolling();
+        store.failRun(data.error || 'Run failed');
       });
     } catch (err) {
       console.warn('Socket.IO not available for run lifecycle events');
@@ -277,7 +386,7 @@ export function useQARun(): UseQARunReturn {
     return () => {
       if (socket) socket.disconnect();
     };
-  }, [runId, status, stopPolling, pollStatus]);
+  }, [runId, status, stopPolling, pollStatus, store]);
 
   // ── Cleanup ────────────────────────────────────────────────────────────
 
@@ -293,8 +402,15 @@ export function useQARun(): UseQARunReturn {
   }, [loadRecentRuns]);
 
   // Auto-load the latest completed run so the dashboard shows data immediately
+  // But skip if store already has data (restored from sessionStorage)
   useEffect(() => {
     if (runId) return; // Don't override if a run is already active
+
+    // If store has a completed run, skip re-fetching
+    if (store.lastUpdated > 0 && store.currentRunId && store.runStatus === 'completed') {
+      // Already restored from store above
+      return;
+    }
 
     const loadLatestRun = async () => {
       try {
@@ -303,6 +419,9 @@ export function useQARun(): UseQARunReturn {
         if (completedRun) {
           setRunId(completedRun.id);
           applyRunData(completedRun);
+          store.loadCompletedRun(completedRun);
+          // Fetch code health for auto-loaded run
+          fetchAndComputeCodeHealth(completedRun.id, useQARunStore.getState());
         }
       } catch {
         // Silently fail - auto-load is best-effort
