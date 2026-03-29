@@ -258,13 +258,41 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     const routeExists = allRoutes.some(r => {
       const rPath = r.path.replace(/\/$/, '');
       const cPath = callPath.replace(/\/$/, '');
-      return rPath === cPath || rPath.includes(cPath) || cPath.includes(rPath);
+      // Exact match
+      if (rPath === cPath) return true;
+      // Substring match (handles prefix differences)
+      if (rPath.includes(cPath) || cPath.includes(rPath)) return true;
+      // Match ignoring /auth/ or /v2/ prefix differences
+      const rSegments = rPath.split('/').filter(Boolean);
+      const cSegments = cPath.split('/').filter(Boolean);
+      const rLast = rSegments.slice(-2).join('/');
+      const cLast = cSegments.slice(-2).join('/');
+      if (rLast === cLast) return true;
+      return false;
     });
 
     if (routeExists) {
       console.log(`[CoverageAuditor] Filtered: ${call.call || call.expectedEndpoint} - route exists in inventory`);
       return false;
     }
+
+    // Also check: does the LLM's "expected" route literally say "not found in provided backend files"?
+    // This means the LLM couldn't find it in its truncated context — likely a false positive
+    if ((call.issue || '').includes('not found in provided') ||
+        (call.issue || '').includes('not found in backend') ||
+        (call.issue || '').includes('not found in the') ||
+        (call.issue || '').includes('verify if they exist in other files')) {
+      // Check if any route file in codeFiles contains this endpoint path
+      const pathToCheck = callPath.split('/').pop() || callPath;
+      const fileContainsRoute = codeFiles.some(f =>
+        f.content && f.content.includes(pathToCheck)
+      );
+      if (fileContainsRoute) {
+        console.log(`[CoverageAuditor] Filtered: ${callPath} - route found in codebase files`);
+        return false;
+      }
+    }
+
     return true;
   });
 
