@@ -26,7 +26,7 @@ import {
 } from '@chakra-ui/react';
 import { Brain, Bug, TrendingUp, Lightbulb, Shield, AlertTriangle } from 'lucide-react';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || 'http://localhost:3005';
+const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
 interface Learning {
   type: string;
