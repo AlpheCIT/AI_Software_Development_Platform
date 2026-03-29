@@ -3,6 +3,8 @@ import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
 import { fileExistsInCodeFiles, exportExistsInFile, packageExistsInManifests, isStandardDevProxy } from './verification-helpers.js';
+import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from './graph-helpers.js';
+import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from './scoring-helpers.js';
 
 const SELF_HEALER_SYSTEM_PROMPT = `You are an expert static analysis engineer specializing in detecting subtle cross-file issues that linters and compilers miss. Your focus is on finding bugs that only manifest at runtime or integration time.
 
@@ -144,29 +146,20 @@ export async function selfHealerNode(
     step: 'Detecting type mismatches, broken imports, and config issues across files',
   });
 
-  // Gather imports and exports from code files
-  const importExportSummary = codeFiles
-    .filter((f: any) => f.content && f.path?.match(/\.(ts|tsx|js|jsx)$/))
-    .slice(0, 30)
-    .map((f: any) => {
-      const imports = (f.content.match(/^import\s.+/gm) || []).join('\n');
-      const exports = (f.content.match(/^export\s.+/gm) || []).join('\n');
-      return `### ${f.path}\nImports:\n${imports || '(none)'}\nExports:\n${exports || '(none)'}`;
-    })
-    .join('\n\n');
+  // Extract business context from enriched codeFiles
+  const bizContextFile = codeFiles.find((f: any) => f.path === '__business_context__');
+  const businessContextPrompt = bizContextFile?.content ? `## Business Context\n${bizContextFile.content}\n` : '';
+
+  // Build graph context
+  const relationships = extractRelationships(codeFiles);
+  const graphContext = buildGraphContext(relationships, codeFiles);
+  const graphPrompt = formatGraphContextForPrompt(graphContext);
 
   // Package.json analysis
   const packageFiles = codeFiles.filter((f: any) => f.path?.endsWith('package.json'));
   const packageContext = packageFiles
     .slice(0, 5)
     .map((f: any) => `### ${f.path}\n${(f.content || '').substring(0, 2000)}`)
-    .join('\n\n');
-
-  // Env files
-  const envFiles = codeFiles.filter((f: any) => f.path?.match(/\.env/));
-  const envContext = envFiles
-    .slice(0, 5)
-    .map((f: any) => `### ${f.path}\n${(f.content || '').substring(0, 1000)}`)
     .join('\n\n');
 
   // Config files
@@ -176,21 +169,71 @@ export async function selfHealerNode(
     .map((f: any) => `### ${f.path}\n${(f.content || '').substring(0, 1500)}`)
     .join('\n\n');
 
-  // Sample code for deeper analysis
-  const sampleCode = codeFiles
-    .filter((f: any) => f.content && f.path?.match(/\.(ts|tsx|js|jsx)$/))
-    .slice(0, 20)
-    .map((f: any) => `### ${f.path}\n\`\`\`\n${(f.content || '').substring(0, 1500)}\n\`\`\``)
+  // Env files
+  const envFiles = codeFiles.filter((f: any) => f.path?.match(/\.env/));
+  const envContext = envFiles
+    .slice(0, 5)
+    .map((f: any) => `### ${f.path}\n${(f.content || '').substring(0, 1000)}`)
     .join('\n\n');
 
   eventPublisher?.emit('qa:agent.progress', {
     runId,
     agent: 'self-healer',
-    progress: 30,
-    message: `Analyzing imports/exports across ${codeFiles.length} files`,
+    progress: 15,
+    message: `Phase A: Identifying high-risk files from ${codeFiles.length} total files`,
   });
 
-  const model = createModel({ temperature: 0.2, maxTokens: 8192 });
+  // === PHASE A: File identification (lightweight) ===
+  const identifyModel = createModel({ temperature: 0.2, maxTokens: 4096 });
+
+  const allFilePaths = codeFiles
+    .filter((f: any) => f.content && f.path !== '__business_context__')
+    .map((f: any) => `- ${f.path} (${f.language || f.path?.split('.').pop() || 'unknown'}, ${f.size || (f.content || '').length}b)`)
+    .join('\n');
+
+  const identifyResponse = await throttledInvoke(identifyModel, [
+    new SystemMessage('You are a code analysis expert. Given a repo file list, identify which 20 files are most likely to have cross-file issues (broken imports, type mismatches, missing exports, config inconsistencies). Prioritize files that are hub files (many connections), config files, entry points, and shared utilities. Return ONLY a JSON array of file paths.'),
+    new HumanMessage(`${businessContextPrompt}${graphPrompt}\n\nFiles:\n${allFilePaths}`),
+  ], 'self-healer-identify', eventPublisher, runId);
+
+  let targetFiles: string[] = [];
+  try {
+    const cleaned = identifyResponse.content.toString().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    targetFiles = JSON.parse(cleaned);
+  } catch {
+    // Fallback: take first 20 source files
+    targetFiles = codeFiles
+      .filter((f: any) => f.content && f.path?.match(/\.(ts|tsx|js|jsx)$/))
+      .slice(0, 20)
+      .map((f: any) => f.path);
+  }
+
+  console.log(`[SelfHealer] Phase A identified ${targetFiles.length} files for deep analysis`);
+
+  eventPublisher?.emit('qa:agent.progress', {
+    runId,
+    agent: 'self-healer',
+    progress: 35,
+    message: `Phase B: Deep analysis of ${targetFiles.length} identified files`,
+  });
+
+  // === PHASE B: Deep analysis with FULL file contents ===
+  const deepContext = targetFiles.map((path: string) => {
+    const file = codeFiles.find((f: any) => f.path === path);
+    if (!file?.content) return '';
+    return `### ${path}\n\`\`\`\n${file.content}\n\`\`\``;
+  }).filter(Boolean).join('\n\n');
+
+  // Also include ALL import/export summaries (for cross-file analysis)
+  const importExportSummary = codeFiles
+    .filter((f: any) => f.content && f.path?.match(/\.(ts|tsx|js|jsx)$/) && f.path !== '__business_context__')
+    .map((f: any) => {
+      const imports = (f.content.match(/^import\s.+/gm) || []).join('\n');
+      const exports = (f.content.match(/^export\s.+/gm) || []).join('\n');
+      return imports || exports ? `### ${f.path}\nImports: ${imports || '(none)'}\nExports: ${exports || '(none)'}` : '';
+    }).filter(Boolean).join('\n\n');
+
+  const analyzeModel = createModel({ temperature: 0.2, maxTokens: 16384 });
 
   const userMessage = `Detect cross-file issues in this codebase that compilers and linters miss.
 
@@ -198,7 +241,12 @@ export async function selfHealerNode(
 Total files: ${codeFiles.length}
 Total entities: ${codeEntities.length}
 
-## Imports & Exports (all .ts/.tsx/.js/.jsx files)
+${businessContextPrompt}${graphPrompt}
+
+## Full Source Code for Deep Analysis
+${deepContext}
+
+## Import/Export Map (all files)
 ${importExportSummary}
 
 ## Package Files
@@ -209,9 +257,6 @@ ${envContext}
 
 ## Config Files
 ${configContext}
-
-## Source Code Samples
-${sampleCode}
 
 ## Entities
 ${codeEntities.slice(0, 80).map((e: any) => `${e.type} ${e.name} (${e.file})`).join('\n')}
@@ -224,14 +269,14 @@ Respond with ONLY valid JSON, no markdown fencing.`;
   eventPublisher?.emit('qa:agent.streaming', {
     runId,
     agent: 'self-healer',
-    text: 'Sending to Claude for cross-file analysis...',
+    text: 'Phase B: Deep cross-file analysis with full source code...',
   });
 
   const startMs = Date.now();
-  const response = await throttledInvoke(model, [
+  const response = await throttledInvoke(analyzeModel, [
     new SystemMessage(SELF_HEALER_SYSTEM_PROMPT),
     new HumanMessage(userMessage),
-  ], 'self-healer', eventPublisher, runId);
+  ], 'self-healer-analyze', eventPublisher, runId);
   const durationMs = Date.now() - startMs;
 
   const responseText = typeof response.content === 'string' ? response.content : '';
@@ -410,14 +455,20 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     return true;
   });
 
-  // Recalculate health score based on verified findings only
-  const verifiedIssueCount = report.typeMismatches.length + report.brokenImports.length +
-    report.missingDeps.length + report.configIssues.length;
-  if (verifiedIssueCount === 0) {
-    report.healthScore = Math.max(report.healthScore, 90);
-  } else {
-    report.healthScore = Math.max(report.healthScore, Math.round(100 - verifiedIssueCount * 5));
-  }
+  // Recalculate health score with calibrated scoring
+  const allFindings = [
+    ...report.typeMismatches.map((f: any) => ({ severity: f.severity || 'medium', confidence: 0.8, verified: true })),
+    ...report.brokenImports.map((f: any) => ({ severity: f.severity || 'medium', confidence: 0.8, verified: true })),
+    ...report.missingDeps.map(() => ({ severity: 'medium' as const, confidence: 0.7, verified: true })),
+    ...report.configIssues.map((f: any) => ({ severity: f.severity || 'medium', confidence: 0.8, verified: true })),
+  ];
+  const { score: calibratedScore } = calculateCalibratedScore(allFindings, codeFiles.length);
+  report.healthScore = calibratedScore;
+
+  // Enrich findings with blast radius from graph context
+  enrichFindingsWithBlastRadius(report.typeMismatches, graphContext.dependentGraph);
+  enrichFindingsWithBlastRadius(report.brokenImports, graphContext.dependentGraph);
+  enrichFindingsWithBlastRadius(report.configIssues, graphContext.dependentGraph);
 
   // Update auto-fixes to only reference verified issues
   report.autoFixes = report.autoFixes.filter(fix => {
