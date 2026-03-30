@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Optional
 import dspy
 import os
 import json
@@ -9,6 +9,13 @@ from modules.behavioral import FrontendBehavioralAnalysis, BackendBehavioralAnal
 from modules.synthesis import FullStackSynthesis, FullStackAudit
 from modules.gherkin import GherkinGeneration
 from modules.changes import ChangeAnalysis
+from modules.security_expert import SecurityExpertChain
+from modules.frontend_expert import FrontendExpertChain
+from modules.backend_expert import BackendExpertChain
+from modules.middleware_expert import MiddlewareExpertChain
+from modules.quality_architect import QualityArchitectChain
+from modules.test_strategist import TestStrategistChain
+from modules.product_visionary import ProductVisionaryChain
 
 app = FastAPI(title="Visionary Agent", version="2.0.0")
 
@@ -447,6 +454,99 @@ def analyze_fullstack_audit(req: FullStackAuditRequest):
     if hasattr(result, "error"):
         response["error"] = result.error
     return response
+
+
+# --- Expert Chain Request/Response Models -----------------------------------
+
+class ExpertChainRequest(BaseModel):
+    source_files: str = Field(description="Source code files with paths and content (max 100K chars)")
+
+
+class ProductVisionaryRequest(BaseModel):
+    source_files: str = Field(description="Source code files with paths and content (max 100K chars)")
+    expert_reports: str = Field(
+        default="{}",
+        description="JSON object with reports from other experts: {security, frontend, backend, middleware, quality, testing}",
+    )
+
+
+class ExpertChainResponse(BaseModel):
+    report: Any = Field(description="Expert analysis report (JSON object or string)")
+    steps: list = Field(default=[], description="Chain-of-thought steps executed")
+    sub_agents_needed: list = Field(default=[], description="Sub-agent tasks to spawn")
+
+
+def _run_expert_chain(chain, source_files: str, **kwargs) -> dict:
+    """Shared helper to run an expert chain and normalize the response."""
+    try:
+        result = chain(source_files=source_files, **kwargs)
+    except Exception as e:
+        return {"report": {"error": str(e)}, "steps": [], "sub_agents_needed": []}
+
+    # Parse report if it's a JSON string
+    report = result.report if hasattr(result, "report") else "{}"
+    if isinstance(report, str):
+        try:
+            report = json.loads(report)
+        except Exception:
+            report = {"raw": report}
+
+    steps = result.steps if hasattr(result, "steps") else []
+
+    sub_agents = "[]"
+    if hasattr(result, "sub_agents_needed"):
+        sub_agents = result.sub_agents_needed
+    if isinstance(sub_agents, str):
+        try:
+            sub_agents = json.loads(sub_agents)
+        except Exception:
+            sub_agents = []
+
+    return {"report": report, "steps": steps, "sub_agents_needed": sub_agents}
+
+
+# --- Expert Chain Endpoints -------------------------------------------------
+
+@app.post("/analyze/security-expert")
+def analyze_security_expert(req: ExpertChainRequest):
+    chain = SecurityExpertChain()
+    return _run_expert_chain(chain, source_files=req.source_files)
+
+
+@app.post("/analyze/frontend-expert")
+def analyze_frontend_expert(req: ExpertChainRequest):
+    chain = FrontendExpertChain()
+    return _run_expert_chain(chain, source_files=req.source_files)
+
+
+@app.post("/analyze/backend-expert")
+def analyze_backend_expert(req: ExpertChainRequest):
+    chain = BackendExpertChain()
+    return _run_expert_chain(chain, source_files=req.source_files)
+
+
+@app.post("/analyze/middleware-expert")
+def analyze_middleware_expert(req: ExpertChainRequest):
+    chain = MiddlewareExpertChain()
+    return _run_expert_chain(chain, source_files=req.source_files)
+
+
+@app.post("/analyze/quality-architect")
+def analyze_quality_architect(req: ExpertChainRequest):
+    chain = QualityArchitectChain()
+    return _run_expert_chain(chain, source_files=req.source_files)
+
+
+@app.post("/analyze/test-strategist")
+def analyze_test_strategist(req: ExpertChainRequest):
+    chain = TestStrategistChain()
+    return _run_expert_chain(chain, source_files=req.source_files)
+
+
+@app.post("/analyze/product-visionary")
+def analyze_product_visionary(req: ProductVisionaryRequest):
+    chain = ProductVisionaryChain()
+    return _run_expert_chain(chain, source_files=req.source_files, expert_reports=req.expert_reports)
 
 
 if __name__ == "__main__":
