@@ -177,7 +177,12 @@ export function useQARun(): UseQARunReturn {
     setStatus(run.status);
     setAgents(run.agents?.length ? run.agents : DEFAULT_AGENTS);
     setTestResults(run.testResults || []);
-    setMutation(run.mutation || DEFAULT_MUTATION);
+    const runMutation = run.mutation || DEFAULT_MUTATION;
+    // Handle mutationScore at top level (historical runs) vs nested mutation.score
+    if (runMutation.score === 0 && (run as any).mutationScore) {
+      runMutation.score = (run as any).mutationScore;
+    }
+    setMutation(runMutation);
     setTotalTests(run.totalTests || 0);
     setPassedTests(run.passedTests || 0);
     setFailedTests(run.failedTests || 0);

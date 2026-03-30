@@ -78,7 +78,7 @@ export const RepositoryIngestionDashboard: React.FC = () => {
     const loadPastRuns = async () => {
       if (jobHistory.length > 0) return; // Already have history
       try {
-        const res = await fetch('/api/v1/qa/runs');
+        const res = await fetch('/qa/runs');
         if (!res.ok) return;
         const data = await res.json();
         if (!data.runs?.length) return;
