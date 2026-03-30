@@ -211,8 +211,8 @@ const MutationTrends: React.FC = () => {
         <TabPanels>
           {/* Mutation Score Trend */}
           <TabPanel px={0}>
-            <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4} h="280px">
-              <ResponsiveContainer width="100%" height="100%">
+            <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4} h="280px" minW={0} minH={0}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                 <AreaChart data={scoreData}>
                   <defs>
                     <linearGradient id="scoreGradient" x1="0" y1="0" x2="0" y2="1">
@@ -236,8 +236,8 @@ const MutationTrends: React.FC = () => {
 
           {/* Test Volume */}
           <TabPanel px={0}>
-            <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4} h="280px">
-              <ResponsiveContainer width="100%" height="100%">
+            <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4} h="280px" minW={0} minH={0}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                 <BarChart data={testData}>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                   <XAxis dataKey="run" fontSize={11} />
@@ -256,8 +256,8 @@ const MutationTrends: React.FC = () => {
 
           {/* Iterations per Run */}
           <TabPanel px={0}>
-            <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4} h="280px">
-              <ResponsiveContainer width="100%" height="100%">
+            <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={4} h="280px" minW={0} minH={0}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                 <BarChart data={iterationData}>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                   <XAxis dataKey="run" fontSize={11} />
