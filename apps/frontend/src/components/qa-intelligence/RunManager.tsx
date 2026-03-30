@@ -315,6 +315,8 @@ const RepoRow: React.FC<{
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
+  const hoverBg = useColorModeValue('gray.50', 'gray.700');
+  const expandedBg = useColorModeValue('gray.50', 'gray.900');
 
   const { latestRun } = group;
   const mutScore = group.avgMutationScore;
@@ -324,7 +326,7 @@ const RepoRow: React.FC<{
     <>
       <Tr
         bg={cardBg}
-        _hover={{ bg: useColorModeValue('gray.50', 'gray.700') }}
+        _hover={{ bg: hoverBg }}
         cursor="pointer"
         onClick={() => setExpanded(!expanded)}
       >
@@ -420,7 +422,7 @@ const RepoRow: React.FC<{
       {expanded && (
         <Tr>
           <Td colSpan={7} p={0}>
-            <Box bg={useColorModeValue('gray.50', 'gray.900')} px={4} py={3}>
+            <Box bg={expandedBg} px={4} py={3}>
               <Text fontSize="xs" fontWeight="bold" mb={2} color={subtextColor}>
                 Run History ({group.runs.length} runs)
               </Text>
@@ -519,6 +521,7 @@ const RunManager: React.FC = () => {
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
   const bgColor = useColorModeValue('gray.50', 'gray.900');
+  const theadBg = useColorModeValue('gray.50', 'gray.700');
 
   const fetchRuns = useCallback(async (showRefreshSpinner = false) => {
     if (showRefreshSpinner) setRefreshing(true);
@@ -650,7 +653,7 @@ const RunManager: React.FC = () => {
           <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" overflow="hidden">
             <Box overflowX="auto">
               <Table variant="simple" size="sm">
-                <Thead bg={useColorModeValue('gray.50', 'gray.700')}>
+                <Thead bg={theadBg}>
                   <Tr>
                     <Th>Repository</Th>
                     <Th>Last Run</Th>
