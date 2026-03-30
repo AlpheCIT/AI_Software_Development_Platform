@@ -102,11 +102,37 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
   }
 
   const panels = [
-    { key: 'self-healer', label: 'Self-Healer', icon: Wrench, color: 'pink', data: selfHealing, score: selfHealing?.healthScore, component: selfHealing && selfHealing.status !== 'failed' && selfHealing.status !== 'timeout' && selfHealing.status !== 'not-run' ? <ErrorBoundary fallbackTitle="Self-Healer report failed to render"><SelfHealerPanel report={selfHealing} /></ErrorBoundary> : null },
-    { key: 'api-validator', label: 'API Validator', icon: Shield, color: 'orange', data: apiValidation, score: apiValidation?.apiHealthScore, component: apiValidation && apiValidation.status !== 'failed' && apiValidation.status !== 'timeout' && apiValidation.status !== 'not-run' ? <ErrorBoundary fallbackTitle="API Validator report failed to render"><APIValidatorPanel report={apiValidation} /></ErrorBoundary> : null },
-    { key: 'coverage-auditor', label: 'Coverage Auditor', icon: Layers, color: 'blue', data: coverageAudit, score: coverageAudit?.coverageScore, component: coverageAudit && coverageAudit.status !== 'failed' && coverageAudit.status !== 'timeout' && coverageAudit.status !== 'not-run' ? <ErrorBoundary fallbackTitle="Coverage Auditor report failed to render"><CoverageAuditorPanel report={coverageAudit} /></ErrorBoundary> : null },
-    { key: 'ui-ux-analyst', label: 'UI/UX Analyst', icon: Eye, color: 'purple', data: uiAudit, score: uiAudit?.accessibilityScore, component: uiAudit && uiAudit.status !== 'failed' && uiAudit.status !== 'timeout' && uiAudit.status !== 'not-run' ? <ErrorBoundary fallbackTitle="UI/UX Analyst report failed to render"><UIUXAnalystPanel report={uiAudit} /></ErrorBoundary> : null },
+    { key: 'self-healer', label: 'Self-Healer', icon: Wrench, color: 'pink', data: selfHealing, score: selfHealing?.healthScore },
+    { key: 'api-validator', label: 'API Validator', icon: Shield, color: 'orange', data: apiValidation, score: apiValidation?.apiHealthScore },
+    { key: 'coverage-auditor', label: 'Coverage Auditor', icon: Layers, color: 'blue', data: coverageAudit, score: coverageAudit?.coverageScore },
+    { key: 'ui-ux-analyst', label: 'UI/UX Analyst', icon: Eye, color: 'purple', data: uiAudit, score: uiAudit?.accessibilityScore },
   ];
+
+  // Lazy-render panel content only when accordion is expanded
+  const [expandedIndices, setExpandedIndices] = useState<number[]>([]);
+
+  function renderPanelContent(panel: typeof panels[number], index: number) {
+    // Only render if this panel is expanded
+    if (!expandedIndices.includes(index)) return null;
+
+    const report = panel.data as any;
+    if (!report || report.status === 'failed' || report.status === 'timeout' || report.status === 'not-run') {
+      return renderAgentFallback(panel);
+    }
+
+    const PanelMap: Record<string, React.ReactNode> = {
+      'self-healer': <SelfHealerPanel report={selfHealing!} />,
+      'api-validator': <APIValidatorPanel report={apiValidation!} />,
+      'coverage-auditor': <CoverageAuditorPanel report={coverageAudit!} />,
+      'ui-ux-analyst': <UIUXAnalystPanel report={uiAudit!} />,
+    };
+
+    return (
+      <ErrorBoundary fallbackTitle={`${panel.label} report failed to render`}>
+        {PanelMap[panel.key] || renderAgentFallback(panel)}
+      </ErrorBoundary>
+    );
+  }
 
   /** Render a status-aware fallback for agents that didn't produce a full report */
   function renderAgentFallback(panel: typeof panels[number]) {
@@ -144,8 +170,8 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
   }
 
   return (
-    <Accordion allowMultiple defaultIndex={[0]}>
-      {panels.map(panel => (
+    <Accordion allowMultiple index={expandedIndices} onChange={(indices) => setExpandedIndices(indices as number[])}>
+      {panels.map((panel, index) => (
         <AccordionItem key={panel.key} border="1px solid" borderColor={useColorModeValue('gray.200', 'gray.600')} borderRadius="lg" mb={3} overflow="hidden">
           <AccordionButton py={3} _hover={{ bg: `${panel.color}.50` }}>
             <HStack flex={1} spacing={3}>
@@ -156,7 +182,7 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
             <AccordionIcon />
           </AccordionButton>
           <AccordionPanel pb={4}>
-            {panel.component || renderAgentFallback(panel)}
+            {renderPanelContent(panel, index)}
           </AccordionPanel>
         </AccordionItem>
       ))}
