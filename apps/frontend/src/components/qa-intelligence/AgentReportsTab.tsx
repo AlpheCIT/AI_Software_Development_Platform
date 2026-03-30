@@ -168,10 +168,12 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
     return null;
   }
 
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+
   return (
     <Accordion allowMultiple index={expandedIndices} onChange={(indices) => setExpandedIndices(indices as number[])}>
       {panels.map((panel, index) => (
-        <AccordionItem key={panel.key} border="1px solid" borderColor={useColorModeValue('gray.200', 'gray.600')} borderRadius="lg" mb={3} overflow="hidden">
+        <AccordionItem key={panel.key} border="1px solid" borderColor={borderColor} borderRadius="lg" mb={3} overflow="hidden">
           <AccordionButton py={3} _hover={{ bg: `${panel.color}.50` }}>
             <HStack flex={1} spacing={3}>
               <panel.icon size={18} />
