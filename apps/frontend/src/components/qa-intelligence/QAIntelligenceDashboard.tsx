@@ -455,7 +455,7 @@ const QAIntelligenceDashboard: React.FC = () => {
         )}
 
         {/* ═══ ZONE 3: Intelligence Panels ═══ */}
-        <Tabs variant="enclosed" colorScheme="blue" size="sm">
+        <Tabs variant="enclosed" colorScheme="blue" size="sm" isLazy>
           <TabList>
             <Tab>
               <HStack spacing={1}>
