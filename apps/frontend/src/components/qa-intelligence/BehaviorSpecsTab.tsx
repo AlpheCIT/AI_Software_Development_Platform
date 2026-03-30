@@ -276,6 +276,22 @@ export default function BehaviorSpecsTab({ runId }: BehaviorSpecsTabProps) {
   const middlewareCount = summary.middlewareCount ||
     ((specs.middleware?.global?.length || 0) + (specs.middleware?.perRoute?.length || 0));
 
+  // Show info alert when all data is zeros (DSPy service not available)
+  if (screenCount === 0 && routeCount === 0 && flowCount === 0) {
+    return (
+      <Alert status="info" borderRadius="lg" variant="left-accent">
+        <AlertIcon />
+        <Box>
+          <Text fontWeight="bold" fontSize="sm">Behavioral specs require the DSPy service</Text>
+          <Text fontSize="sm" mt={1}>
+            The DSPy-powered behavioral analysis service must be running to generate screen, route, and flow documentation.
+            Start the DSPy service and re-run the QA pipeline to populate behavioral specifications.
+          </Text>
+        </Box>
+      </Alert>
+    );
+  }
+
   return (
     <VStack spacing={4} align="stretch">
       {/* Summary banner */}

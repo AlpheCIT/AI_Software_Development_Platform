@@ -27,6 +27,7 @@ import SelfHealerPanel from './SelfHealerPanel';
 import APIValidatorPanel from './APIValidatorPanel';
 import CoverageAuditorPanel from './CoverageAuditorPanel';
 import UIUXAnalystPanel from './UIUXAnalystPanel';
+import { ErrorBoundary } from '../ErrorBoundary';
 
 const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
@@ -101,10 +102,10 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
   }
 
   const panels = [
-    { key: 'self-healer', label: 'Self-Healer', icon: Wrench, color: 'pink', data: selfHealing, score: selfHealing?.healthScore, component: selfHealing && selfHealing.status !== 'failed' && selfHealing.status !== 'timeout' && selfHealing.status !== 'not-run' ? <SelfHealerPanel report={selfHealing} /> : null },
-    { key: 'api-validator', label: 'API Validator', icon: Shield, color: 'orange', data: apiValidation, score: apiValidation?.apiHealthScore, component: apiValidation && apiValidation.status !== 'failed' && apiValidation.status !== 'timeout' && apiValidation.status !== 'not-run' ? <APIValidatorPanel report={apiValidation} /> : null },
-    { key: 'coverage-auditor', label: 'Coverage Auditor', icon: Layers, color: 'blue', data: coverageAudit, score: coverageAudit?.coverageScore, component: coverageAudit && coverageAudit.status !== 'failed' && coverageAudit.status !== 'timeout' && coverageAudit.status !== 'not-run' ? <CoverageAuditorPanel report={coverageAudit} /> : null },
-    { key: 'ui-ux-analyst', label: 'UI/UX Analyst', icon: Eye, color: 'purple', data: uiAudit, score: uiAudit?.accessibilityScore, component: uiAudit && uiAudit.status !== 'failed' && uiAudit.status !== 'timeout' && uiAudit.status !== 'not-run' ? <UIUXAnalystPanel report={uiAudit} /> : null },
+    { key: 'self-healer', label: 'Self-Healer', icon: Wrench, color: 'pink', data: selfHealing, score: selfHealing?.healthScore, component: selfHealing && selfHealing.status !== 'failed' && selfHealing.status !== 'timeout' && selfHealing.status !== 'not-run' ? <ErrorBoundary fallbackTitle="Self-Healer report failed to render"><SelfHealerPanel report={selfHealing} /></ErrorBoundary> : null },
+    { key: 'api-validator', label: 'API Validator', icon: Shield, color: 'orange', data: apiValidation, score: apiValidation?.apiHealthScore, component: apiValidation && apiValidation.status !== 'failed' && apiValidation.status !== 'timeout' && apiValidation.status !== 'not-run' ? <ErrorBoundary fallbackTitle="API Validator report failed to render"><APIValidatorPanel report={apiValidation} /></ErrorBoundary> : null },
+    { key: 'coverage-auditor', label: 'Coverage Auditor', icon: Layers, color: 'blue', data: coverageAudit, score: coverageAudit?.coverageScore, component: coverageAudit && coverageAudit.status !== 'failed' && coverageAudit.status !== 'timeout' && coverageAudit.status !== 'not-run' ? <ErrorBoundary fallbackTitle="Coverage Auditor report failed to render"><CoverageAuditorPanel report={coverageAudit} /></ErrorBoundary> : null },
+    { key: 'ui-ux-analyst', label: 'UI/UX Analyst', icon: Eye, color: 'purple', data: uiAudit, score: uiAudit?.accessibilityScore, component: uiAudit && uiAudit.status !== 'failed' && uiAudit.status !== 'timeout' && uiAudit.status !== 'not-run' ? <ErrorBoundary fallbackTitle="UI/UX Analyst report failed to render"><UIUXAnalystPanel report={uiAudit} /></ErrorBoundary> : null },
   ];
 
   /** Render a status-aware fallback for agents that didn't produce a full report */
