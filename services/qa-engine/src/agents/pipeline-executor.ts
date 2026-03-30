@@ -347,6 +347,9 @@ async function runSingleAgent(
 
     failedAgents.add(agent.id);
 
+    // Always store a result entry for failed agents so downstream persistence can record them
+    results[agent.id] = { __failed: true, status, error: err?.message || String(err), durationMs };
+
     executionLog.push({
       agentId: agent.id,
       agentName: agent.name,
