@@ -207,6 +207,7 @@ export default function BehaviorExportButton({ runId }: BehaviorExportButtonProp
   const toast = useToast();
 
   async function fetchSpecs(): Promise<any | null> {
+    if (!QA_ENGINE_URL) return null;
     try {
       let effectiveRunId = runId;
       if (!effectiveRunId) {
@@ -219,10 +220,8 @@ export default function BehaviorExportButton({ runId }: BehaviorExportButtonProp
       }
       if (!effectiveRunId) return null;
 
-      let response = await fetch(`${QA_ENGINE_URL}/qa/behavioral-specs/${effectiveRunId}`);
-      if (!response.ok) {
-        response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`);
-      }
+      // Skip behavioral-specs (404), go directly to product endpoint
+      const response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`);
       if (response.ok) {
         const data = await response.json();
         return data.behavioralSpecs || data.specs || data;

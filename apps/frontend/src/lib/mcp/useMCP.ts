@@ -162,35 +162,8 @@ export const useMCP = (): UseMCPReturn => {
         // Gateway down, try direct
       }
 
-      // Try 2: Direct ArangoDB query via QA engine's DB endpoint
-      if (!result || !result.collections?.length) {
-        try {
-          const dbResponse = await fetch('/api/v1/qa/database/collections');
-          if (dbResponse.ok) {
-            const data = await dbResponse.json();
-            if (data.collections?.length) {
-              result = data;
-            }
-          }
-        } catch {
-          // QA engine doesn't expose this endpoint
-        }
-      }
-
-      // Try 3: Count from ArangoDB via ingestion service
-      if (!result || !result.collections?.length) {
-        try {
-          const ingestionResponse = await fetch('/api/v1/ingestion/status');
-          if (ingestionResponse.ok) {
-            const data = await ingestionResponse.json();
-            if (data.collections) {
-              result = { collections: data.collections };
-            }
-          }
-        } catch {
-          // Ingestion service not available
-        }
-      }
+      // Try 2 and Try 3 removed: /api/v1/qa/database/collections (404) and
+      // /api/v1/ingestion/status (500) endpoints don't exist — skip to avoid console errors
 
       // Fallback: show that we have ArangoDB data from QA runs
       if (!result || !result.collections?.length) {
@@ -537,22 +510,35 @@ export const useMCP = (): UseMCPReturn => {
 
   // Load initial data — probe gateway first with a fast check to avoid console spam
   useEffect(() => {
-    if ((window as any).__apiGatewayDown) return;
+    if ((window as any).__apiGatewayDown) {
+      // Gateway known to be down — just load from QA engine
+      refreshAnalytics();
+      refreshCollections();
+      return;
+    }
     let cancelled = false;
 
     const init = async () => {
+      const gatewayUrl = import.meta.env.VITE_API_BASE_URL;
+      // If no gateway URL is configured, skip the health check entirely
+      if (!gatewayUrl) {
+        (window as any).__apiGatewayDown = true;
+        if (!cancelled) refreshAnalytics();
+        if (!cancelled) refreshCollections();
+        return;
+      }
+
       // Fast probe: try to reach the gateway with a tiny timeout
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
-        await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'}/health`, {
+        await fetch(`${gatewayUrl}/health`, {
           signal: controller.signal,
         });
         clearTimeout(timeout);
       } catch {
         // Gateway is down — set flag and skip graph/analytics API calls
         (window as any).__apiGatewayDown = true;
-        console.warn('API gateway unreachable — running in standalone mode (QA Engine on :3005)');
         // Still load analytics from QA engine
         if (!cancelled) refreshAnalytics();
         // Still try to load collections directly from ArangoDB

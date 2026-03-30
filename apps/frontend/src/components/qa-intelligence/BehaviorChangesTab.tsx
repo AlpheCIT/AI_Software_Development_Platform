@@ -109,47 +109,51 @@ export default function BehaviorChangesTab({ runId }: BehaviorChangesTabProps) {
   const codeBg = useColorModeValue('gray.50', 'gray.900');
 
   useEffect(() => {
-    loadChanges();
-  }, [runId]);
-
-  async function loadChanges() {
-    setLoading(true);
-    setError(null);
-    try {
-      let effectiveRunId = runId;
-
-      if (!effectiveRunId) {
-        try {
-          const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
-          if (runsRes.ok) {
-            const runsData = await runsRes.json();
-            const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
-            if (completed[0]) {
-              effectiveRunId = completed[0]._key || completed[0].runId;
-            }
-          }
-        } catch { /* ignore */ }
-      }
-
-      if (!effectiveRunId) {
-        setChanges(null);
-        setLoading(false);
-        return;
-      }
-
-      const response = await fetch(`${QA_ENGINE_URL}/qa/behavioral-changes/${effectiveRunId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setChanges(data.changes || data);
-      } else {
-        setError('No behavioral changes data available. Run two analyses to see diffs.');
-      }
-    } catch {
-      setError('Failed to load behavioral changes.');
-    } finally {
-      setLoading(false);
+    if (!QA_ENGINE_URL) {
+      setChanges(null);
+      return;
     }
-  }
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function loadChanges() {
+      setLoading(true);
+      setError(null);
+      try {
+        let effectiveRunId = runId;
+
+        if (!effectiveRunId) {
+          try {
+            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+            if (runsRes.ok) {
+              const runsData = await runsRes.json();
+              const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+              if (completed[0]) {
+                effectiveRunId = completed[0]._key || completed[0].runId;
+              }
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (!effectiveRunId || cancelled) {
+          if (!cancelled) setChanges(null);
+          return;
+        }
+
+        // behavioral-changes endpoint does not exist yet - show info message instead of 404 loop
+        if (!cancelled) {
+          setError('No behavioral changes data available. Run two analyses to see diffs.');
+        }
+      } catch {
+        if (!cancelled) setError('Failed to load behavioral changes.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadChanges();
+    return () => { cancelled = true; controller.abort(); };
+  }, [runId]);
 
   function toggleNew(idx: number) {
     setExpandedNew(prev => {

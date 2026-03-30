@@ -122,70 +122,78 @@ const FileDetail: React.FC<FileDetailProps> = ({ file, entities, testCount }) =>
   const [behaviorLoading, setBehaviorLoading] = useState(false);
 
   useEffect(() => {
-    loadFileBehavior();
-  }, [file.path]);
+    if (!QA_ENGINE_URL) {
+      setBehavior(null);
+      setBehaviorLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
 
-  async function loadFileBehavior() {
-    setBehaviorLoading(true);
-    try {
-      // Find latest completed run
-      const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
-      if (!runsRes.ok) { setBehaviorLoading(false); return; }
-      const runsData = await runsRes.json();
-      const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
-      if (!completed[0]) { setBehaviorLoading(false); return; }
-      const runId = completed[0]._key || completed[0].runId;
+    async function loadFileBehavior() {
+      setBehaviorLoading(true);
+      setBehavior(null);
+      try {
+        // Find latest completed run
+        const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+        if (!runsRes.ok || cancelled) { setBehaviorLoading(false); return; }
+        const runsData = await runsRes.json();
+        const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+        if (!completed[0] || cancelled) { setBehaviorLoading(false); return; }
+        const runId = completed[0]._key || completed[0].runId;
 
-      // Fetch behavioral specs
-      let response = await fetch(`${QA_ENGINE_URL}/qa/behavioral-specs/${runId}`);
-      if (!response.ok) {
-        response = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`);
-      }
-      if (!response.ok) { setBehaviorLoading(false); return; }
+        // Skip behavioral-specs (404), go directly to product endpoint
+        const response = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`, { signal: controller.signal });
+        if (!response.ok || cancelled) { if (!cancelled) setBehaviorLoading(false); return; }
 
-      const data = await response.json();
-      const specs = data.behavioralSpecs || data.specs || data;
-      const filePath = file.path.toLowerCase();
+        const data = await response.json();
+        if (cancelled) return;
+        const specs = data.behavioralSpecs || data.specs || data;
+        const filePath = file.path.toLowerCase();
 
-      // Extract behavior relevant to this file
-      const result: FileBehavior = {};
+        // Extract behavior relevant to this file
+        const result: FileBehavior = {};
 
-      // Check frontend screens
-      for (const screen of specs.frontend?.screens || []) {
-        if (screen.path?.toLowerCase().includes(filePath) || filePath.includes(screen.path?.toLowerCase() || '')) {
-          result.description = screen.description || `Screen: ${screen.name} with ${screen.elements?.length || 0} interactive elements`;
-          const scenarios = (screen.elements || []).map(
-            (el: any) => `Scenario: User interacts with ${el.name}\n  Given the user is on "${screen.name}"\n  Then they see "${el.name}" (${el.type})`
-          );
-          if (scenarios.length > 0) result.gherkinScenarios = scenarios;
-          break;
-        }
-      }
-
-      // Check backend routes
-      if (!result.description) {
-        for (const rf of specs.backend?.routes || []) {
-          if (rf.filePath?.toLowerCase().includes(filePath) || filePath.includes(rf.filePath?.toLowerCase() || '')) {
-            result.description = `Route handler with ${rf.endpoints?.length || 0} endpoints`;
+        // Check frontend screens
+        for (const screen of specs.frontend?.screens || []) {
+          if (screen.path?.toLowerCase().includes(filePath) || filePath.includes(screen.path?.toLowerCase() || '')) {
+            result.description = screen.description || `Screen: ${screen.name} with ${screen.elements?.length || 0} interactive elements`;
+            const scenarios = (screen.elements || []).map(
+              (el: any) => `Scenario: User interacts with ${el.name}\n  Given the user is on "${screen.name}"\n  Then they see "${el.name}" (${el.type})`
+            );
+            if (scenarios.length > 0) result.gherkinScenarios = scenarios;
             break;
           }
         }
-      }
 
-      // Find flows this file participates in
-      const matchingFlows = (specs.flows || []).filter((flow: any) =>
-        flow.steps?.some((step: any) => step.filePath?.toLowerCase().includes(filePath))
-      );
-      if (matchingFlows.length > 0) {
-        result.flows = matchingFlows.map((f: any) => ({ name: f.name, stepCount: f.steps?.length || 0 }));
-      }
+        // Check backend routes
+        if (!result.description) {
+          for (const rf of specs.backend?.routes || []) {
+            if (rf.filePath?.toLowerCase().includes(filePath) || filePath.includes(rf.filePath?.toLowerCase() || '')) {
+              result.description = `Route handler with ${rf.endpoints?.length || 0} endpoints`;
+              break;
+            }
+          }
+        }
 
-      if (result.description || result.gherkinScenarios || result.flows) {
-        setBehavior(result);
-      }
-    } catch { /* ignore errors silently */ }
-    finally { setBehaviorLoading(false); }
-  }
+        // Find flows this file participates in
+        const matchingFlows = (specs.flows || []).filter((flow: any) =>
+          flow.steps?.some((step: any) => step.filePath?.toLowerCase().includes(filePath))
+        );
+        if (matchingFlows.length > 0) {
+          result.flows = matchingFlows.map((f: any) => ({ name: f.name, stepCount: f.steps?.length || 0 }));
+        }
+
+        if (!cancelled && (result.description || result.gherkinScenarios || result.flows)) {
+          setBehavior(result);
+        }
+      } catch { /* ignore errors silently */ }
+      finally { if (!cancelled) setBehaviorLoading(false); }
+    }
+
+    loadFileBehavior();
+    return () => { cancelled = true; controller.abort(); };
+  }, [file.path]);
 
   const risk = riskLabel(file.riskScore);
   const langColor = LANG_COLORS[file.language] || 'gray';
