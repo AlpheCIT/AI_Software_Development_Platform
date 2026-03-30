@@ -749,12 +749,22 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const productData = useQARunStore(s => s.productData);
+
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
 
-  // Fetch product data
+  // Prefer store data; fall back to direct fetch only if store is empty
   useEffect(() => {
+    // If store already has product data, use it directly
+    if (productData && (productData.roadmap || productData.codeQuality)) {
+      setData(productData);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -806,7 +816,7 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
       const interval = setInterval(fetchData, 10000);
       return () => clearInterval(interval);
     }
-  }, [runId]);
+  }, [runId, productData]);
 
   // Loading
   if (loading && !data) {

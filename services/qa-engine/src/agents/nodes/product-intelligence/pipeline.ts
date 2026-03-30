@@ -275,18 +275,27 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
   const skippedAgentsMeta = skippedAgentDefs.map(a => ({ id: a.id, name: a.name, reason: 'requirements not met' }));
 
   try {
-    await dbClient.upsertDocument('qa_runs', {
-      _key: runId,
-      selectedAgents: selectedAgentsMeta,
-      skippedAgents: skippedAgentsMeta,
-      repoProfile: profile,
-      executionLog: pipelineResult.executionLog,
-      pipelineDurationMs: pipelineResult.totalDurationMs,
-      pipelineSuccess: pipelineResult.success,
-      unifiedHealthScore: unifiedHealth,
-      selectedAgentIds: pipelineResult.selectedAgentIds || [],
+    const db = dbClient.db || dbClient;
+    await db.query({
+      query: `UPDATE @key WITH @data IN qa_runs`,
+      bindVars: {
+        key: runId,
+        data: {
+          executionLog: pipelineResult.executionLog || [],
+          unifiedHealthScore: unifiedHealth,
+          selectedAgents: selectedAgentsMeta,
+          skippedAgents: skippedAgentsMeta,
+          repoProfile: profile,
+          pipelineDurationMs: pipelineResult.totalDurationMs,
+          pipelineSuccess: pipelineResult.success,
+          selectedAgentIds: pipelineResult.selectedAgentIds || [],
+        },
+      },
     });
-  } catch { /* non-fatal — run doc may already exist */ }
+    console.log('[Pipeline] Saved executionLog + unifiedHealthScore to qa_runs');
+  } catch (err: any) {
+    console.error('[Pipeline] Failed to save to qa_runs:', err.message || err);
+  }
 
   return {
     businessContext, roadmap, research,

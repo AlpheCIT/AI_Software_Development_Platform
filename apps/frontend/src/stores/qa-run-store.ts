@@ -66,6 +66,9 @@ interface QARunStore {
   // Activity log (keep last 100)
   activityLog: ActivityLogEntry[];
 
+  // Product intelligence data (centralized for all components)
+  productData: any | null;
+
   // Recent runs for selector
   recentRuns: Array<any>;
 
@@ -81,6 +84,7 @@ interface QARunStore {
   setCodeHealth: (health: CodeHealth) => void;
   setRecentRuns: (runs: any[]) => void;
   setSelectedAgents: (selected: SelectedAgentInfo[], skipped: SkippedAgentInfo[]) => void;
+  setProductData: (data: any) => void;
   loadCompletedRun: (runData: any) => void;
   reset: () => void;
 }
@@ -101,6 +105,7 @@ export const useQARunStore = create<QARunStore>()(
       mutationScore: 0,
       codeHealth: null,
       agentStatuses: {},
+      productData: null,
       selectedAgents: [],
       skippedAgents: [],
       activityLog: [],
@@ -117,6 +122,7 @@ export const useQARunStore = create<QARunStore>()(
         failedTests: 0,
         syntaxValid: 0,
         mutationScore: 0,
+        productData: null,
         agentStatuses: {},
         selectedAgents: [],
         skippedAgents: [],
@@ -162,6 +168,8 @@ export const useQARunStore = create<QARunStore>()(
         lastUpdated: Date.now(),
       }),
 
+      setProductData: (data) => set({ productData: data, lastUpdated: Date.now() }),
+
       loadCompletedRun: (runData) => {
         // Hydrate agent statuses from executionLog so they persist after navigation
         const agentStatuses: Record<string, AgentStatus> = {};
@@ -176,6 +184,24 @@ export const useQARunStore = create<QARunStore>()(
             completedAt: entry.completedAt ? new Date(entry.completedAt).toISOString() : undefined,
             result: entry.error ? { error: entry.error, duration: entry.durationMs } : undefined,
           };
+        }
+
+        // Infer agent statuses from data presence when executionLog is empty
+        if (Object.keys(agentStatuses).length === 0) {
+          if (runData.selfHealing) agentStatuses['self-healer'] = { status: 'completed' };
+          if (runData.apiValidation) agentStatuses['api-validator'] = { status: 'completed' };
+          if (runData.coverageAudit) agentStatuses['coverage-auditor'] = { status: 'completed' };
+          if (runData.uiAudit) agentStatuses['ui-ux-analyst'] = { status: 'completed' };
+          if (runData.codeQuality) agentStatuses['code-quality'] = { status: 'completed' };
+          // Mark QA pipeline agents as completed if tests exist
+          if (runData.testsGenerated > 0 || runData.totalTests > 0) {
+            agentStatuses['repo_ingester'] = { status: 'completed' };
+            agentStatuses['strategist'] = { status: 'completed' };
+            agentStatuses['generator'] = { status: 'completed' };
+            agentStatuses['critic'] = { status: 'completed' };
+            agentStatuses['executor'] = { status: 'completed' };
+            agentStatuses['mutation-verifier'] = { status: 'completed' };
+          }
         }
 
         set({
@@ -214,6 +240,7 @@ export const useQARunStore = create<QARunStore>()(
         syntaxValid: 0,
         mutationScore: 0,
         codeHealth: null,
+        productData: null,
         agentStatuses: {},
         selectedAgents: [],
         skippedAgents: [],
