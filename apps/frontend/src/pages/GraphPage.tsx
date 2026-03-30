@@ -255,6 +255,29 @@ export default function GraphPage() {
     );
   }
 
+  // Render empty data state
+  if (!isLoading && !error && graphData.nodes.length === 0) {
+    return (
+      <Box
+        height="100vh"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        flexDirection="column"
+        gap={4}
+        p={6}
+      >
+        <Heading size="lg" color="gray.500">No Graph Data Available</Heading>
+        <Text color="gray.400" textAlign="center" maxW="400px">
+          Ingest a repository first to populate the code graph.
+        </Text>
+        <Button onClick={loadGraphData} colorScheme="blue" variant="outline">
+          Refresh
+        </Button>
+      </Box>
+    );
+  }
+
   // Render error state
   if (error) {
     return (

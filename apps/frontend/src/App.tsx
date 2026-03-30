@@ -47,7 +47,10 @@ function App() {
               <Route path="/ingestion" element={<MainDashboard />} />
               <Route path="/graph" element={<MainDashboard />} />
               <Route path="/analytics" element={<MainDashboard />} />
-              
+              <Route path="/run-manager" element={<MainDashboard />} />
+              <Route path="/wiki" element={<MainDashboard />} />
+              <Route path="/qa-intelligence" element={<MainDashboard />} />
+
               {/* Catch all - redirect to main dashboard */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

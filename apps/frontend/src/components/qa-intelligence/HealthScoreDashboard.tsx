@@ -40,12 +40,14 @@ function ScoreGauge({
   icon: IconComponent,
   color,
   onClick,
+  reason,
 }: {
   score: number | null;
   label: string;
   icon: React.ElementType;
   color: string;
   onClick?: () => void;
+  reason?: string;
 }) {
   const bg = useColorModeValue('white', 'gray.750');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -98,12 +100,16 @@ function ScoreGauge({
       <Badge colorScheme={scoreColor} fontSize="2xs" mt={1}>
         {score === null ? 'N/A' : displayScore >= 80 ? 'Healthy' : displayScore >= 60 ? 'Needs Work' : 'Critical'}
       </Badge>
+      {score === null && reason && (
+        <Text fontSize="2xs" color="gray.400" mt={0.5} noOfLines={1}>{reason}</Text>
+      )}
     </Box>
   );
 }
 
 export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProps) {
   const [scores, setScores] = useState<HealthScores | null>(null);
+  const [unifiedScore, setUnifiedScore] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const bg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -141,6 +147,11 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
       const data = await qaService.getProductIntelligence(effectiveRunId);
       // Use unified health score breakdown when available, fall back to individual scores
       const unified = data.summary?.unifiedHealthScore;
+      if (unified?.score != null) {
+        setUnifiedScore(unified.score);
+      } else {
+        setUnifiedScore(null);
+      }
       setScores({
         codeQuality: unified?.breakdown?.['code-quality']?.score ?? data.summary?.codeHealthScore ?? null,
         selfHealing: unified?.breakdown?.['self-healer']?.score ?? data.summary?.selfHealingScore ?? null,
@@ -156,9 +167,10 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
 
   // Calculate overall health — prefer unified score from backend, fall back to simple average
   const scoreEntries = scores ? Object.values(scores).filter((s): s is number => s !== null) : [];
-  const overallHealth = scoreEntries.length > 0
+  const localAverage = scoreEntries.length > 0
     ? Math.round(scoreEntries.reduce((a, b) => a + b, 0) / scoreEntries.length)
     : null;
+  const overallHealth = unifiedScore ?? localAverage;
 
   const overallColor = overallHealth === null ? 'gray' : overallHealth >= 80 ? 'green' : overallHealth >= 60 ? 'yellow' : 'red';
 
@@ -201,15 +213,23 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
 
       {/* Score Gauges Grid */}
       <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 7 }} spacing={3}>
-        {gaugeConfigs.map(cfg => (
-          <ScoreGauge
-            key={cfg.key}
-            score={scores ? (scores as any)[cfg.key] : null}
-            label={cfg.label}
-            icon={cfg.icon}
-            color={cfg.color}
-          />
-        ))}
+        {gaugeConfigs.map(cfg => {
+          const scoreVal = scores ? (scores as any)[cfg.key] : null;
+          let reason: string | undefined;
+          if (scoreVal === null) {
+            reason = !scores ? 'No data for this run' : 'Agent did not run';
+          }
+          return (
+            <ScoreGauge
+              key={cfg.key}
+              score={scoreVal}
+              label={cfg.label}
+              icon={cfg.icon}
+              color={cfg.color}
+              reason={reason}
+            />
+          );
+        })}
       </SimpleGrid>
 
       {/* Legend */}

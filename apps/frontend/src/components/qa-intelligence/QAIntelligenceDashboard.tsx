@@ -308,7 +308,7 @@ const QAIntelligenceDashboard: React.FC = () => {
                   const runKey = run.id || (run as any)._key || (run as any).runId;
                   const date = run.startedAt ? new Date(run.startedAt).toLocaleString() : 'Unknown date';
                   const tests = run.totalTests || 0;
-                  const mutScore = run.mutation?.score || 0;
+                  const mutScore = (run as any).mutationScore ?? run.mutation?.score ?? 0;
                   const statusLabel = run.status === 'completed' ? '' : ` [${run.status}]`;
                   return (
                     <option key={runKey} value={runKey}>

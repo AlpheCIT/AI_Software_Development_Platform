@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Box,
   Grid,
@@ -45,10 +46,28 @@ import { RoleProvider } from '../context/RoleContext';
 import { useMCP } from '../lib/mcp/useMCP';
 import { useIngestionStore } from '../stores/ingestion-store';
 
+const ROUTE_TO_VIEW: Record<string, 'ingestion' | 'graph' | 'analytics' | 'qa-intelligence' | 'wiki' | 'run-manager'> = {
+  '/ingestion': 'ingestion',
+  '/graph': 'graph',
+  '/analytics': 'analytics',
+  '/qa-intelligence': 'qa-intelligence',
+  '/wiki': 'wiki',
+  '/run-manager': 'run-manager',
+};
+
 const MainDashboard: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<'ingestion' | 'graph' | 'analytics' | 'qa-intelligence' | 'wiki' | 'run-manager'>('qa-intelligence');
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const location = useLocation();
+
+  // Sync currentView with URL path
+  useEffect(() => {
+    const mapped = ROUTE_TO_VIEW[location.pathname];
+    if (mapped) {
+      setCurrentView(mapped);
+    }
+  }, [location.pathname]);
   
   const { 
     collections, 
