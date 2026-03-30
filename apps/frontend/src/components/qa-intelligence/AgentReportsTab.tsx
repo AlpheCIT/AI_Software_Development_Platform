@@ -41,6 +41,7 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
   const [coverageAudit, setCoverageAudit] = useState<CoverageAuditReport | null>(null);
   const [uiAudit, setUiAudit] = useState<UIAuditReport | null>(null);
   const [loading, setLoading] = useState(false);
+  const [expandedIndices, setExpandedIndices] = useState<number[]>([]);
 
   const bg = useColorModeValue('white', 'gray.800');
 
@@ -109,8 +110,6 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
   ];
 
   // Lazy-render panel content only when accordion is expanded
-  const [expandedIndices, setExpandedIndices] = useState<number[]>([]);
-
   function renderPanelContent(panel: typeof panels[number], index: number) {
     // Only render if this panel is expanded
     if (!expandedIndices.includes(index)) return null;
