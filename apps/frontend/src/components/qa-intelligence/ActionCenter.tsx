@@ -538,8 +538,9 @@ const ExecutiveView: React.FC<{ data: ProductData }> = ({ data }) => {
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
 
-  const healthScore = codeQuality?.overallHealth?.score ?? summary?.codeHealthScore ?? 0;
-  const healthGrade = codeQuality?.overallHealth?.grade ?? summary?.codeHealthGrade ?? 'N/A';
+  // Prefer unified health score (weighted across all agents), fall back to code-quality-only score
+  const healthScore = summary?.unifiedHealthScore?.score ?? codeQuality?.overallHealth?.score ?? summary?.codeHealthScore ?? 0;
+  const healthGrade = summary?.unifiedHealthScore?.grade ?? codeQuality?.overallHealth?.grade ?? summary?.codeHealthGrade ?? 'N/A';
   const mutationScore = 0; // Mutation score comes from test results, use summary if available
   const competitorCount = (research?.competitorIntel || []).length;
   const gameChangerCount = summary?.gameChangerTrends ?? 0;
@@ -842,8 +843,8 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
     );
   }
 
-  // Compute summary metrics for the banner
-  const codeHealthScore = data.codeQuality?.overallHealth?.score ?? data.summary?.codeHealthScore ?? 0;
+  // Compute summary metrics for the banner — prefer unified health
+  const codeHealthScore = data.summary?.unifiedHealthScore?.score ?? data.codeQuality?.overallHealth?.score ?? data.summary?.codeHealthScore ?? 0;
   const mutationScore = 0; // would come from test results
   const criticalSmellCount = (data.codeQuality?.codeSmells || []).filter(
     (s: any) => s.severity === 'critical'

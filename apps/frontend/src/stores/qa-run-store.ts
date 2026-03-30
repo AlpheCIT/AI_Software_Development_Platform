@@ -162,20 +162,48 @@ export const useQARunStore = create<QARunStore>()(
         lastUpdated: Date.now(),
       }),
 
-      loadCompletedRun: (runData) => set({
-        currentRunId: runData.runId || runData._key || runData.id,
-        runStatus: 'completed',
-        repoUrl: runData.repoUrl || '',
-        branch: runData.branch || '',
-        totalTests: runData.testsGenerated || runData.totalTests || 0,
-        passedTests: runData.testsPassed || runData.passedTests || 0,
-        failedTests: runData.testsFailed || runData.failedTests || 0,
-        syntaxValid: runData.testsExecuted || 0,
-        mutationScore: runData.mutationScore || runData.mutation?.score || 0,
-        selectedAgents: runData.selectedAgents || [],
-        skippedAgents: runData.skippedAgents || [],
-        lastUpdated: Date.now(),
-      }),
+      loadCompletedRun: (runData) => {
+        // Hydrate agent statuses from executionLog so they persist after navigation
+        const agentStatuses: Record<string, AgentStatus> = {};
+        for (const entry of (runData.executionLog || [])) {
+          const agentId = entry.agentId || entry.agent;
+          if (!agentId) continue;
+          agentStatuses[agentId] = {
+            status: entry.status === 'success' ? 'completed'
+                  : entry.status === 'failure' || entry.status === 'timeout' || entry.status === 'dependency-missing' ? 'error'
+                  : entry.status === 'skipped' ? 'error'
+                  : entry.status as AgentStatus['status'],
+            completedAt: entry.completedAt ? new Date(entry.completedAt).toISOString() : undefined,
+            result: entry.error ? { error: entry.error, duration: entry.durationMs } : undefined,
+          };
+        }
+
+        set({
+          currentRunId: runData.runId || runData._key || runData.id,
+          runStatus: 'completed',
+          repoUrl: runData.repoUrl || '',
+          branch: runData.branch || '',
+          totalTests: runData.testsGenerated || runData.totalTests || 0,
+          passedTests: runData.testsPassed || runData.passedTests || 0,
+          failedTests: runData.testsFailed || runData.failedTests || 0,
+          syntaxValid: runData.testsExecuted || 0,
+          mutationScore: runData.mutationScore || runData.mutation?.score || 0,
+          selectedAgents: runData.selectedAgents || [],
+          skippedAgents: runData.skippedAgents || [],
+          agentStatuses,
+          codeHealth: runData.unifiedHealthScore ? {
+            score: runData.unifiedHealthScore.score,
+            grade: runData.unifiedHealthScore.grade,
+            gradeDescription: '',
+            breakdown: Object.fromEntries(
+              Object.entries(runData.unifiedHealthScore.breakdown || {}).map(
+                ([k, v]: [string, any]) => [k, v.score]
+              )
+            ),
+          } : null,
+          lastUpdated: Date.now(),
+        });
+      },
 
       reset: () => set({
         currentRunId: null,

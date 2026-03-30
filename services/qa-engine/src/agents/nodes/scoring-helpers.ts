@@ -68,6 +68,58 @@ function getGrade(score: number): { grade: string; gradeDescription: string } {
 }
 
 /**
+ * Compute a single unified health score from all agent results.
+ * Each agent contributes a weighted score; agents that failed or didn't run are excluded
+ * and remaining weights are re-normalized.
+ */
+export function computeUnifiedHealthScore(
+  agentResults: Record<string, any>
+): { score: number; grade: string; breakdown: Record<string, { score: number; weight: number }> } {
+  const WEIGHTS: Record<string, number> = {
+    'code-quality': 0.25,
+    'self-healer': 0.20,
+    'api-validator': 0.20,
+    'coverage-auditor': 0.15,
+    'ui-ux-analyst': 0.10,
+    'mutation': 0.10,
+  };
+
+  const SCORE_EXTRACTORS: Record<string, (data: any) => number | null> = {
+    'code-quality': (d) => d?.overallHealth?.score ?? null,
+    'self-healer': (d) => d?.healthScore ?? null,
+    'api-validator': (d) => d?.apiHealthScore ?? null,
+    'coverage-auditor': (d) => d?.coverageScore ?? null,
+    'ui-ux-analyst': (d) => {
+      const a11y = d?.accessibilityScore ?? 0;
+      const ux = d?.uxScore ?? 0;
+      return (a11y || ux) ? Math.round((a11y + ux) / 2) : null;
+    },
+  };
+
+  let totalWeight = 0;
+  let weightedSum = 0;
+  const breakdown: Record<string, { score: number; weight: number }> = {};
+
+  for (const [agentId, weight] of Object.entries(WEIGHTS)) {
+    const result = agentResults[agentId];
+    if (!result || result.__failed) continue;
+
+    const extractor = SCORE_EXTRACTORS[agentId];
+    const score = extractor ? extractor(result) : null;
+    if (score !== null && score !== undefined) {
+      weightedSum += score * weight;
+      totalWeight += weight;
+      breakdown[agentId] = { score, weight };
+    }
+  }
+
+  const finalScore = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+  const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 60 ? 'C' : finalScore >= 40 ? 'D' : 'F';
+
+  return { score: finalScore, grade, breakdown };
+}
+
+/**
  * Enrich findings with blast radius information.
  */
 export function enrichFindingsWithBlastRadius(

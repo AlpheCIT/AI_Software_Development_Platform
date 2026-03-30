@@ -9,6 +9,7 @@ import { BusinessContext } from '../business-context-analyzer';
 import { agentRegistry, AgentContext } from '../../agent-registry.js';
 import { buildRepoProfile, selectAgents, RepoProfile } from '../../dynamic-router.js';
 import { executePipeline, ExecutionLogEntry } from '../../pipeline-executor.js';
+import { computeUnifiedHealthScore } from '../scoring-helpers.js';
 
 export interface DspySecurityFinding {
   type: string;
@@ -217,42 +218,32 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     },
   });
 
-  // Persist agent-specific reports (only for agents that actually produced results)
-  if (results['self-healer']) {
+  // ── Unified agent report save loop — ALWAYS creates a document for every agent ──
+  const AGENT_SAVE_MAP: Record<string, { collection: string; keyPrefix: string }> = {
+    'self-healer': { collection: 'qa_self_healing_reports', keyPrefix: 'selfheal' },
+    'api-validator': { collection: 'qa_api_validation_reports', keyPrefix: 'apivalidation' },
+    'coverage-auditor': { collection: 'qa_coverage_audit_reports', keyPrefix: 'coverage' },
+    'ui-ux-analyst': { collection: 'qa_ui_audit_reports', keyPrefix: 'uiaudit' },
+  };
+
+  for (const [agentId, config] of Object.entries(AGENT_SAVE_MAP)) {
     try {
-      await dbClient.upsertDocument('qa_self_healing_reports', {
-        _key: `selfheal_${runId}`,
-        repositoryId, runId, ...selfHealing,
-        createdAt: new Date().toISOString(),
+      const result = results[agentId];
+      const isFailed = !result || result.__failed;
+
+      await dbClient.upsertDocument(config.collection, {
+        _key: `${config.keyPrefix}_${runId}`,
+        runId,
+        repositoryId,
+        status: isFailed ? (result?.status || 'not-run') : 'completed',
+        error: isFailed ? (result?.error || null) : null,
+        duration: result?.durationMs || result?.duration || 0,
+        ...(isFailed ? {} : result),
+        timestamp: new Date().toISOString(),
       });
-    } catch { /* non-fatal */ }
-  }
-  if (results['api-validator']) {
-    try {
-      await dbClient.upsertDocument('qa_api_validation_reports', {
-        _key: `apivalidation_${runId}`,
-        repositoryId, runId, ...apiValidation,
-        createdAt: new Date().toISOString(),
-      });
-    } catch { /* non-fatal */ }
-  }
-  if (results['coverage-auditor']) {
-    try {
-      await dbClient.upsertDocument('qa_coverage_audit_reports', {
-        _key: `coverage_${runId}`,
-        repositoryId, runId, ...coverageAudit,
-        createdAt: new Date().toISOString(),
-      });
-    } catch { /* non-fatal */ }
-  }
-  if (results['ui-ux-analyst']) {
-    try {
-      await dbClient.upsertDocument('qa_ui_audit_reports', {
-        _key: `uiaudit_${runId}`,
-        repositoryId, runId, ...uiAudit,
-        createdAt: new Date().toISOString(),
-      });
-    } catch { /* non-fatal */ }
+    } catch (saveErr: any) {
+      console.error(`[Pipeline] Failed to save ${agentId} report:`, saveErr.message);
+    }
   }
 
   // Persist DSPy verified security findings (high-confidence, multi-step verified)
@@ -275,6 +266,10 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
     } catch { /* non-fatal */ }
   }
 
+  // ── Compute and store unified health score ──────────────────────────────
+  const unifiedHealth = computeUnifiedHealthScore(results);
+  console.log(`[Pipeline] Unified health: ${unifiedHealth.score}/100 (${unifiedHealth.grade}), agents: ${Object.keys(unifiedHealth.breakdown).join(', ')}`);
+
   // Persist selected/skipped agents metadata for the run
   const selectedAgentsMeta = selectedAgents.map(a => ({ id: a.id, name: a.name, track: a.track }));
   const skippedAgentsMeta = skippedAgentDefs.map(a => ({ id: a.id, name: a.name, reason: 'requirements not met' }));
@@ -288,6 +283,8 @@ IMPORTANT: Tailor your analysis to this specific application type. Generic findi
       executionLog: pipelineResult.executionLog,
       pipelineDurationMs: pipelineResult.totalDurationMs,
       pipelineSuccess: pipelineResult.success,
+      unifiedHealthScore: unifiedHealth,
+      selectedAgentIds: pipelineResult.selectedAgentIds || [],
     });
   } catch { /* non-fatal — run doc may already exist */ }
 

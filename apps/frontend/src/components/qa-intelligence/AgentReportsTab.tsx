@@ -16,6 +16,8 @@ import {
   AccordionIcon,
   HStack,
   Badge,
+  Alert,
+  AlertIcon,
   useColorModeValue,
 } from '@chakra-ui/react';
 import { Wrench, Shield, Layers, Eye } from 'lucide-react';
@@ -99,11 +101,46 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
   }
 
   const panels = [
-    { key: 'self-healer', label: 'Self-Healer Report', icon: Wrench, color: 'pink', data: selfHealing, score: selfHealing?.healthScore, component: selfHealing ? <SelfHealerPanel report={selfHealing} /> : null },
-    { key: 'api-validator', label: 'API Validator Report', icon: Shield, color: 'orange', data: apiValidation, score: apiValidation?.apiHealthScore, component: apiValidation ? <APIValidatorPanel report={apiValidation} /> : null },
-    { key: 'coverage-auditor', label: 'Coverage Auditor Report', icon: Layers, color: 'blue', data: coverageAudit, score: coverageAudit?.coverageScore, component: coverageAudit ? <CoverageAuditorPanel report={coverageAudit} /> : null },
-    { key: 'ui-ux-analyst', label: 'UI/UX Analyst Report', icon: Eye, color: 'purple', data: uiAudit, score: uiAudit?.accessibilityScore, component: uiAudit ? <UIUXAnalystPanel report={uiAudit} /> : null },
+    { key: 'self-healer', label: 'Self-Healer', icon: Wrench, color: 'pink', data: selfHealing, score: selfHealing?.healthScore, component: selfHealing && selfHealing.status !== 'failed' && selfHealing.status !== 'timeout' && selfHealing.status !== 'not-run' ? <SelfHealerPanel report={selfHealing} /> : null },
+    { key: 'api-validator', label: 'API Validator', icon: Shield, color: 'orange', data: apiValidation, score: apiValidation?.apiHealthScore, component: apiValidation && apiValidation.status !== 'failed' && apiValidation.status !== 'timeout' && apiValidation.status !== 'not-run' ? <APIValidatorPanel report={apiValidation} /> : null },
+    { key: 'coverage-auditor', label: 'Coverage Auditor', icon: Layers, color: 'blue', data: coverageAudit, score: coverageAudit?.coverageScore, component: coverageAudit && coverageAudit.status !== 'failed' && coverageAudit.status !== 'timeout' && coverageAudit.status !== 'not-run' ? <CoverageAuditorPanel report={coverageAudit} /> : null },
+    { key: 'ui-ux-analyst', label: 'UI/UX Analyst', icon: Eye, color: 'purple', data: uiAudit, score: uiAudit?.accessibilityScore, component: uiAudit && uiAudit.status !== 'failed' && uiAudit.status !== 'timeout' && uiAudit.status !== 'not-run' ? <UIUXAnalystPanel report={uiAudit} /> : null },
   ];
+
+  /** Render a status-aware fallback for agents that didn't produce a full report */
+  function renderAgentFallback(panel: typeof panels[number]) {
+    const report = panel.data as any;
+    if (!report) {
+      return <Alert status="info" borderRadius="md"><AlertIcon />{panel.label} was not selected for this repository.</Alert>;
+    }
+    if (report.status === 'failure' || report.status === 'failed') {
+      return <Alert status="error" borderRadius="md"><AlertIcon />{panel.label} failed: {report.error || 'Unknown error'}</Alert>;
+    }
+    if (report.status === 'timeout') {
+      return <Alert status="warning" borderRadius="md"><AlertIcon />{panel.label} timed out after {Math.round((report.duration || 0) / 1000)}s</Alert>;
+    }
+    if (report.status === 'skipped' || report.status === 'dependency-missing') {
+      return <Alert status="info" borderRadius="md"><AlertIcon />{panel.label} skipped: {report.error || 'Dependency not available'}</Alert>;
+    }
+    if (report.status === 'not-run') {
+      return <Alert status="info" borderRadius="md"><AlertIcon />{panel.label} was not selected for this run.</Alert>;
+    }
+    return <Text color="gray.500" fontSize="sm">This agent has not produced a report for this run yet.</Text>;
+  }
+
+  /** Get badge for agent status */
+  function getStatusBadge(panel: typeof panels[number]) {
+    const report = panel.data as any;
+    if (!report) return <Badge colorScheme="gray" variant="outline">Not Selected</Badge>;
+    if (report.status === 'failure' || report.status === 'failed') return <Badge colorScheme="red" variant="solid">Failed</Badge>;
+    if (report.status === 'timeout') return <Badge colorScheme="orange" variant="solid">Timeout</Badge>;
+    if (report.status === 'skipped' || report.status === 'dependency-missing') return <Badge colorScheme="yellow" variant="outline">Skipped</Badge>;
+    if (report.status === 'not-run') return <Badge colorScheme="gray" variant="outline">Not Run</Badge>;
+    if (panel.score !== undefined && panel.score !== null) {
+      return <Badge colorScheme={panel.score >= 80 ? 'green' : panel.score >= 60 ? 'yellow' : 'red'}>{panel.score}/100</Badge>;
+    }
+    return null;
+  }
 
   return (
     <Accordion allowMultiple defaultIndex={[0]}>
@@ -112,22 +149,13 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
           <AccordionButton py={3} _hover={{ bg: `${panel.color}.50` }}>
             <HStack flex={1} spacing={3}>
               <panel.icon size={18} />
-              <Text fontWeight="bold" fontSize="sm">{panel.label}</Text>
-              {panel.score !== undefined && panel.score !== null && (
-                <Badge colorScheme={panel.score >= 80 ? 'green' : panel.score >= 60 ? 'yellow' : 'red'}>
-                  {panel.score}/100
-                </Badge>
-              )}
-              {!panel.data && (
-                <Badge colorScheme="gray" variant="outline">Not Available</Badge>
-              )}
+              <Text fontWeight="bold" fontSize="sm">{panel.label} Report</Text>
+              {getStatusBadge(panel)}
             </HStack>
             <AccordionIcon />
           </AccordionButton>
           <AccordionPanel pb={4}>
-            {panel.component || (
-              <Text color="gray.500" fontSize="sm">This agent hasn't produced a report for this run yet.</Text>
-            )}
+            {panel.component || renderAgentFallback(panel)}
           </AccordionPanel>
         </AccordionItem>
       ))}
