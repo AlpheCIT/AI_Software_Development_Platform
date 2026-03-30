@@ -58,6 +58,7 @@ export function createProductIntelligenceRouter(dbClient: any) {
           coverageScore: coverageAudit?.coverageScore ?? null,
           accessibilityScore: uiAudit?.accessibilityScore ?? null,
           uxScore: uiAudit?.uxScore ?? null,
+          unifiedHealthScore: qaRun?.unifiedHealthScore || null,
           selectedAgentCount: qaRun?.selectedAgents?.length ?? null,
           totalRegisteredAgents: qaRun?.selectedAgents && qaRun?.skippedAgents
             ? qaRun.selectedAgents.length + qaRun.skippedAgents.length
