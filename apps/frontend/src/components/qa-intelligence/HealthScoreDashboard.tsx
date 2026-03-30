@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import qaService from '../../services/qaService';
 import type { HealthScores } from '../../services/qaService';
+import { useQARunStore } from '../../stores/qa-run-store';
 
 interface HealthScoreDashboardProps {
   runId?: string;
@@ -114,11 +115,38 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
   const bg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
+  const productData = useQARunStore(s => s.productData);
+
   useEffect(() => {
     loadScores();
-  }, [runId]);
+  }, [runId, productData]);
+
+  function extractScoresFromData(data: any) {
+    const unified = data.summary?.unifiedHealthScore;
+    if (unified?.score != null) {
+      setUnifiedScore(unified.score);
+    } else {
+      setUnifiedScore(null);
+    }
+    setScores({
+      codeQuality: unified?.breakdown?.['code-quality']?.score ?? data.summary?.codeHealthScore ?? null,
+      selfHealing: unified?.breakdown?.['self-healer']?.score ?? data.summary?.selfHealingScore ?? null,
+      apiHealth: unified?.breakdown?.['api-validator']?.score ?? data.summary?.apiHealthScore ?? null,
+      coverage: unified?.breakdown?.['coverage-auditor']?.score ?? data.summary?.coverageScore ?? null,
+      accessibility: data.summary?.accessibilityScore ?? null,
+      ux: unified?.breakdown?.['ui-ux-analyst']?.score ?? data.summary?.uxScore ?? null,
+      mutation: null, // Comes from run data, not product intelligence
+    });
+  }
 
   async function loadScores() {
+    // Prefer store data
+    if (productData && (productData.summary || productData.codeQuality)) {
+      extractScoresFromData(productData);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       let effectiveRunId = runId;
@@ -145,22 +173,7 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
       }
 
       const data = await qaService.getProductIntelligence(effectiveRunId);
-      // Use unified health score breakdown when available, fall back to individual scores
-      const unified = data.summary?.unifiedHealthScore;
-      if (unified?.score != null) {
-        setUnifiedScore(unified.score);
-      } else {
-        setUnifiedScore(null);
-      }
-      setScores({
-        codeQuality: unified?.breakdown?.['code-quality']?.score ?? data.summary?.codeHealthScore ?? null,
-        selfHealing: unified?.breakdown?.['self-healer']?.score ?? data.summary?.selfHealingScore ?? null,
-        apiHealth: unified?.breakdown?.['api-validator']?.score ?? data.summary?.apiHealthScore ?? null,
-        coverage: unified?.breakdown?.['coverage-auditor']?.score ?? data.summary?.coverageScore ?? null,
-        accessibility: data.summary?.accessibilityScore ?? null,
-        ux: unified?.breakdown?.['ui-ux-analyst']?.score ?? data.summary?.uxScore ?? null,
-        mutation: null, // Comes from run data, not product intelligence
-      });
+      extractScoresFromData(data);
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }
