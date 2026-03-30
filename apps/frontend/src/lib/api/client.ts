@@ -104,6 +104,11 @@ class ApiClient {
         return response;
       },
       (error) => {
+        // Silently swallow cancelled requests (gateway offline skip)
+        if (axios.isCancel(error)) {
+          return Promise.reject(error);
+        }
+
         // Handle common error scenarios
         if (error.response) {
           // Server responded with error status
