@@ -153,8 +153,8 @@ const SectionHeader: React.FC<{ icon: React.ElementType; title: string; count?: 
 const ReportHeader: React.FC<{ data: ProductData }> = ({ data }) => {
   const { summary, codeQuality } = data;
   const headerBg = useColorModeValue('blue.50', 'blue.900');
-  const grade = codeQuality?.overallHealth?.grade ?? summary?.codeHealthGrade ?? 'N/A';
-  const score = codeQuality?.overallHealth?.score ?? summary?.codeHealthScore ?? 0;
+  const grade = (summary as any)?.unifiedHealthScore?.grade ?? codeQuality?.overallHealth?.grade ?? summary?.codeHealthGrade ?? 'N/A';
+  const score = (summary as any)?.unifiedHealthScore?.score ?? codeQuality?.overallHealth?.score ?? summary?.codeHealthScore ?? 0;
 
   return (
     <Box bg={headerBg} borderRadius="lg" p={6} mb={6}>
@@ -195,8 +195,8 @@ const ReportHeader: React.FC<{ data: ProductData }> = ({ data }) => {
 const ExecutiveSummary: React.FC<{ data: ProductData }> = ({ data }) => {
   const { summary, codeQuality, research, priorities } = data;
   const cardBg = useColorModeValue('gray.50', 'gray.700');
-  const score = codeQuality?.overallHealth?.score ?? summary?.codeHealthScore ?? 0;
-  const grade = codeQuality?.overallHealth?.grade ?? summary?.codeHealthGrade ?? 'N/A';
+  const score = (summary as any)?.unifiedHealthScore?.score ?? codeQuality?.overallHealth?.score ?? summary?.codeHealthScore ?? 0;
+  const grade = (summary as any)?.unifiedHealthScore?.grade ?? codeQuality?.overallHealth?.grade ?? summary?.codeHealthGrade ?? 'N/A';
   const topPriority = priorities?.[0]?.title || 'N/A';
   const competitorCount = (research?.competitorIntel || []).length;
 

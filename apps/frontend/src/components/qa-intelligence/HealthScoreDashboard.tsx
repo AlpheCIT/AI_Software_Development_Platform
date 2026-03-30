@@ -139,20 +139,22 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
       }
 
       const data = await qaService.getProductIntelligence(effectiveRunId);
+      // Use unified health score breakdown when available, fall back to individual scores
+      const unified = data.summary?.unifiedHealthScore;
       setScores({
-        codeQuality: data.summary?.codeHealthScore ?? null,
-        selfHealing: data.summary?.selfHealingScore ?? null,
-        apiHealth: data.summary?.apiHealthScore ?? null,
-        coverage: data.summary?.coverageScore ?? null,
+        codeQuality: unified?.breakdown?.['code-quality']?.score ?? data.summary?.codeHealthScore ?? null,
+        selfHealing: unified?.breakdown?.['self-healer']?.score ?? data.summary?.selfHealingScore ?? null,
+        apiHealth: unified?.breakdown?.['api-validator']?.score ?? data.summary?.apiHealthScore ?? null,
+        coverage: unified?.breakdown?.['coverage-auditor']?.score ?? data.summary?.coverageScore ?? null,
         accessibility: data.summary?.accessibilityScore ?? null,
-        ux: data.summary?.uxScore ?? null,
+        ux: unified?.breakdown?.['ui-ux-analyst']?.score ?? data.summary?.uxScore ?? null,
         mutation: null, // Comes from run data, not product intelligence
       });
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }
 
-  // Calculate overall health (weighted average of non-null scores)
+  // Calculate overall health — prefer unified score from backend, fall back to simple average
   const scoreEntries = scores ? Object.values(scores).filter((s): s is number => s !== null) : [];
   const overallHealth = scoreEntries.length > 0
     ? Math.round(scoreEntries.reduce((a, b) => a + b, 0) / scoreEntries.length)
