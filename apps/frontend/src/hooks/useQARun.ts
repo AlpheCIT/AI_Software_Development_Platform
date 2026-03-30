@@ -320,9 +320,6 @@ export function useQARun(): UseQARunReturn {
       setRunId(run.id || id);
       applyRunData(run);
 
-      // Sync to store
-      store.loadCompletedRun(run);
-
       // Also try to fetch full results for completed runs
       if (run.status === 'completed') {
         try {
@@ -332,8 +329,27 @@ export function useQARun(): UseQARunReturn {
         } catch {
           // Results endpoint might not exist; status already has the data
         }
+
+        // Fetch product intelligence and push to store
+        try {
+          const product = await qaService.getProductIntelligence(id);
+          store.setProductData(product);
+          // Load completed run with merged data for agent status inference
+          store.loadCompletedRun({
+            ...run,
+            ...product,
+            mutationScore: run.mutationScore ?? (run as any).mutation?.score ?? 0,
+          });
+        } catch {
+          // Product data may not be available yet
+          store.loadCompletedRun(run);
+        }
+
         // Fetch code health for loaded run
         fetchAndComputeCodeHealth(run.id || id, useQARunStore.getState());
+      } else {
+        // Sync to store for non-completed runs
+        store.loadCompletedRun(run);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load run';
@@ -425,7 +441,20 @@ export function useQARun(): UseQARunReturn {
         if (completedRun) {
           setRunId(completedRun.id);
           applyRunData(completedRun);
-          store.loadCompletedRun(completedRun);
+
+          // Fetch product intelligence for auto-loaded run
+          try {
+            const product = await qaService.getProductIntelligence(completedRun.id);
+            store.setProductData(product);
+            store.loadCompletedRun({
+              ...completedRun,
+              ...product,
+              mutationScore: completedRun.mutationScore ?? completedRun.mutation?.score ?? 0,
+            });
+          } catch {
+            store.loadCompletedRun(completedRun);
+          }
+
           // Fetch code health for auto-loaded run
           fetchAndComputeCodeHealth(completedRun.id, useQARunStore.getState());
         }

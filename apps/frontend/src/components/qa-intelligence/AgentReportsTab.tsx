@@ -28,6 +28,7 @@ import APIValidatorPanel from './APIValidatorPanel';
 import CoverageAuditorPanel from './CoverageAuditorPanel';
 import UIUXAnalystPanel from './UIUXAnalystPanel';
 import { ErrorBoundary } from '../ErrorBoundary';
+import { useQARunStore } from '../../stores/qa-run-store';
 
 const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
@@ -44,12 +45,27 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
   const [expandedIndices, setExpandedIndices] = useState<number[]>([]);
 
   const bg = useColorModeValue('white', 'gray.800');
+  const productData = useQARunStore(s => s.productData);
 
   useEffect(() => {
     loadReports();
-  }, [runId]);
+  }, [runId, productData]);
+
+  function applyProductData(data: any) {
+    setSelfHealing(data.selfHealing || null);
+    setApiValidation(data.apiValidation || null);
+    setCoverageAudit(data.coverageAudit || null);
+    setUiAudit(data.uiAudit || null);
+  }
 
   async function loadReports() {
+    // Prefer store data
+    if (productData && (productData.selfHealing || productData.apiValidation || productData.coverageAudit || productData.uiAudit)) {
+      applyProductData(productData);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       let effectiveRunId = runId;
@@ -75,10 +91,7 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
       }
 
       const data = await qaService.getProductIntelligence(effectiveRunId);
-      setSelfHealing(data.selfHealing || null);
-      setApiValidation(data.apiValidation || null);
-      setCoverageAudit(data.coverageAudit || null);
-      setUiAudit(data.uiAudit || null);
+      applyProductData(data);
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }
