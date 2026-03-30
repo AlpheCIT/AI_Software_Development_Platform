@@ -108,46 +108,52 @@ export default function DevelopmentPlanner({ runId }: DevelopmentPlannerProps) {
   const codeBg = useColorModeValue('gray.50', 'gray.900');
 
   useEffect(() => {
-    loadSpecs();
-  }, [runId]);
-
-  async function loadSpecs() {
-    setLoading(true);
-    setError(null);
-    try {
-      let effectiveRunId = runId;
-      if (!effectiveRunId) {
-        try {
-          const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
-          if (runsRes.ok) {
-            const runsData = await runsRes.json();
-            const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
-            if (completed[0]) effectiveRunId = completed[0]._key || completed[0].runId;
-          }
-        } catch { /* ignore */ }
-      }
-      if (!effectiveRunId) {
-        setSpecs(null);
-        setLoading(false);
-        return;
-      }
-
-      let response = await fetch(`${QA_ENGINE_URL}/qa/behavioral-specs/${effectiveRunId}`);
-      if (!response.ok) {
-        response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`);
-      }
-      if (response.ok) {
-        const data = await response.json();
-        setSpecs(data.behavioralSpecs || data.specs || data);
-      } else {
-        setError('No behavioral specs available for planning.');
-      }
-    } catch {
-      setError('Failed to load behavioral specs for planning.');
-    } finally {
-      setLoading(false);
+    if (!QA_ENGINE_URL) {
+      setSpecs(null);
+      return;
     }
-  }
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function loadSpecs() {
+      setLoading(true);
+      setError(null);
+      try {
+        let effectiveRunId = runId;
+        if (!effectiveRunId) {
+          try {
+            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+            if (runsRes.ok) {
+              const runsData = await runsRes.json();
+              const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+              if (completed[0]) effectiveRunId = completed[0]._key || completed[0].runId;
+            }
+          } catch { /* ignore */ }
+        }
+        if (!effectiveRunId || cancelled) {
+          if (!cancelled) setSpecs(null);
+          return;
+        }
+
+        // Skip behavioral-specs (404), go directly to product endpoint
+        const response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`, { signal: controller.signal });
+        if (cancelled) return;
+        if (response.ok) {
+          const data = await response.json();
+          setSpecs(data.behavioralSpecs || data.specs || data);
+        } else {
+          setError('No behavioral specs available for planning.');
+        }
+      } catch {
+        if (!cancelled) setError('Failed to load behavioral specs for planning.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadSpecs();
+    return () => { cancelled = true; controller.abort(); };
+  }, [runId]);
 
   // ── Search results ─────────────────────────────────────────────────────
 

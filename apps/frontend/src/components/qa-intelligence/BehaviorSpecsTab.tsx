@@ -178,53 +178,59 @@ export default function BehaviorSpecsTab({ runId }: BehaviorSpecsTabProps) {
   const codeBg = useColorModeValue('gray.50', 'gray.900');
 
   useEffect(() => {
-    loadSpecs();
-  }, [runId]);
-
-  async function loadSpecs() {
-    setLoading(true);
-    setError(null);
-    try {
-      let effectiveRunId = runId;
-
-      // If no runId, fetch latest completed run
-      if (!effectiveRunId) {
-        try {
-          const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
-          if (runsRes.ok) {
-            const runsData = await runsRes.json();
-            const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
-            if (completed[0]) {
-              effectiveRunId = completed[0]._key || completed[0].runId;
-            }
-          }
-        } catch { /* ignore */ }
-      }
-
-      if (!effectiveRunId) {
-        setSpecs(null);
-        setLoading(false);
-        return;
-      }
-
-      // Try behavioral-specs endpoint first, fall back to product
-      let response = await fetch(`${QA_ENGINE_URL}/qa/behavioral-specs/${effectiveRunId}`);
-      if (!response.ok) {
-        response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`);
-      }
-
-      if (response.ok) {
-        const data = await response.json();
-        setSpecs(data.behavioralSpecs || data.specs || data);
-      } else {
-        setError('No behavioral specs available for this run.');
-      }
-    } catch (err) {
-      setError('Failed to load behavioral specs.');
-    } finally {
-      setLoading(false);
+    if (!QA_ENGINE_URL) {
+      setSpecs(null);
+      return;
     }
-  }
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function loadSpecs() {
+      setLoading(true);
+      setError(null);
+      try {
+        let effectiveRunId = runId;
+
+        // If no runId, fetch latest completed run
+        if (!effectiveRunId) {
+          try {
+            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+            if (runsRes.ok) {
+              const runsData = await runsRes.json();
+              const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+              if (completed[0]) {
+                effectiveRunId = completed[0]._key || completed[0].runId;
+              }
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (!effectiveRunId || cancelled) {
+          if (!cancelled) setSpecs(null);
+          return;
+        }
+
+        // Try product endpoint (known to exist), skip behavioral-specs (404)
+        const response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`, { signal: controller.signal });
+
+        if (cancelled) return;
+
+        if (response.ok) {
+          const data = await response.json();
+          setSpecs(data.behavioralSpecs || data.specs || data);
+        } else {
+          setError('No behavioral specs available for this run.');
+        }
+      } catch (err) {
+        if (!cancelled) setError('Failed to load behavioral specs.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadSpecs();
+    return () => { cancelled = true; controller.abort(); };
+  }, [runId]);
 
   // ── Loading state ──────────────────────────────────────────────────────
 

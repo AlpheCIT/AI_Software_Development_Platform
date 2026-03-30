@@ -323,8 +323,8 @@ const RiskHeatmap: React.FC<RiskHeatmapProps> = ({ runId }) => {
       </HStack>
 
       {view === 'treemap' ? (
-        <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={2} h="300px">
-          <ResponsiveContainer width="100%" height="100%">
+        <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={2} h="300px" minW={0} minH={0}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <Treemap
               data={treemapData}
               dataKey="size"

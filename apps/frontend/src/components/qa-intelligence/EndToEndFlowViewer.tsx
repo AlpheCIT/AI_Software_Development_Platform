@@ -95,49 +95,56 @@ export default function EndToEndFlowViewer({ runId, flows: propFlows }: EndToEnd
       setLoading(false);
       return;
     }
-    loadFlows();
-  }, [runId, propFlows]);
-
-  async function loadFlows() {
-    setLoading(true);
-    setError(null);
-    try {
-      let effectiveRunId = runId;
-      if (!effectiveRunId) {
-        try {
-          const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
-          if (runsRes.ok) {
-            const runsData = await runsRes.json();
-            const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
-            if (completed[0]) effectiveRunId = completed[0]._key || completed[0].runId;
-          }
-        } catch { /* ignore */ }
-      }
-
-      if (!effectiveRunId) {
-        setFlows([]);
-        setLoading(false);
-        return;
-      }
-
-      let response = await fetch(`${QA_ENGINE_URL}/qa/behavioral-specs/${effectiveRunId}`);
-      if (!response.ok) {
-        response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`);
-      }
-
-      if (response.ok) {
-        const data = await response.json();
-        const specs = data.behavioralSpecs || data.specs || data;
-        setFlows(specs.flows || []);
-      } else {
-        setError('No flow data available.');
-      }
-    } catch {
-      setError('Failed to load end-to-end flows.');
-    } finally {
+    if (!QA_ENGINE_URL) {
+      setFlows([]);
       setLoading(false);
+      return;
     }
-  }
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function loadFlows() {
+      setLoading(true);
+      setError(null);
+      try {
+        let effectiveRunId = runId;
+        if (!effectiveRunId) {
+          try {
+            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+            if (runsRes.ok) {
+              const runsData = await runsRes.json();
+              const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+              if (completed[0]) effectiveRunId = completed[0]._key || completed[0].runId;
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (!effectiveRunId || cancelled) {
+          if (!cancelled) setFlows([]);
+          return;
+        }
+
+        // Skip behavioral-specs (404), go directly to product endpoint
+        const response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`, { signal: controller.signal });
+        if (cancelled) return;
+
+        if (response.ok) {
+          const data = await response.json();
+          const specs = data.behavioralSpecs || data.specs || data;
+          setFlows(specs.flows || []);
+        } else {
+          setError('No flow data available.');
+        }
+      } catch {
+        if (!cancelled) setError('Failed to load end-to-end flows.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadFlows();
+    return () => { cancelled = true; controller.abort(); };
+  }, [runId, propFlows]);
 
   function toggleStep(flowIdx: number, stepIdx: number) {
     const key = `${flowIdx}-${stepIdx}`;
