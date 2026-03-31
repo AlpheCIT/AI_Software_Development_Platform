@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
+import { isDSPyAvailable, callDSPyExpert, handleSubAgents } from '../dspy-client.js';
 import { extractAllRoutes, fileExistsInCodeFiles } from './verification-helpers.js';
 import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from './graph-helpers.js';
 import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from './scoring-helpers.js';
@@ -141,6 +142,110 @@ export async function coverageAuditorNode(
   // Build complete route inventory BEFORE the LLM call
   const allRoutes = extractAllRoutes(codeFiles);
   const routeInventory = allRoutes.map(r => `${r.method} ${r.path} (${r.file})`).join('\n');
+
+  // === DSPy Expert Chain Path ===
+  if (dbClient) {
+    try {
+      const dspyAvailable = await isDSPyAvailable();
+      if (dspyAvailable) {
+        console.log('[CoverageAuditor] DSPy available — using Middleware Expert chain');
+        eventPublisher?.emit('qa:agent.progress', {
+          runId, agent: 'coverage-auditor', progress: 10,
+          message: 'Using DSPy Middleware Expert chain for multi-step analysis',
+        });
+
+        const sourceContext = codeFiles
+          .filter((f: any) => f.content && f.path !== '__business_context__')
+          .slice(0, 30)
+          .map((f: any) => `### ${f.path}\n${f.content}`)
+          .join('\n\n');
+
+        const dspyResult = await callDSPyExpert(
+          '/analyze/middleware-expert',
+          sourceContext,
+          dbClient, runId, 'coverage-auditor', 'Coverage Auditor (DSPy)',
+          eventPublisher
+        );
+
+        // Handle sub-agents if requested
+        if (dspyResult.subAgentsNeeded.length > 0) {
+          const lastStepIndex = dspyResult.steps.length - 1;
+          const sessionId = `sess_${runId}_coverage-auditor_${Date.now()}`;
+          const parentStepId = `step_${sessionId}_${lastStepIndex}`;
+
+          const subResults = await handleSubAgents(
+            dspyResult.subAgentsNeeded, sourceContext,
+            dbClient, runId, sessionId, parentStepId, eventPublisher
+          );
+          if (dspyResult.report) dspyResult.report._subAgentResults = subResults;
+        }
+
+        // Map DSPy report to CoverageAuditReport format
+        const dspyReport = dspyResult.report || {};
+        const report: CoverageAuditReport = {
+          unexposedBackendFeatures: dspyReport.unexposedBackendFeatures || dspyReport.unexposed_backend_features || [],
+          brokenFrontendCalls: dspyReport.brokenFrontendCalls || dspyReport.broken_frontend_calls || [],
+          orphanedRoutes: dspyReport.orphanedRoutes || dspyReport.orphaned_routes || [],
+          dataShapeMismatches: dspyReport.dataShapeMismatches || dspyReport.data_shape_mismatches || [],
+          missingCrudOperations: dspyReport.missingCrudOperations || dspyReport.missing_crud_operations || [],
+          coverageScore: dspyReport.coverageScore || dspyReport.coverage_score || 0,
+          summary: dspyReport.summary || `DSPy analysis completed (${dspyResult.steps.length} steps)`,
+        };
+
+        // Programmatic verification — filter broken frontend calls against route inventory
+        report.brokenFrontendCalls = (report.brokenFrontendCalls || []).filter(call => {
+          const callPath = (call.expectedEndpoint || call.call || '')
+            .replace(/^(GET|POST|PUT|DELETE|PATCH)\s+/i, '')
+            .replace(/\?.*$/, '').trim();
+          if (!callPath) return true;
+          const routeExists = allRoutes.some(r => {
+            const rPath = r.path.replace(/\/$/, '');
+            const cPath = callPath.replace(/\/$/, '');
+            if (rPath === cPath) return true;
+            if (rPath.includes(cPath) || cPath.includes(rPath)) return true;
+            return false;
+          });
+          if (routeExists) {
+            console.log(`[CoverageAuditor] Filtered: ${call.call || call.expectedEndpoint} - route exists`);
+            return false;
+          }
+          return true;
+        });
+
+        // Recalculate calibrated score
+        const allFindings = [
+          ...report.brokenFrontendCalls.map(() => ({ severity: 'high' as const, confidence: 0.8, verified: true })),
+          ...report.dataShapeMismatches.map(() => ({ severity: 'high' as const, confidence: 0.7, verified: true })),
+          ...report.orphanedRoutes.map(() => ({ severity: 'low' as const, confidence: 0.6, verified: true })),
+        ];
+        const { score: calibratedScore } = calculateCalibratedScore(allFindings, codeFiles.length);
+        report.coverageScore = calibratedScore;
+
+        enrichFindingsWithBlastRadius(report.brokenFrontendCalls, graphContext.dependentGraph);
+        enrichFindingsWithBlastRadius(report.dataShapeMismatches, graphContext.dependentGraph);
+
+        eventPublisher?.emit('qa:agent.completed', {
+          runId, agent: 'coverage-auditor',
+          result: {
+            unexposedFeatures: report.unexposedBackendFeatures.length,
+            brokenCalls: report.brokenFrontendCalls.length,
+            orphanedRoutes: report.orphanedRoutes.length,
+            shapeMismatches: report.dataShapeMismatches.length,
+            missingCrud: report.missingCrudOperations.length,
+            coverageScore: report.coverageScore, source: 'dspy',
+          },
+        });
+
+        console.log(`[CoverageAuditor] DSPy: ${report.unexposedBackendFeatures.length} unexposed features, ${report.brokenFrontendCalls.length} broken calls. Coverage: ${report.coverageScore}/100`);
+        return report;
+      }
+    } catch (dspyErr) {
+      console.warn(`[CoverageAuditor] DSPy call failed, falling back to direct LLM: ${(dspyErr as Error).message}`);
+    }
+  }
+
+  // === Fallback: Direct LLM Call (original logic) ===
+  console.log('[CoverageAuditor] Using direct LLM call (DSPy unavailable)');
 
   eventPublisher?.emit('qa:agent.progress', {
     runId,
