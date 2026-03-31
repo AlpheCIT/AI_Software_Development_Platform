@@ -33,6 +33,7 @@ export async function businessContextAnalyzerNode(
   codeEntities: any[],
   repoUrl: string,
   runId: string,
+  dbClient?: any,
   eventPublisher?: any
 ): Promise<BusinessContext> {
   console.log(`[BusinessContext] Analyzing business context for ${repoUrl}`);
