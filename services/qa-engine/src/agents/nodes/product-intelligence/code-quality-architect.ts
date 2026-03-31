@@ -449,9 +449,21 @@ export async function codeQualityArchitectNode(
           ...report.architectureIssues.map((a: any) => ({ severity: a.severity || 'medium', confidence: 0.7, verified: true })),
           ...report.bestPracticeViolations.map((b: any) => ({ severity: b.severity || 'low', confidence: 0.6, verified: true })),
         ];
-        const { score: calibratedScore, grade: calibratedGrade } = calculateCalibratedScore(allFindings, codeFiles.length);
-        report.overallHealth.score = calibratedScore;
-        report.overallHealth.grade = calibratedGrade;
+        let calibratedResult = calculateCalibratedScore(allFindings, codeFiles.length);
+
+        // Blend with DSPy chain's own score when it provides a more conservative assessment
+        const dspyScore = dspyReport?.overallHealth?.score ?? dspyReport?.healthScore ?? dspyReport?.health_score;
+        if (typeof dspyScore === 'number' && dspyScore > 0 && dspyScore < calibratedResult.score) {
+          calibratedResult = {
+            ...calibratedResult,
+            score: Math.round(calibratedResult.score * 0.4 + dspyScore * 0.6),
+          };
+          // Re-derive grade from blended score
+          calibratedResult.grade = calibratedResult.score >= 90 ? 'A' : calibratedResult.score >= 75 ? 'B' : calibratedResult.score >= 60 ? 'C' : calibratedResult.score >= 40 ? 'D' : 'F';
+        }
+
+        report.overallHealth.score = calibratedResult.score;
+        report.overallHealth.grade = calibratedResult.grade;
 
         enrichFindingsWithBlastRadius(
           report.codeSmells.map((s: any) => ({ ...s, file: s.file || (s.location || '').split(':')[0] })),

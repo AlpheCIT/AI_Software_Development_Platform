@@ -38,6 +38,7 @@ export default function AgentDebateView({ runId, onClose }: AgentDebateViewProps
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const genBg = useColorModeValue('green.50', 'green.900');
   const criticBg = useColorModeValue('orange.50', 'orange.900');
+  const dividerBg = useColorModeValue('gray.50', 'gray.750');
 
   useEffect(() => {
     loadDebateData();
@@ -161,7 +162,7 @@ export default function AgentDebateView({ runId, onClose }: AgentDebateViewProps
           borderColor={borderColor}
           justify="center"
           spacing={3}
-          bg={useColorModeValue('gray.50', 'gray.750')}
+          bg={dividerBg}
         >
           <MotionBox
             animate={{ x: [0, 4, 0] }}

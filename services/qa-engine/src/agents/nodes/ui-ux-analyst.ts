@@ -289,16 +289,38 @@ export async function uiUxAnalystNode(
         const a11yFindings = report.accessibilityIssues.map((i: any) => ({
           severity: i.severity || 'medium', confidence: 0.8, verified: true
         }));
-        const { score: a11yScore } = calculateCalibratedScore(a11yFindings, codeFiles.length);
-        report.accessibilityScore = a11yScore;
+        let a11yCalibratedResult = calculateCalibratedScore(a11yFindings, codeFiles.length);
+
+        // Blend with DSPy chain's own accessibility score when it provides a more conservative assessment
+        const dspyA11yScore = dspyReport?.accessibilityScore ?? dspyReport?.accessibility_score;
+        if (typeof dspyA11yScore === 'number' && dspyA11yScore > 0 && dspyA11yScore < a11yCalibratedResult.score) {
+          a11yCalibratedResult = {
+            ...a11yCalibratedResult,
+            score: Math.round(a11yCalibratedResult.score * 0.4 + dspyA11yScore * 0.6),
+          };
+          a11yCalibratedResult.grade = a11yCalibratedResult.score >= 90 ? 'A' : a11yCalibratedResult.score >= 75 ? 'B' : a11yCalibratedResult.score >= 60 ? 'C' : a11yCalibratedResult.score >= 40 ? 'D' : 'F';
+        }
+
+        report.accessibilityScore = a11yCalibratedResult.score;
 
         const uxFindings = [
           ...report.uxAntiPatterns.map(() => ({ severity: 'medium' as const, confidence: 0.7, verified: true })),
           ...report.componentIssues.map((i: any) => ({ severity: i.severity || 'medium', confidence: 0.7, verified: true })),
           ...report.userFlowIssues.map(() => ({ severity: 'medium' as const, confidence: 0.6, verified: true })),
         ];
-        const { score: uxCalibratedScore } = calculateCalibratedScore(uxFindings, codeFiles.length);
-        report.uxScore = uxCalibratedScore;
+        let uxCalibratedResult = calculateCalibratedScore(uxFindings, codeFiles.length);
+
+        // Blend with DSPy chain's own UX score when it provides a more conservative assessment
+        const dspyUxScore = dspyReport?.uxScore ?? dspyReport?.ux_score;
+        if (typeof dspyUxScore === 'number' && dspyUxScore > 0 && dspyUxScore < uxCalibratedResult.score) {
+          uxCalibratedResult = {
+            ...uxCalibratedResult,
+            score: Math.round(uxCalibratedResult.score * 0.4 + dspyUxScore * 0.6),
+          };
+          uxCalibratedResult.grade = uxCalibratedResult.score >= 90 ? 'A' : uxCalibratedResult.score >= 75 ? 'B' : uxCalibratedResult.score >= 60 ? 'C' : uxCalibratedResult.score >= 40 ? 'D' : 'F';
+        }
+
+        report.uxScore = uxCalibratedResult.score;
 
         enrichFindingsWithBlastRadius(report.accessibilityIssues, graphContext.dependentGraph);
         enrichFindingsWithBlastRadius(report.componentIssues, graphContext.dependentGraph);

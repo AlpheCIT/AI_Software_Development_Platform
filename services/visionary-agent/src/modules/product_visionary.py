@@ -204,8 +204,29 @@ class ProductVisionaryChain(dspy.Module):
                 sub_agents_needed="[]",
             )
 
+        # Calibrate score based on actual findings (product visionary uses weaknesses/gaps)
+        _final_report = s5.report
+        try:
+            _report = json.loads(_final_report) if isinstance(_final_report, str) else _final_report
+            if isinstance(_report, dict):
+                _findings = _report.get('findings', _report.get('quick_wins', _report.get('strategic_bets', [])))
+                if isinstance(_findings, list) and len(_findings) > 0:
+                    _sev = {'critical': 15, 'high': 10, 'medium': 5, 'low': 2}
+                    _deduction = sum(_sev.get(str(f.get('severity', f.get('priority', 'medium'))).lower(), 3) for f in _findings if isinstance(f, dict))
+                    if _deduction > 0:
+                        _calibrated = max(20, min(100, 100 - _deduction))
+                        for _key in ['overall_score', 'maturity_score', 'health_score', 'quality_score', 'risk_score']:
+                            if _key in _report:
+                                _report[_key] = _calibrated
+                                break
+                        else:
+                            _report['calibrated_score'] = _calibrated
+                        _final_report = json.dumps(_report)
+        except Exception:
+            pass  # Non-fatal: keep original score if calibration fails
+
         return dspy.Prediction(
-            report=s5.report,
+            report=_final_report,
             steps=steps,
             sub_agents_needed="[]",
         )

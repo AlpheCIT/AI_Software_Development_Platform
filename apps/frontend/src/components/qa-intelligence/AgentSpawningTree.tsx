@@ -373,6 +373,7 @@ function AgentRow({ session }: { session: AgentSession }) {
 
 export default function AgentSpawningTree({ runId, sessions: externalSessions, liveEvents = false }: AgentSpawningTreeProps) {
   const productData = useQARunStore(s => s.productData);
+  const agentStatuses = useQARunStore(s => s.agentStatuses);
   const [liveSessions, setLiveSessions] = useState<AgentSession[]>([]);
 
   // Build sessions from product data execution log
@@ -380,47 +381,126 @@ export default function AgentSpawningTree({ runId, sessions: externalSessions, l
     if (externalSessions?.length) return externalSessions;
 
     const execLog = productData?.executionLog;
-    if (!execLog || !Array.isArray(execLog)) return [];
+    if (execLog && Array.isArray(execLog) && execLog.length > 0) {
+      return execLog.map((entry: any, idx: number): AgentSession => {
+        let steps: AgentStep[];
+        if (entry.steps && Array.isArray(entry.steps) && entry.steps.length > 0) {
+          steps = entry.steps.map((s: any, sIdx: number) => ({
+            stepNumber: sIdx + 1,
+            label: s.label || s.name || `Step ${sIdx + 1}`,
+            status: s.status || 'completed',
+            durationMs: s.durationMs,
+            tokensUsed: s.tokensUsed,
+            spawnedAgents: (s.spawnedAgents || []).map((sub: any) => ({
+              id: sub.id || `sub-${idx}-${sIdx}-${Math.random().toString(36).slice(2, 6)}`,
+              name: sub.name || 'Sub-Agent',
+              domain: sub.domain || entry.domain || 'default',
+              status: sub.status || 'completed',
+              steps: (sub.steps || []).map((ss: any, ssIdx: number) => ({
+                stepNumber: ssIdx + 1,
+                label: ss.label || ss.name || `Step ${ssIdx + 1}`,
+                status: ss.status || 'completed',
+                durationMs: ss.durationMs,
+                tokensUsed: ss.tokensUsed,
+              })),
+              durationMs: sub.durationMs,
+            })),
+          }));
+        } else {
+          // No steps array from backend — synthesize one step from the entry itself
+          const agentLabel = entry.agentName || entry.name || entry.agentId || entry.agent || `Agent ${idx + 1}`;
+          const entryStatus = entry.status === 'success' ? 'completed' : entry.status === 'failure' ? 'failed' : entry.status || 'completed';
+          steps = [{
+            stepNumber: 1,
+            label: `${agentLabel} Analysis`,
+            status: entryStatus as AgentStep['status'],
+            durationMs: entry.durationMs,
+          }];
+        }
 
-    return execLog.map((entry: any, idx: number): AgentSession => {
-      const steps: AgentStep[] = (entry.steps || []).map((s: any, sIdx: number) => ({
-        stepNumber: sIdx + 1,
-        label: s.label || s.name || `Step ${sIdx + 1}`,
-        status: s.status || 'completed',
-        durationMs: s.durationMs,
-        tokensUsed: s.tokensUsed,
-        spawnedAgents: (s.spawnedAgents || []).map((sub: any) => ({
-          id: sub.id || `sub-${idx}-${sIdx}-${Math.random().toString(36).slice(2, 6)}`,
-          name: sub.name || 'Sub-Agent',
-          domain: sub.domain || entry.domain || 'default',
-          status: sub.status || 'completed',
-          steps: (sub.steps || []).map((ss: any, ssIdx: number) => ({
-            stepNumber: ssIdx + 1,
-            label: ss.label || ss.name || `Step ${ssIdx + 1}`,
-            status: ss.status || 'completed',
-            durationMs: ss.durationMs,
-            tokensUsed: ss.tokensUsed,
-          })),
-          durationMs: sub.durationMs,
-        })),
-      }));
+        const completedSteps = steps.filter(s => s.status === 'completed').length;
 
-      const completedSteps = steps.filter(s => s.status === 'completed').length;
+        // Backend executionLog uses agentId/agentName; normalize field names
+        const agentId = entry.agentId || entry.id || entry.agent || `agent-${idx}`;
+        const agentName = entry.agentName || entry.name || entry.agent || agentId;
+        // Infer domain from agent ID
+        const domainMap: Record<string, string> = {
+          'repo-ingester': 'architecture', 'strategist': 'quality', 'generator': 'quality',
+          'critic': 'quality', 'executor': 'quality', 'mutation': 'quality',
+          'self-healer': 'security', 'api-validator': 'backend', 'coverage-auditor': 'backend',
+          'ui-ux-analyst': 'frontend', 'code-quality-architect': 'architecture', 'code-quality': 'architecture',
+          'product-manager': 'quality', 'research-assistant': 'quality',
+        };
 
-      return {
-        id: entry.id || entry.agent || `agent-${idx}`,
-        name: entry.name || entry.agent || `Agent ${idx + 1}`,
-        domain: entry.domain || 'default',
-        status: entry.status || 'completed',
+        return {
+          id: agentId,
+          name: agentName,
+          domain: entry.domain || domainMap[agentId] || 'default',
+          status: entry.status === 'success' ? 'completed' : entry.status || 'completed',
+          steps,
+          totalSteps: steps.length || entry.totalSteps || 0,
+          completedSteps,
+          durationMs: entry.durationMs,
+          tokensUsed: entry.tokensUsed,
+          subAgents: entry.subAgents,
+        };
+      });
+    }
+
+    // Fallback: Build sessions from agentStatuses + productData when no executionLog
+    if (!agentStatuses || Object.keys(agentStatuses).length === 0) return [];
+
+    const agentConfigs: Array<{ id: string; name: string; domain: string; dataKey?: string }> = [
+      { id: 'repo-ingester', name: 'Repository Ingester', domain: 'architecture' },
+      { id: 'strategist', name: 'Test Strategist', domain: 'quality' },
+      { id: 'generator', name: 'Test Generator', domain: 'quality' },
+      { id: 'critic', name: 'Test Critic', domain: 'quality' },
+      { id: 'executor', name: 'Test Executor', domain: 'quality' },
+      { id: 'mutation', name: 'Mutation Verifier', domain: 'quality' },
+      { id: 'self-healer', name: 'Self-Healing Analyst', domain: 'security', dataKey: 'selfHealing' },
+      { id: 'api-validator', name: 'API Validator', domain: 'backend', dataKey: 'apiValidation' },
+      { id: 'coverage-auditor', name: 'Coverage Auditor', domain: 'backend', dataKey: 'coverageAudit' },
+      { id: 'ui-ux-analyst', name: 'UI/UX Analyst', domain: 'frontend', dataKey: 'uiAudit' },
+      { id: 'code-quality-architect', name: 'Code Quality Architect', domain: 'architecture', dataKey: 'codeQuality' },
+      { id: 'product-manager', name: 'Product Manager', domain: 'quality', dataKey: 'roadmap' },
+      { id: 'research-assistant', name: 'Research Assistant', domain: 'quality', dataKey: 'competitiveAnalysis' },
+    ];
+
+    const sessions: AgentSession[] = [];
+    for (const cfg of agentConfigs) {
+      const status = agentStatuses[cfg.id];
+      if (!status) continue;
+
+      const steps: AgentStep[] = [];
+      const agentData = cfg.dataKey ? productData?.[cfg.dataKey] : null;
+      if (agentData) {
+        steps.push({
+          stepNumber: 1,
+          label: `${cfg.name} Analysis`,
+          status: status.status === 'completed' ? 'completed' : status.status === 'error' ? 'failed' : 'pending',
+          durationMs: agentData.durationMs,
+        });
+      } else if (status.status === 'completed') {
+        steps.push({
+          stepNumber: 1,
+          label: `${cfg.name} Execution`,
+          status: 'completed',
+        });
+      }
+
+      sessions.push({
+        id: cfg.id,
+        name: cfg.name,
+        domain: cfg.domain,
+        status: status.status === 'completed' ? 'completed' : status.status === 'error' ? 'failed' : 'idle',
         steps,
-        totalSteps: steps.length || entry.totalSteps || 0,
-        completedSteps,
-        durationMs: entry.durationMs,
-        tokensUsed: entry.tokensUsed,
-        subAgents: entry.subAgents,
-      };
-    });
-  }, [externalSessions, productData]);
+        totalSteps: steps.length,
+        completedSteps: steps.filter(s => s.status === 'completed').length,
+      });
+    }
+
+    return sessions;
+  }, [externalSessions, productData, agentStatuses]);
 
   // WebSocket listener for live events
   useEffect(() => {
