@@ -47,6 +47,7 @@ export default function NotificationBell({
   const bg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const hoverBg = useColorModeValue('gray.50', 'gray.700');
+  const colorMode = useColorModeValue('light', 'dark');
 
   return (
     <Popover placement="bottom-end" isLazy>
@@ -105,7 +106,7 @@ export default function NotificationBell({
                   <Box
                     key={notif.id}
                     px={3} py={2}
-                    bg={notif.read ? 'transparent' : useColorModeValue(`${config.color}.50`, `${config.color}.900`)}
+                    bg={notif.read ? 'transparent' : colorMode === 'light' ? `${config.color}.50` : `${config.color}.900`}
                     borderBottom="1px solid"
                     borderColor={borderColor}
                     cursor="pointer"
