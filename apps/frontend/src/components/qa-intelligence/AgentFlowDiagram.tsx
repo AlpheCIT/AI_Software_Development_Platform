@@ -191,11 +191,13 @@ const AgentNode: React.FC<AgentNodeProps> = React.memo(
     const skippedBg = useColorModeValue('gray.50', 'gray.900');
     const idleBorder = useColorModeValue('gray.200', 'gray.600');
     const mutedText = useColorModeValue('gray.400', 'gray.500');
+    const skippedBorder = useColorModeValue('gray.200', 'gray.700');
+    const accentBgLight = useColorModeValue(`${config.color}.50`, `${config.color}.900`);
     const AgentIcon = config.icon;
 
     // Determine border color
     const borderColor = isSkipped
-      ? useColorModeValue('gray.200', 'gray.700')
+      ? skippedBorder
       : isSelectedAgent
       ? `${config.color}.500`
       : isActive || isLooping
@@ -210,9 +212,9 @@ const AgentNode: React.FC<AgentNodeProps> = React.memo(
     const bg = isSkipped
       ? skippedBg
       : isSelectedAgent
-      ? useColorModeValue(`${config.color}.50`, `${config.color}.900`)
+      ? accentBgLight
       : isActive
-      ? useColorModeValue(`${config.color}.50`, `${config.color}.900`)
+      ? accentBgLight
       : cardBg;
 
     // Status badge color
