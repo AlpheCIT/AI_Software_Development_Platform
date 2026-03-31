@@ -200,7 +200,15 @@ export async function selfHealerNode(
         }
 
         // Map DSPy report to SelfHealingReport format
-        const dspyReport = dspyResult.report || {};
+        // Handle case where report is a JSON string (Python service returns json.dumps)
+        let dspyReport = dspyResult.report || {};
+        if (typeof dspyReport === 'string') {
+          try { dspyReport = JSON.parse(dspyReport); } catch { dspyReport = {}; }
+        }
+        // Detect DSPy error responses — throw to trigger LLM fallback
+        if (dspyReport.error) {
+          throw new Error(`DSPy returned error: ${dspyReport.error}`);
+        }
         const report: SelfHealingReport = {
           typeMismatches: dspyReport.typeMismatches || dspyReport.type_mismatches || [],
           brokenImports: dspyReport.brokenImports || dspyReport.broken_imports || [],

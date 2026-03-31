@@ -168,7 +168,13 @@ export async function apiValidatorNode(
         }
 
         // Map DSPy report to APIValidationReport format
-        const dspyReport = dspyResult.report || {};
+        let dspyReport = dspyResult.report || {};
+        if (typeof dspyReport === 'string') {
+          try { dspyReport = JSON.parse(dspyReport); } catch { dspyReport = {}; }
+        }
+        if (dspyReport.error) {
+          throw new Error(`DSPy returned error: ${dspyReport.error}`);
+        }
         const report: APIValidationReport = {
           endpoints: dspyReport.endpoints || [],
           missingErrorHandling: dspyReport.missingErrorHandling || dspyReport.missing_error_handling || [],

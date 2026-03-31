@@ -181,7 +181,13 @@ export async function coverageAuditorNode(
         }
 
         // Map DSPy report to CoverageAuditReport format
-        const dspyReport = dspyResult.report || {};
+        let dspyReport = dspyResult.report || {};
+        if (typeof dspyReport === 'string') {
+          try { dspyReport = JSON.parse(dspyReport); } catch { dspyReport = {}; }
+        }
+        if (dspyReport.error) {
+          throw new Error(`DSPy returned error: ${dspyReport.error}`);
+        }
         const report: CoverageAuditReport = {
           unexposedBackendFeatures: dspyReport.unexposedBackendFeatures || dspyReport.unexposed_backend_features || [],
           brokenFrontendCalls: dspyReport.brokenFrontendCalls || dspyReport.broken_frontend_calls || [],
