@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
+import { isDSPyAvailable, callDSPyExpert, handleSubAgents } from '../dspy-client.js';
 import { detectGlobalMiddleware, routeHasErrorHandling, routeHasInputValidation } from './verification-helpers.js';
 import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from './graph-helpers.js';
 import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from './scoring-helpers.js';
@@ -128,6 +129,104 @@ export async function apiValidatorNode(
   const globalMiddlewareContext = globalMiddleware.details.length > 0
     ? `\n## IMPORTANT: Global Middleware Detected\n${globalMiddleware.details.join('\n')}\nDO NOT report "missing rate limiting" or "missing auth" for routes already covered by these global middleware.\n`
     : '';
+
+  // === DSPy Expert Chain Path ===
+  if (dbClient) {
+    try {
+      const dspyAvailable = await isDSPyAvailable();
+      if (dspyAvailable) {
+        console.log('[APIValidator] DSPy available — using Backend Expert chain');
+        eventPublisher?.emit('qa:agent.progress', {
+          runId, agent: 'api-validator', progress: 10,
+          message: 'Using DSPy Backend Expert chain for multi-step analysis',
+        });
+
+        const sourceContext = codeFiles
+          .filter((f: any) => f.content && f.path !== '__business_context__')
+          .slice(0, 30)
+          .map((f: any) => `### ${f.path}\n${f.content}`)
+          .join('\n\n');
+
+        const dspyResult = await callDSPyExpert(
+          '/analyze/backend-expert',
+          sourceContext,
+          dbClient, runId, 'api-validator', 'API Validator (DSPy)',
+          eventPublisher
+        );
+
+        // Handle sub-agents if requested
+        if (dspyResult.subAgentsNeeded.length > 0) {
+          const lastStepIndex = dspyResult.steps.length - 1;
+          const sessionId = `sess_${runId}_api-validator_${Date.now()}`;
+          const parentStepId = `step_${sessionId}_${lastStepIndex}`;
+
+          const subResults = await handleSubAgents(
+            dspyResult.subAgentsNeeded, sourceContext,
+            dbClient, runId, sessionId, parentStepId, eventPublisher
+          );
+          if (dspyResult.report) dspyResult.report._subAgentResults = subResults;
+        }
+
+        // Map DSPy report to APIValidationReport format
+        const dspyReport = dspyResult.report || {};
+        const report: APIValidationReport = {
+          endpoints: dspyReport.endpoints || [],
+          missingErrorHandling: dspyReport.missingErrorHandling || dspyReport.missing_error_handling || [],
+          schemaIssues: dspyReport.schemaIssues || dspyReport.schema_issues || [],
+          securityGaps: dspyReport.securityGaps || dspyReport.security_gaps || [],
+          apiHealthScore: dspyReport.apiHealthScore || dspyReport.api_health_score || 0,
+          summary: dspyReport.summary || `DSPy analysis completed (${dspyResult.steps.length} steps)`,
+        };
+
+        // Programmatic verification on DSPy results
+        report.securityGaps = (report.securityGaps || []).filter(gap => {
+          if (gap.type === 'missing-rate-limit' && globalMiddleware.hasRateLimiting) return false;
+          if (gap.type === 'missing-auth' && (globalMiddleware.hasAuth || globalMiddleware.hasRouterAuth)) return false;
+          if (gap.type === 'missing-validation' || gap.type === 'injection-risk') {
+            const hasValidation = routeHasInputValidation(codeFiles, (gap as any).file || '', gap.endpoint || '');
+            if (hasValidation) return false;
+          }
+          return true;
+        });
+
+        report.missingErrorHandling = (report.missingErrorHandling || []).filter(item => {
+          return !routeHasErrorHandling(codeFiles, item.file || '', item.endpoint || '');
+        });
+
+        // Recalculate calibrated score
+        const allFindings = [
+          ...report.securityGaps.map((g: any) => ({ severity: g.severity || 'medium', confidence: 0.8, verified: true })),
+          ...report.missingErrorHandling.map((g: any) => ({ severity: g.severity || 'medium', confidence: 0.7, verified: true })),
+          ...report.schemaIssues.map((g: any) => ({ severity: g.severity || 'medium', confidence: 0.6, verified: true })),
+        ];
+        const { score: calibratedScore } = calculateCalibratedScore(allFindings, codeFiles.length);
+        report.apiHealthScore = calibratedScore;
+
+        enrichFindingsWithBlastRadius(report.securityGaps, graphContext.dependentGraph);
+        enrichFindingsWithBlastRadius(report.missingErrorHandling, graphContext.dependentGraph);
+
+        eventPublisher?.emit('qa:agent.completed', {
+          runId, agent: 'api-validator',
+          result: {
+            endpointsFound: report.endpoints.length,
+            missingErrorHandling: report.missingErrorHandling.length,
+            schemaIssues: report.schemaIssues.length,
+            securityGaps: report.securityGaps.length,
+            criticalSecurityGaps: report.securityGaps.filter(g => g.severity === 'critical').length,
+            apiHealthScore: report.apiHealthScore, source: 'dspy',
+          },
+        });
+
+        console.log(`[APIValidator] DSPy: Found ${report.endpoints.length} endpoints, ${report.securityGaps.length} security gaps. API Health: ${report.apiHealthScore}/100`);
+        return report;
+      }
+    } catch (dspyErr) {
+      console.warn(`[APIValidator] DSPy call failed, falling back to direct LLM: ${(dspyErr as Error).message}`);
+    }
+  }
+
+  // === Fallback: Direct LLM Call (original logic) ===
+  console.log('[APIValidator] Using direct LLM call (DSPy unavailable)');
 
   eventPublisher?.emit('qa:agent.progress', {
     runId,
