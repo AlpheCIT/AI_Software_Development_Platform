@@ -118,13 +118,15 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     mutationResult = JSON.parse(cleaned);
   } catch (error) {
-    console.error('[MutationVerifier] Failed to parse response');
+    console.error('[MutationVerifier] Failed to parse response:', error);
     mutationResult = {
-      totalMutants: testsToAnalyze.length * 3,
-      killed: testsToAnalyze.length * 2,
-      survived: testsToAnalyze.length,
-      score: 67,
+      totalMutants: 0,
+      killed: 0,
+      survived: 0,
+      score: null as any,
       survivors: [],
+      error: 'LLM response parse failed',
+      rawResponse: (typeof response.content === 'string' ? response.content : '').substring(0, 500),
     };
   }
 

@@ -5,6 +5,9 @@ import { runQAPipeline } from '../agents/graph';
 import { QARunConfig } from '../agents/state';
 import { QA_COLLECTIONS } from '../graph/collections';
 import { qaConfig } from '../config';
+import { computeDiff } from '../diff/diff-engine';
+import { resolveScope } from '../diff/scope-resolver';
+import { inheritResults } from '../diff/result-inheritance';
 
 export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
   const router = Router();
@@ -23,6 +26,8 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
         branch = 'main',
         credentials,
         config: userConfig = {},
+        incremental = true,
+        forceAgents = [],
       } = req.body;
 
       if (!repoUrl) {
@@ -61,15 +66,54 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
       // Track the run
       activeRuns.set(runId, { status: 'running', startedAt: new Date().toISOString() });
 
+      // Compute diff for incremental runs
+      let diffInfo: any = null;
+      let scopeInfo: any = null;
+      let previousRunId: string | null = null;
+
+      if (incremental && repoExists) {
+        try {
+          const runs = await dbClient.query(
+            `FOR r IN ${QA_COLLECTIONS.RUNS}
+             FILTER r.repositoryId == @repoId AND r.status == 'completed'
+             SORT r.completedAt DESC LIMIT 1 RETURN r`,
+            { repoId: repositoryId }
+          );
+          if (runs.length > 0) {
+            previousRunId = runs[0]._key;
+            const lastCommit = runs[0].commitSha || null;
+            diffInfo = await computeDiff(repoUrl, branch, lastCommit);
+
+            if (!diffInfo.isFirstRun && diffInfo.changedFiles.length > 0) {
+              const selectedAgents = (runConfig as any).selectedAgents || [
+                'business-context-analyzer', 'code-quality-architect',
+                'self-healer', 'api-validator', 'coverage-auditor', 'ui-ux-analyst',
+                'behavioral-analyst', 'change-tracker', 'fullstack-auditor', 'gherkin-writer',
+              ];
+              scopeInfo = resolveScope(diffInfo.changedFiles, selectedAgents, forceAgents);
+            }
+          }
+        } catch (err) {
+          console.log(`[QA Run ${runId}] Diff computation failed, falling back to full run:`, err);
+        }
+      }
+
+      const isIncremental = !!scopeInfo && !diffInfo?.isFirstRun;
+
       // Return immediately
       res.status(202).json({
         runId,
         repositoryId,
         status: 'started',
         repoIngested: repoExists,
-        message: repoExists
-          ? 'QA run started against existing repository data'
-          : 'Repository not yet ingested. QA run will analyze available data.',
+        incremental: isIncremental,
+        diff: diffInfo ? { stats: diffInfo.stats, changedFiles: diffInfo.changedFiles.length } : null,
+        scope: scopeInfo ? { agentsToRun: scopeInfo.agentsToRun, agentsToInherit: scopeInfo.agentsToInherit } : null,
+        message: isIncremental
+          ? `Incremental run: ${scopeInfo.agentsToRun.length} agents running, ${scopeInfo.agentsToInherit.length} inheriting`
+          : repoExists
+            ? 'Full QA run started against existing repository data'
+            : 'Repository not yet ingested. QA run will analyze available data.',
         endpoints: {
           status: `/qa/runs/${runId}`,
           results: `/qa/results/${runId}`,
@@ -78,7 +122,37 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
 
       // Start the QA pipeline asynchronously
       const pipelinePromise = runQAPipeline(runId, runConfig, { dbClient, eventPublisher })
-        .then(result => {
+        .then(async (result) => {
+          // Store diff record if incremental
+          if (diffInfo && !diffInfo.isFirstRun) {
+            try {
+              await dbClient.upsertDocument('qa_diffs', {
+                _key: `diff_${runId}`,
+                repositoryId,
+                runId,
+                fromCommit: diffInfo.fromCommit,
+                toCommit: diffInfo.toCommit,
+                changedFiles: diffInfo.changedFiles,
+                stats: diffInfo.stats,
+                agentsRun: scopeInfo?.agentsToRun || [],
+                agentsInherited: scopeInfo?.agentsToInherit || [],
+                isIncremental,
+                createdAt: new Date().toISOString(),
+              });
+            } catch (err) {
+              console.error(`[QA Run ${runId}] Failed to store diff record:`, err);
+            }
+          }
+
+          // Inherit results for skipped agents
+          if (isIncremental && previousRunId && scopeInfo?.agentsToInherit?.length > 0) {
+            try {
+              await inheritResults(dbClient, previousRunId, runId, scopeInfo.agentsToInherit);
+            } catch (err) {
+              console.error(`[QA Run ${runId}] Result inheritance failed:`, err);
+            }
+          }
+
           activeRuns.set(runId, {
             status: 'completed',
             startedAt: activeRuns.get(runId)?.startedAt || '',
@@ -380,6 +454,67 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
       });
     } catch (error: any) {
       console.error('Error checking freshness:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  /**
+   * GET /qa/diff-preview/:repositoryId
+   * Preview what would change if a run started now — shows changed files + affected agents.
+   */
+  router.get('/diff-preview/:repositoryId', async (req: Request, res: Response) => {
+    try {
+      const { repositoryId } = req.params;
+      const { repoUrl, branch = 'main' } = req.query as { repoUrl?: string; branch?: string };
+
+      if (!repoUrl) {
+        return res.status(400).json({ error: 'repoUrl query parameter is required' });
+      }
+
+      // Find last analyzed commit
+      let lastAnalyzedCommit: string | null = null;
+      let lastRunId: string | null = null;
+      try {
+        const runs = await dbClient.query(
+          `FOR r IN ${QA_COLLECTIONS.RUNS}
+           FILTER r.repositoryId == @repoId AND r.status == 'completed'
+           SORT r.completedAt DESC LIMIT 1 RETURN r`,
+          { repoId: repositoryId }
+        );
+        if (runs.length > 0) {
+          lastAnalyzedCommit = runs[0].commitSha || null;
+          lastRunId = runs[0]._key;
+        }
+      } catch { /* no previous runs */ }
+
+      // Compute diff
+      const diff = await computeDiff(repoUrl, branch, lastAnalyzedCommit);
+
+      // Resolve scope (use a default agent list — in production this comes from pipeline config)
+      const defaultAgents = [
+        'business-context-analyzer', 'code-quality-architect',
+        'self-healer', 'api-validator', 'coverage-auditor', 'ui-ux-analyst',
+        'behavioral-analyst', 'change-tracker', 'fullstack-auditor', 'gherkin-writer',
+      ];
+      const scope = diff.isFirstRun
+        ? { agentsToRun: defaultAgents, agentsToSkip: [], agentsToInherit: [], reasoning: { '*': 'First run — full analysis required' } }
+        : resolveScope(diff.changedFiles, defaultAgents);
+
+      res.json({
+        repositoryId,
+        lastAnalyzedCommit,
+        lastRunId,
+        diff: {
+          fromCommit: diff.fromCommit,
+          toCommit: diff.toCommit,
+          isFirstRun: diff.isFirstRun,
+          changedFiles: diff.changedFiles,
+          stats: diff.stats,
+        },
+        scope,
+      });
+    } catch (error: any) {
+      console.error('Error computing diff preview:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   });

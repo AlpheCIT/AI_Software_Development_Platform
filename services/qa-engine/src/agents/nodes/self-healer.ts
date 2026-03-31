@@ -215,7 +215,7 @@ export async function selfHealerNode(
           missingDeps: dspyReport.missingDeps || dspyReport.missing_deps || [],
           configIssues: dspyReport.configIssues || dspyReport.config_issues || [],
           autoFixes: dspyReport.autoFixes || dspyReport.auto_fixes || [],
-          healthScore: dspyReport.healthScore || dspyReport.health_score || 0,
+          healthScore: dspyReport.healthScore ?? dspyReport.health_score ?? null,
           summary: dspyReport.summary || `DSPy analysis completed (${dspyResult.steps.length} steps)`,
         };
 

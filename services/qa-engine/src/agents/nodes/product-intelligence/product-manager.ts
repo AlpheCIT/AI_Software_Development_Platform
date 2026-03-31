@@ -242,15 +242,18 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     roadmap = JSON.parse(cleaned);
   } catch (error) {
-    console.error('[ProductManager] Failed to parse response, using fallback');
+    console.error('[ProductManager] Failed to parse response:', error);
+    console.error('[ProductManager] Raw response:', (typeof response.content === 'string' ? response.content : '').substring(0, 500));
     roadmap = {
-      appDomain: 'Unable to determine — analysis incomplete',
+      __failed: true,
+      error: 'LLM response parse failed',
+      appDomain: 'Analysis failed — LLM response could not be parsed',
       currentStrengths: [],
-      criticalGaps: ['Analysis failed — retry recommended'],
+      criticalGaps: [],
       roadmap: { immediate: [], shortTerm: [], mediumTerm: [], longTerm: [] },
       competitiveAnalysis: { marketSegment: 'Unknown', competitors: [], uniquePositioning: '' },
       userPersonas: [],
-    };
+    } as any;
   }
 
   const totalFeatures =

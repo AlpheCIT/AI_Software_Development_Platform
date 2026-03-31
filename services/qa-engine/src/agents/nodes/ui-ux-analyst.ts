@@ -256,8 +256,8 @@ export async function uiUxAnalystNode(
           componentIssues: dspyReport.componentIssues || dspyReport.component_issues || [],
           userFlowIssues: dspyReport.userFlowIssues || dspyReport.user_flow_issues || [],
           suggestions: dspyReport.suggestions || [],
-          accessibilityScore: dspyReport.accessibilityScore || dspyReport.accessibility_score || 0,
-          uxScore: dspyReport.uxScore || dspyReport.ux_score || 0,
+          accessibilityScore: dspyReport.accessibilityScore ?? dspyReport.accessibility_score ?? null,
+          uxScore: dspyReport.uxScore ?? dspyReport.ux_score ?? null,
           summary: dspyReport.summary || `DSPy analysis completed (${dspyResult.steps.length} steps)`,
         };
 

@@ -185,17 +185,10 @@ Respond with ONLY a valid JSON array, no markdown fencing.`;
     }));
   } catch (error) {
     console.error('[Generator] Failed to parse Claude response:', error);
-    // Create a minimal fallback test so the pipeline continues
-    tests = [{
-      id: uuidv4(),
-      name: 'fallback-smoke-test',
-      type: 'unit' as const,
-      targetFile: highRiskFiles[0]?.filePath || 'app.js',
-      code: `describe('Smoke Test', () => { it('should load without errors', () => { expect(true).toBe(true); }); });`,
-      confidence: 0.1,
-      iteration: state.iteration + 1,
-    }];
-    console.log('[Generator] Using fallback smoke test so pipeline continues');
+    console.error('[Generator] Raw response:', (typeof response.content === 'string' ? response.content : '').substring(0, 500));
+    // No fake tests — pipeline continues with 0 tests, mutation verifier reports accurately
+    tests = [];
+    state.errors = [...(state.errors || []), { agent: 'generator', error: 'Failed to parse LLM response into test cases' }];
   }
 
   eventPublisher?.emit('qa:agent.completed', {

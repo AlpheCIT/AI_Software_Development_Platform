@@ -180,7 +180,7 @@ export async function apiValidatorNode(
           missingErrorHandling: dspyReport.missingErrorHandling || dspyReport.missing_error_handling || [],
           schemaIssues: dspyReport.schemaIssues || dspyReport.schema_issues || [],
           securityGaps: dspyReport.securityGaps || dspyReport.security_gaps || [],
-          apiHealthScore: dspyReport.apiHealthScore || dspyReport.api_health_score || 0,
+          apiHealthScore: dspyReport.apiHealthScore ?? dspyReport.api_health_score ?? null,
           summary: dspyReport.summary || `DSPy analysis completed (${dspyResult.steps.length} steps)`,
         };
 

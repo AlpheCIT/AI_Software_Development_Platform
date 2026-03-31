@@ -24,9 +24,9 @@ const SEVERITY_WEIGHTS: Record<string, number> = {
 export function calculateCalibratedScore(
   findings: ScoredFinding[],
   totalFiles: number
-): { score: number; grade: string; gradeDescription: string } {
+): { score: number | null; grade: string; gradeDescription: string } {
   if (findings.length === 0) {
-    return { score: 70, grade: 'C', gradeDescription: 'No verified issues found — limited analysis' };
+    return { score: null, grade: 'N/A', gradeDescription: 'No findings detected — analysis may be incomplete' };
   }
 
   let deductions = 0;
@@ -52,8 +52,8 @@ export function calculateCalibratedScore(
   const sizeNormalizer = Math.max(Math.log10(totalFiles + 10) / Math.log10(200), 0.7);
   const normalizedDeductions = deductions / sizeNormalizer;
 
-  // Floor at 20 — no agent should score below 20/100 (even severely problematic code has SOME merit)
-  const score = Math.max(20, Math.min(100, Math.round(100 - normalizedDeductions)));
+  // No artificial floor — let the score reflect reality
+  const score = Math.max(0, Math.min(100, Math.round(100 - normalizedDeductions)));
   const { grade, gradeDescription } = getGrade(score);
 
   return { score, grade, gradeDescription };
@@ -74,7 +74,7 @@ function getGrade(score: number): { grade: string; gradeDescription: string } {
  */
 export function computeUnifiedHealthScore(
   agentResults: Record<string, any>
-): { score: number; grade: string; breakdown: Record<string, { score: number; weight: number }> } {
+): { score: number | null; grade: string; breakdown: Record<string, { score: number; weight: number }> } {
   const WEIGHTS: Record<string, number> = {
     'code-quality': 0.25,
     'self-healer': 0.20,
@@ -113,8 +113,8 @@ export function computeUnifiedHealthScore(
     }
   }
 
-  const finalScore = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
-  const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 60 ? 'C' : finalScore >= 40 ? 'D' : 'F';
+  const finalScore = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
+  const grade = finalScore === null ? 'N/A' : finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 60 ? 'C' : finalScore >= 40 ? 'D' : 'F';
 
   return { score: finalScore, grade, breakdown };
 }
