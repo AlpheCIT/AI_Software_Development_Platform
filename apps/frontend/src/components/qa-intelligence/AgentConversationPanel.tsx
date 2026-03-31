@@ -52,6 +52,7 @@ export default function AgentConversationPanel({
   const userBg = useColorModeValue('blue.50', 'blue.900');
   const responseBg = useColorModeValue('green.50', 'green.900');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const metaBg = useColorModeValue('gray.100', 'gray.700');
 
   useEffect(() => {
     loadConversations();
@@ -164,7 +165,7 @@ export default function AgentConversationPanel({
           return (
             <Box key={idx} bg={cardBg} borderRadius="md" border="1px solid" borderColor={borderColor} overflow="hidden">
               {/* Meta info */}
-              <HStack px={3} py={2} bg={useColorModeValue('gray.100', 'gray.700')} fontSize="xs" color="gray.500" spacing={4}>
+              <HStack px={3} py={2} bg={metaBg} fontSize="xs" color="gray.500" spacing={4}>
                 <HStack>
                   <Clock size={12} />
                   <Text>{new Date(conv.timestamp).toLocaleTimeString()}</Text>
