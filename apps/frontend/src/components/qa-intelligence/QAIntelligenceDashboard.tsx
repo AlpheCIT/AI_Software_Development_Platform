@@ -49,6 +49,7 @@ import {
   History,
   BookOpen,
   GitCompare,
+  GitBranch,
 } from 'lucide-react';
 
 import QARunControl from './QARunControl';
@@ -71,6 +72,8 @@ import LearningsPanel from './LearningsPanel';
 import BehaviorSpecsTab from './BehaviorSpecsTab';
 import BehaviorChangesTab from './BehaviorChangesTab';
 import BehaviorExportButton from './BehaviorExportButton';
+import AgentSpawningTree from './AgentSpawningTree';
+import AgentReasoningTimeline from './AgentReasoningTimeline';
 import { useQARun } from '../../hooks/useQARun';
 import { useAgentStream } from '../../hooks/useAgentStream';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -209,6 +212,7 @@ const QAIntelligenceDashboard: React.FC = () => {
   const [showTerminal, setShowTerminal] = useState(false);
   const [showReplay, setShowReplay] = useState(false);
   const [showDebate, setShowDebate] = useState(false);
+  const [reasoningAgent, setReasoningAgent] = useState<{ id: string; name: string } | null>(null);
 
   // Check if any loops occurred (for debate view button)
   const hasLoops = agentStream.agentTimeline.some(e => e.event === 'agent.loop');
@@ -411,6 +415,21 @@ const QAIntelligenceDashboard: React.FC = () => {
           handoffData={agentStream.handoffData}
         />
 
+        {/* Agent Spawning Tree (execution tree with sub-agent spawning) */}
+        <AgentSpawningTree
+          runId={qaRun.runId || undefined}
+          liveEvents={qaRun.isRunning}
+        />
+
+        {/* Agent Reasoning Timeline (when an agent is selected) */}
+        {reasoningAgent && qaRun.runId && (
+          <AgentReasoningTimeline
+            agentId={reasoningAgent.id}
+            agentName={reasoningAgent.name}
+            runId={qaRun.runId}
+          />
+        )}
+
         {/* Agent Pipeline (compact fallback — shows all 13 tiles) */}
         <AgentPipeline
           agents={liveAgents}
@@ -495,6 +514,12 @@ const QAIntelligenceDashboard: React.FC = () => {
             </Tab>
             <Tab>
               <HStack spacing={1}>
+                <GitBranch size={14} />
+                <Text>Agent Reasoning</Text>
+              </HStack>
+            </Tab>
+            <Tab>
+              <HStack spacing={1}>
                 <Brain size={14} />
                 <Text>AI Learnings</Text>
               </HStack>
@@ -531,6 +556,40 @@ const QAIntelligenceDashboard: React.FC = () => {
             </TabPanel>
             <TabPanel px={0}>
               <AgentReportsTab runId={qaRun.runId || undefined} />
+            </TabPanel>
+            <TabPanel px={0}>
+              <VStack spacing={4} align="stretch">
+                <HStack spacing={2} flexWrap="wrap">
+                  {(qaRun.agents || []).map((agent) => (
+                    <Button
+                      key={agent.name}
+                      size="xs"
+                      variant={reasoningAgent?.id === agent.name ? 'solid' : 'outline'}
+                      colorScheme={reasoningAgent?.id === agent.name ? 'blue' : 'gray'}
+                      onClick={() =>
+                        setReasoningAgent(
+                          reasoningAgent?.id === agent.name
+                            ? null
+                            : { id: agent.name, name: agent.name }
+                        )
+                      }
+                    >
+                      {agent.name}
+                    </Button>
+                  ))}
+                </HStack>
+                {reasoningAgent && qaRun.runId ? (
+                  <AgentReasoningTimeline
+                    agentId={reasoningAgent.id}
+                    agentName={reasoningAgent.name}
+                    runId={qaRun.runId}
+                  />
+                ) : (
+                  <Text fontSize="sm" color="gray.500" textAlign="center" py={4}>
+                    Select an agent above to view its step-by-step reasoning timeline.
+                  </Text>
+                )}
+              </VStack>
             </TabPanel>
             <TabPanel px={0}>
               <LearningsPanel repositoryId={qaRun.runId || undefined} />

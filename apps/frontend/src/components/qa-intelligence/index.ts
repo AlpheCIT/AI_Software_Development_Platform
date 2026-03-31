@@ -31,3 +31,5 @@ export { default as CoverageAuditorPanel } from './CoverageAuditorPanel';
 export { default as UIUXAnalystPanel } from './UIUXAnalystPanel';
 export { default as AgentReportsTab } from './AgentReportsTab';
 export { default as LearningsPanel } from './LearningsPanel';
+export { default as AgentSpawningTree } from './AgentSpawningTree';
+export { default as AgentReasoningTimeline } from './AgentReasoningTimeline';
