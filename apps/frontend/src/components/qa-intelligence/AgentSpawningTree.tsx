@@ -133,7 +133,7 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Step node ────────────────────────────────────────────────────────────────
 
-function StepNode({ step, isLast }: { step: AgentStep; isLast: boolean }) {
+const StepNode = React.memo(function StepNode({ step, isLast }: { step: AgentStep; isLast: boolean }) {
   const borderColor = useColorModeValue('gray.300', 'gray.600');
   const stepBg = useColorModeValue('gray.50', 'gray.700');
   const completedBg = useColorModeValue('green.50', 'green.900');
@@ -207,11 +207,11 @@ function StepNode({ step, isLast }: { step: AgentStep; isLast: boolean }) {
       </Tooltip>
     </HStack>
   );
-}
+});
 
 // ── Sub-agent node ───────────────────────────────────────────────────────────
 
-function SubAgentNode({ agent }: { agent: SubAgent }) {
+const SubAgentNode = React.memo(function SubAgentNode({ agent }: { agent: SubAgent }) {
   const [expanded, setExpanded] = useState(false);
   const borderColor = useColorModeValue('gray.300', 'gray.600');
   const subBg = useColorModeValue('gray.50', 'gray.750');
@@ -262,11 +262,11 @@ function SubAgentNode({ agent }: { agent: SubAgent }) {
       </Collapse>
     </Box>
   );
-}
+});
 
 // ── Agent row ────────────────────────────────────────────────────────────────
 
-function AgentRow({ session }: { session: AgentSession }) {
+const AgentRow = React.memo(function AgentRow({ session }: { session: AgentSession }) {
   const [expanded, setExpanded] = useState(true);
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const cardBg = useColorModeValue('white', 'gray.800');
@@ -367,7 +367,7 @@ function AgentRow({ session }: { session: AgentSession }) {
       </Collapse>
     </Box>
   );
-}
+});
 
 // ── Main component ───────────────────────────────────────────────────────────
 

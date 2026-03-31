@@ -617,3 +617,5 @@ export default function PatternDiscovery() {
     </Box>
   );
 }
+
+

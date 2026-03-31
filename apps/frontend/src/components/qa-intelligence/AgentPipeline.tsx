@@ -3,7 +3,7 @@
  * The showstopper component: shows 5 agents working in sequence with animated transitions
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Box,
   VStack,
@@ -145,7 +145,7 @@ const STATUS_ICONS: Record<string, React.ElementType> = {
 
 // ── Pulsing Dot Animation ──────────────────────────────────────────────────
 
-const PulsingDot: React.FC<{ color: string }> = ({ color }) => (
+const PulsingDot: React.FC<{ color: string }> = React.memo(({ color }) => (
   <MotionBox
     w="10px"
     h="10px"
@@ -161,11 +161,11 @@ const PulsingDot: React.FC<{ color: string }> = ({ color }) => (
       ease: 'easeInOut',
     }}
   />
-);
+));
 
 // ── Arrow Connector ────────────────────────────────────────────────────────
 
-const PipelineConnector: React.FC<{ isActive: boolean }> = ({ isActive }) => {
+const PipelineConnector: React.FC<{ isActive: boolean }> = React.memo(({ isActive }) => {
   const arrowColor = useColorModeValue(
     isActive ? 'blue.400' : 'gray.300',
     isActive ? 'blue.300' : 'gray.600'
@@ -181,11 +181,11 @@ const PipelineConnector: React.FC<{ isActive: boolean }> = ({ isActive }) => {
       </MotionBox>
     </Flex>
   );
-};
+});
 
 // ── Loop Indicator ─────────────────────────────────────────────────────────
 
-const LoopIndicator: React.FC<{ from: string; to: string; iteration?: number }> = ({
+const LoopIndicator: React.FC<{ from: string; to: string; iteration?: number }> = React.memo(({
   from,
   to,
   iteration,
@@ -223,7 +223,7 @@ const LoopIndicator: React.FC<{ from: string; to: string; iteration?: number }> 
       </HStack>
     </MotionFlex>
   );
-};
+});
 
 // ── Single Agent Row ───────────────────────────────────────────────────────
 
@@ -233,7 +233,7 @@ interface AgentRowProps {
   isActive: boolean;
 }
 
-const AgentRow: React.FC<AgentRowProps> = ({ agent, config, isActive }) => {
+const AgentRow: React.FC<AgentRowProps> = React.memo(({ agent, config, isActive }) => {
   const cardBg = useColorModeValue('white', 'gray.800');
   const activeBg = useColorModeValue(`${config.color}.50`, `${config.color}.900`);
   const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -355,13 +355,13 @@ const AgentRow: React.FC<AgentRowProps> = ({ agent, config, isActive }) => {
       </AnimatePresence>
     </MotionBox>
   );
-};
+});
 
 // ── Main Pipeline Component ────────────────────────────────────────────────
 
 // ── Typing Indicator ──────────────────────────────────────────────────────
 
-const TypingIndicator: React.FC = () => (
+const TypingIndicator: React.FC = React.memo(() => (
   <HStack spacing={1} px={1}>
     {[0, 1, 2].map(i => (
       <MotionBox
@@ -380,7 +380,7 @@ const TypingIndicator: React.FC = () => (
       />
     ))}
   </HStack>
-);
+));
 
 interface AgentPipelineProps {
   agents: AgentState[];
@@ -390,16 +390,18 @@ interface AgentPipelineProps {
 
 const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId, streamingState }) => {
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(!streamingState);
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const headerColor = useColorModeValue('gray.700', 'gray.200');
   const skippedBg = useColorModeValue('gray.50', 'gray.900');
+  const idlePanelBg = useColorModeValue('gray.50', 'gray.700');
 
   // Merge store statuses with prop agents for persistence
   const storeAgentStatuses = useQARunStore(s => s.agentStatuses);
   const storeSelectedAgents = useQARunStore(s => s.selectedAgents);
   const storeSkippedAgents = useQARunStore(s => s.skippedAgents);
-  const agents = propAgents.map(a => {
+  const agents = useMemo(() => propAgents.map(a => {
     const storeStatus = storeAgentStatuses[a.name];
     if (storeStatus && a.status === 'idle' && storeStatus.status === 'completed') {
       return { ...a, status: 'completed' as const, progress: 100 };
@@ -408,7 +410,7 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
       return { ...a, status: 'active' as const };
     }
     return a;
-  });
+  }), [propAgents, storeAgentStatuses]);
 
   // Build skipped agent lookup
   const skippedAgentMap = new Map(
@@ -451,7 +453,7 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
       borderRadius="lg"
       p={3}
     >
-      <HStack mb={3} spacing={2}>
+      <HStack mb={isCollapsed ? 0 : 3} spacing={2} cursor="pointer" onClick={() => setIsCollapsed(c => !c)}>
         <Brain size={16} />
         <Text fontSize="sm" fontWeight="bold" color={headerColor}>
           Agent Pipeline
@@ -475,10 +477,11 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
             {activeCount} active
           </Badge>
         )}
+        <Text fontSize="xs" color="gray.400" ml="auto">{isCollapsed ? '▶ Show' : '▼ Hide'}</Text>
       </HStack>
 
       {/* Compact grid — 3 columns on desktop, 2 on tablet, 1 on mobile */}
-      <Box
+      {!isCollapsed && <Box
         display="grid"
         gridTemplateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }}
         gap={2}
@@ -516,7 +519,6 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
               hasArrow
             >
             <MotionBox
-              layout
               border="1px solid"
               borderColor={skipped ? borderColor : isExpanded ? `${config.color}.500` : isActive ? `${config.color}.300` : borderColor}
               bg={skipped ? skippedBg : isExpanded ? `${config.color}.50` : isActive ? `${config.color}.50` : cardBg}
@@ -622,7 +624,7 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
             </Tooltip>
           );
         })}
-      </Box>
+      </Box>}
 
       {/* Expanded panel — shows live reasoning OR conversation based on agent status */}
       {expandedAgent && AGENT_CONFIG[expandedAgent] && (() => {
@@ -659,7 +661,7 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
 
             {/* Idle agent with no runId: just show description */}
             {!agentIsActive && !runId && (
-              <Box p={4} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md" border="1px solid" borderColor={borderColor}>
+              <Box p={4} bg={idlePanelBg} borderRadius="md" border="1px solid" borderColor={borderColor}>
                 <Text fontSize="sm" color="gray.500">{expandedConfig.description}</Text>
                 <Text fontSize="xs" color="gray.400" mt={1}>Start a QA run to see this agent in action.</Text>
               </Box>

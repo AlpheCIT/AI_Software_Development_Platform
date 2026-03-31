@@ -156,3 +156,4 @@ export const typeIcon: Record<string, string> = {
   secret: '🔒',
   test: '✅'
 };
+

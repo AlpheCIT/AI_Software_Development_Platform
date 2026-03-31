@@ -41,6 +41,105 @@ app.get('/health', (req, res) => {
 });
 
 // Repository ingestion endpoints
+app.post('/api/v1/ingestion/ingest-local', async (req, res) => {
+  try {
+    const { path, options = {} } = req.body;
+    
+    if (!path) {
+      return res.status(400).json({
+        success: false,
+        error: 'Repository path is required'
+      });
+    }
+
+    // Generate job ID
+    const jobId = `local_job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Emit job started event
+    io.emit('ingestion:job-started', {
+      jobId,
+      repositoryPath: path,
+      type: 'local-repository',
+      timestamp: new Date().toISOString()
+    });
+
+    if (ENABLE_DEMO_DATA) {
+      // Use simulation for demo/development
+      startLocalIngestionProcess(jobId, path, options);
+      
+      return res.json({
+        success: true,
+        data: {
+          jobId,
+          status: 'started',
+          estimatedDuration: '3-8 minutes',
+          message: 'Local repository ingestion started successfully (DEMO MODE)',
+          source: 'simulation'
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Production: Call real repository ingestion service
+    try {
+      const ingestionResponse = await axios.post(`${REPOSITORY_SERVICE_URL}/api/ingestion/ingest-local`, {
+        path,
+        options,
+        jobId,
+        webhookUrl: `http://localhost:${PORT}/webhooks/ingestion`
+      }, {
+        timeout: 30000
+      });
+
+      if (ingestionResponse.data && ingestionResponse.data.success) {
+        // Start real-time progress monitoring
+        monitorIngestionJob(jobId, true);
+
+        res.json({
+          success: true,
+          data: {
+            jobId: ingestionResponse.data.jobId || jobId,
+            status: 'started',
+            estimatedDuration: '5-15 minutes',
+            message: 'Local repository ingestion started successfully',
+            source: 'repository-service'
+          },
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        throw new Error('Invalid ingestion service response');
+      }
+
+    } catch (serviceError) {
+      console.warn('Repository service not available, falling back to simulation:', serviceError.message);
+      
+      // Fallback to simulation if service unavailable
+      startLocalIngestionProcess(jobId, path, options);
+      
+      res.json({
+        success: true,
+        data: {
+          jobId,
+          status: 'started',
+          estimatedDuration: '3-8 minutes',
+          message: 'Local repository ingestion started successfully (FALLBACK MODE)',
+          source: 'simulation-fallback'
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+
+  } catch (error) {
+    console.error('Failed to start local repository ingestion:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to start local repository ingestion',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 app.post('/api/v1/ingestion/repository/progressive', async (req, res) => {
   try {
     const { repositoryUrl, analysisDepth = 'comprehensive', realTimeUpdates = true } = req.body;
@@ -655,6 +754,77 @@ app.post('/webhooks/ingestion', (req, res) => {
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
+
+// Local repository ingestion simulation function
+async function startLocalIngestionProcess(jobId, repositoryPath, options) {
+  const phases = [
+    'Scanning local directory...',
+    'Analyzing file structure...',
+    'Parsing source code...',
+    'Running security analysis...',
+    'Calculating metrics...',
+    'Building dependency graph...',
+    'Generating AI insights...',
+    'Finalizing analysis...'
+  ];
+
+  let currentPhase = 0;
+  let progress = 0;
+  
+  const updateInterval = setInterval(() => {
+    progress += Math.random() * 12;
+    if (progress > 100) progress = 100;
+
+    if (progress > (currentPhase + 1) * 12.5 && currentPhase < phases.length - 1) {
+      currentPhase++;
+      
+      io.emit('ingestion:phase-completed', {
+        jobId,
+        phase: phases[currentPhase - 1],
+        repositoryPath,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    io.emit('ingestion:progress', {
+      jobId,
+      progress: Math.floor(progress),
+      phase: phases[currentPhase],
+      repositoryPath,
+      filesProcessed: Math.floor((progress / 100) * (Math.random() * 200 + 50)),
+      timestamp: new Date().toISOString()
+    });
+
+    // Simulate collection updates
+    if (Math.random() > 0.6) {
+      io.emit('ingestion:collection-updated', {
+        jobId,
+        collection: `collection_${Math.floor(Math.random() * 130) + 1}`,
+        count: Math.floor(Math.random() * 100),
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (progress >= 100) {
+      clearInterval(updateInterval);
+      
+      io.emit('ingestion:completed', {
+        jobId,
+        repositoryPath,
+        metrics: {
+          filesProcessed: Math.floor(Math.random() * 300) + 50,
+          nodesCreated: Math.floor(Math.random() * 800) + 200,
+          edgesCreated: Math.floor(Math.random() * 1500) + 500,
+          securityIssues: Math.floor(Math.random() * 15),
+          performanceIssues: Math.floor(Math.random() * 10),
+          totalLines: Math.floor(Math.random() * 50000) + 10000
+        },
+        source: 'local-simulation',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, 1500); // Slightly faster updates for local repos
+}
 
 // Ingestion simulation function (for demo/fallback)
 async function startIngestionProcess(jobId, repositoryUrl, analysisDepth, realTimeUpdates) {

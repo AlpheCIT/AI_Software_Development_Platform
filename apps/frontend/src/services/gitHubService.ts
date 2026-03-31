@@ -198,7 +198,7 @@ class GitHubService {
         language: null,
         defaultBranch: 'main',
         lastUpdated: new Date().toISOString(),
-        errors: [error.message || 'Failed to validate repository']
+        errors: [error instanceof Error ? error.message : 'Failed to validate repository']
       };
     }
   }

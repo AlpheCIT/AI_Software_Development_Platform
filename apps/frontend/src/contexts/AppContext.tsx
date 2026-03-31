@@ -10,7 +10,8 @@
  */
 
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { apiClient } from '../lib/api/client';
+import { apiClient, ApiError, apiRequest } from '../lib/api/client';
+import { useErrorHandler } from '../components/common/ErrorBoundary';
 
 // Types
 interface Repository {
@@ -54,13 +55,17 @@ interface AppState {
   analysisResults: Record<string, any>;
   isLoading: boolean;
   error: string | null;
+  lastError: ApiError | null;
   preferences: Preferences;
   metrics: Metrics;
+  connectionStatus: 'connected' | 'disconnected' | 'reconnecting';
 }
 
 interface AppContextType extends AppState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  clearError: () => void;
+  setConnectionStatus: (status: 'connected' | 'disconnected' | 'reconnecting') => void;
   loadRepositories: () => Promise<void>;
   createRepository: (repositoryData: any) => Promise<Repository>;
   selectRepository: (repository: Repository | null) => Promise<void>;
@@ -70,6 +75,7 @@ interface AppContextType extends AppState {
   handleAnalysisProgress: (data: any) => void;
   handleAnalysisCompleted: (data: any) => void;
   handleAnalysisFailed: (data: any) => void;
+  retryLastAction: () => Promise<void>;
 }
 
 // Initial state
@@ -80,6 +86,7 @@ const initialState: AppState = {
   analysisResults: {},
   isLoading: false,
   error: null,
+  lastError: null,
   preferences: {
     theme: 'dark',
     autoRefresh: true,
@@ -90,7 +97,8 @@ const initialState: AppState = {
     overview: null,
     trends: null,
     lastUpdated: null
-  }
+  },
+  connectionStatus: 'connected'
 };
 
 // Action types
@@ -105,12 +113,18 @@ const ActionTypes = {
   SET_PREFERENCES: 'SET_PREFERENCES',
   UPDATE_REPOSITORY: 'UPDATE_REPOSITORY',
   ADD_REPOSITORY: 'ADD_REPOSITORY',
-  REMOVE_REPOSITORY: 'REMOVE_REPOSITORY'
+  REMOVE_REPOSITORY: 'REMOVE_REPOSITORY',
+  SET_LAST_ERROR: 'SET_LAST_ERROR',
+  SET_CONNECTION_STATUS: 'SET_CONNECTION_STATUS',
+  CLEAR_ERROR: 'CLEAR_ERROR'
 } as const;
 
 type Action = 
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_LAST_ERROR'; payload: ApiError | null }
+  | { type: 'SET_CONNECTION_STATUS'; payload: 'connected' | 'disconnected' | 'reconnecting' }
+  | { type: 'CLEAR_ERROR' }
   | { type: 'SET_REPOSITORIES'; payload: Repository[] }
   | { type: 'SET_CURRENT_REPOSITORY'; payload: Repository | null }
   | { type: 'SET_ANALYSIS_STATUS'; payload: AnalysisStatus }
@@ -134,6 +148,13 @@ function appReducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         error: action.payload,
+        isLoading: false
+      };
+
+    case 'SET_LAST_ERROR':
+      return {
+        ...state,
+        lastError: action.payload,
         isLoading: false
       };
       
@@ -210,6 +231,26 @@ function appReducer(state: AppState, action: Action): AppState {
           : state.currentRepository
       };
       
+    case 'SET_LAST_ERROR':
+      return {
+        ...state,
+        lastError: action.payload,
+        isLoading: false
+      };
+      
+    case 'SET_CONNECTION_STATUS':
+      return {
+        ...state,
+        connectionStatus: action.payload
+      };
+      
+    case 'CLEAR_ERROR':
+      return {
+        ...state,
+        error: null,
+        lastError: null
+      };
+      
     default:
       return state;
   }
@@ -225,12 +266,18 @@ interface AppProviderProps {
 
 export function AppProvider({ children }: AppProviderProps) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const { handleApiError } = useErrorHandler();
 
   // Load initial data
   useEffect(() => {
     loadRepositories();
     loadMetrics();
     loadPreferences();
+    setupErrorListeners();
+    
+    return () => {
+      cleanupErrorListeners();
+    };
   }, []);
 
   // Auto-refresh metrics
@@ -253,27 +300,106 @@ export function AppProvider({ children }: AppProviderProps) {
     dispatch({ type: ActionTypes.SET_ERROR, payload: error });
   };
 
+  const clearError = () => {
+    dispatch({ type: 'CLEAR_ERROR' });
+  };
+
+  const setConnectionStatus = (status: 'connected' | 'disconnected' | 'reconnecting') => {
+    dispatch({ type: 'SET_CONNECTION_STATUS', payload: status });
+  };
+
+  const setupErrorListeners = () => {
+    // Listen for authentication errors
+    const handleAuthUnauthorized = () => {
+      setError('Authentication expired. Please log in again.');
+      setConnectionStatus('disconnected');
+      // Could trigger redirect to login here
+    };
+
+    const handleAuthForbidden = () => {
+      setError('Access denied. You do not have permission for this action.');
+    };
+
+    // Listen for global app errors
+    const handleAppError = (event: any) => {
+      const { error, context } = event.detail;
+      if (error.code) {
+        dispatch({ type: 'SET_LAST_ERROR', payload: error });
+        handleApiError(error, context);
+      }
+    };
+
+    window.addEventListener('auth:unauthorized', handleAuthUnauthorized);
+    window.addEventListener('auth:forbidden', handleAuthForbidden);
+    window.addEventListener('app:error', handleAppError);
+
+    // Store cleanup functions
+    (window as any).__appErrorCleanup = () => {
+      window.removeEventListener('auth:unauthorized', handleAuthUnauthorized);
+      window.removeEventListener('auth:forbidden', handleAuthForbidden);
+      window.removeEventListener('app:error', handleAppError);
+    };
+  };
+
+  const cleanupErrorListeners = () => {
+    if ((window as any).__appErrorCleanup) {
+      (window as any).__appErrorCleanup();
+    }
+  };
+
+  const retryLastAction = async () => {
+    // Implement retry logic based on last error or action
+    if (state.lastError && state.lastError.retryable) {
+      clearError();
+      setConnectionStatus('reconnecting');
+      
+      try {
+        // Retry the last failed action - this is a simplified version
+        await loadRepositories();
+        setConnectionStatus('connected');
+      } catch (error) {
+        setConnectionStatus('disconnected');
+      }
+    }
+  };
+
   const loadRepositories = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/repositories');
+      dispatch({ type: 'SET_CONNECTION_STATUS', payload: 'connected' });
+      
+      // Use apiRequest utility for better error handling
+      const data = await apiRequest.get('/repositories');
+      
       dispatch({ 
         type: ActionTypes.SET_REPOSITORIES, 
-        payload: response.data?.repositories || [] 
+        payload: (data as any)?.repositories || [] 
       });
     } catch (error: any) {
       setError(`Failed to load repositories: ${error.message}`);
+      dispatch({ type: 'SET_CONNECTION_STATUS', payload: 'disconnected' });
+    } finally {
+      setLoading(false);
     }
   };
 
   const createRepository = async (repositoryData: any): Promise<Repository> => {
     try {
       setLoading(true);
-      const response = await apiClient.post('/repositories', repositoryData);
-      dispatch({ type: ActionTypes.ADD_REPOSITORY, payload: response.data });
-      return response.data;
+      
+      // Use apiRequest utility for repository creation
+      const data = await apiRequest.post('/repositories', repositoryData);
+      
+      dispatch({ type: ActionTypes.ADD_REPOSITORY, payload: data as Repository });
+      return data as Repository;
     } catch (error: any) {
-      setError(`Failed to create repository: ${error.message}`);
+      if (error.code) {
+        // It's an ApiError
+        dispatch({ type: 'SET_LAST_ERROR', payload: error });
+        setError(`Failed to create repository: ${error.message}`);
+      } else {
+        setError(`Failed to create repository: ${error.message}`);
+      }
       throw error;
     } finally {
       setLoading(false);
@@ -397,12 +523,15 @@ export function AppProvider({ children }: AppProviderProps) {
     // Actions
     setLoading,
     setError,
+    clearError,
+    setConnectionStatus,
     loadRepositories,
     createRepository,
     selectRepository,
     loadAnalysisResults,
     loadMetrics,
     updatePreferences,
+    retryLastAction,
     
     // WebSocket handlers
     handleAnalysisProgress,
@@ -427,3 +556,5 @@ export function useAppContext() {
 }
 
 export { AppContext };
+
+

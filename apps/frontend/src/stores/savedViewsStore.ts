@@ -121,3 +121,4 @@ export const useCurrentView = () => {
   
   return currentViewId ? views.find((v) => v.id === currentViewId) : undefined;
 };
+

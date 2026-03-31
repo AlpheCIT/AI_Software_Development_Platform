@@ -15,8 +15,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-code-management/core": "workspace:*",
-    "@ai-code-management/shared": "workspace:*",
+    "@ai-code-management/core": "file:../../packages/core",
+    "@ai-code-management/shared": "file:../../packages/shared",
     "fastify": "^4.24.3",
     "@fastify/cors": "^8.4.0",
     "@fastify/helmet": "^11.1.1",

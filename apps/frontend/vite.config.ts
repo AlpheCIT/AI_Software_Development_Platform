@@ -36,7 +36,7 @@ export default defineConfig({
         secure: false,
       },
       '/ws': {
-        target: 'ws://localhost:3001',
+        target: 'ws://localhost:4001',
         ws: true,
         changeOrigin: true,
       },

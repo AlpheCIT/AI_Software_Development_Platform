@@ -14,7 +14,7 @@ import {
   HStack,
   Divider
 } from '@chakra-ui/react';
-import { IssueCard } from './IssueCard';
+import IssueCard from './IssueCard';
 
 interface Column {
   id: string;
@@ -27,15 +27,26 @@ interface Issue {
   id: string;
   key: string;
   summary: string;
-  issueType: string;
-  priority: string;
-  status: string;
+  issueType: {
+    name: string;
+    iconUrl?: string;
+  };
+  priority: {
+    name: string;
+    iconUrl?: string;
+  };
+  status: {
+    name: string;
+    categoryKey: string;
+  };
   assignee?: {
+    accountId: string;
     displayName: string;
     avatarUrls: { '24x24': string };
   };
   labels: string[];
   updated: string;
+  created: string;
   storyPoints?: number;
 }
 
@@ -136,9 +147,9 @@ export function KanbanColumn({
                 <IssueCard
                   key={issue.id}
                   issue={issue}
-                  index={index}
-                  onClick={() => onIssueClick(issue)}
-                  isConnected={isConnected}
+                  onUpdate={async (issueId, updates) => {
+                    onIssueClick(issue);
+                  }}
                 />
               ))}
               {provided.placeholder}
@@ -194,3 +205,5 @@ export function KanbanColumn({
 }
 
 export default KanbanColumn;
+
+

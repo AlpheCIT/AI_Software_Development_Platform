@@ -287,3 +287,4 @@ class JiraAPIService {
 // Export singleton instance
 export const jiraAPI = new JiraAPIService();
 export default jiraAPI;
+

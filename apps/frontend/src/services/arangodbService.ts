@@ -402,8 +402,16 @@ class ArangoDBService {
       const collections = await this.getAllCollections();
       const populatedCollections = collections.collections.filter(col => col.count > 0).length;
       
+      const statusMap: Record<string, 'pending' | 'running' | 'completed' | 'error'> = {
+        'analyzing': 'running',
+        'active': 'running', 
+        'error': 'error',
+        'completed': 'completed',
+        'pending': 'pending'
+      };
+      
       return {
-        status: repository.status || 'pending',
+        status: statusMap[repository.status as string] || 'pending',
         progress: Math.round((populatedCollections / collections.totalCollections) * 100),
         currentPhase: repository.status === 'analyzing' ? 'Code Analysis' : 'Completed',
         collectionsPopulated: populatedCollections,
@@ -420,3 +428,4 @@ class ArangoDBService {
 // Export singleton instance
 export const arangoDBService = new ArangoDBService();
 export default arangoDBService;
+

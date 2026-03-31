@@ -80,3 +80,5 @@ export const SyncIcon = (props: IconProps) => (
     />
   </Icon>
 );
+
+

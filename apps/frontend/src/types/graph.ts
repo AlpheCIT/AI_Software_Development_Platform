@@ -11,7 +11,14 @@ export type NodeType =
   | 'infra' 
   | 'ci_job' 
   | 'secret' 
-  | 'test';
+  | 'test'
+  | 'frontend'
+  | 'backend'
+  | 'microservice'
+  | 'component'
+  | 'library'
+  | 'config'
+  | 'documentation';
 
 export type LayerType = 
   | 'frontend' 
@@ -48,7 +55,11 @@ export type PerformanceStatus =
 export type EdgeKind = 
   | 'imports' 
   | 'calls' 
-  | 'depends_on' 
+  | 'depends_on'
+  | 'dependency'
+  | 'inheritance'
+  | 'contains'
+  | 'uses'
   | 'deploys_to' 
   | 'monitors';
 
@@ -112,6 +123,8 @@ export interface NodeMetadata {
   version?: string;
   deploymentStatus?: string;
   lastDeployment?: string;
+  complexity?: number;
+  security?: 'low' | 'medium' | 'high' | 'critical';
 }
 
 // Graph node interface
@@ -120,12 +133,47 @@ export interface GraphNode {
   name: string;
   type: NodeType;
   layer: LayerType;
+  properties: Record<string, any>;
   security: SecurityFinding[];
   performance: PerformanceMetric[];
   quality: QualityMetric[];
-  ownership: Ownership;
-  coverage: number; // 0.0 to 1.0
-  metadata: NodeMetadata;
+  ownership: {
+    team: string;
+    maintainer: string;
+    lastModified: string;
+    contact?: string;
+    maintainers?: string[];
+    slackChannel?: string;
+    oncallRotation?: string;
+  };
+  relationships: {
+    incoming: number;
+    outgoing: number;
+  };
+  coverage: {
+    lines: number;
+    branches: number;
+    functions: number;
+    statements: number;
+  };
+  metadata: {
+    lastUpdated: string;
+    version: string;
+    repository?: string;
+    path?: string;
+    language?: string;
+    framework?: string;
+    codeLines?: number;
+    dependencies?: string[];
+    dependents?: string[];
+    deploymentStatus?: string;
+    lastDeployment?: string;
+    complexity?: number;
+    security?: 'low' | 'medium' | 'high' | 'critical';
+    description?: string;
+    quality_score?: number;
+    popularity?: number;
+  };
   position?: {
     x: number;
     y: number;
@@ -134,6 +182,9 @@ export interface GraphNode {
     size?: number;
     color?: string;
     opacity?: number;
+    labelVisible?: boolean;
+    border?: string;
+    label?: string;
   };
 }
 
@@ -143,12 +194,14 @@ export interface GraphEdge {
   source: string;
   target: string;
   kind: EdgeKind;
+  type?: string; // For backward compatibility
   label?: string;
   weight?: number;
   metadata?: {
     connectionCount?: number;
     lastActivity?: string;
     averageLatency?: number;
+    label?: string;
   };
   style?: {
     color?: string;
@@ -166,6 +219,7 @@ export interface GraphData {
     totalEdges: number;
     layers: LayerType[];
     timestamp: string;
+    analysisTimestamp?: string;
     repositoryId?: string;
     analysisVersion?: string;
   };
@@ -229,3 +283,4 @@ export interface GraphCluster {
   size: number;
   color: string;
 }
+

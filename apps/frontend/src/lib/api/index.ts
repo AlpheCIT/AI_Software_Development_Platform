@@ -1,32 +1,60 @@
-/**
- * API Client Index
- * Central export for all API modules
- */
+// Main API index file - exports all API modules
+export { default as apiClient, apiRequest, uploadFile, downloadFile, websocketConfig } from './client';
+export type { ApiResponse, ApiError, PaginatedResponse } from './client';
 
-// Re-export the base client
-export { apiClient } from './client';
+export { default as repositoryApi } from './repositories';
+export type { 
+  Repository, 
+  RepositoryValidation, 
+  RepositoryFilters 
+} from './repositories';
 
-// Import and re-export all API modules
-import graphApiClient, { graphApi, savedViewsApi, simulationApi, analyticsApi } from './graph';
-import { repositoryApi } from './repository';
-import savedViewsApiClient from './savedViews';
+export { default as analysisApi } from './analysis';
+export type { 
+  AnalysisSession, 
+  AnalysisConfiguration, 
+  AnalysisProgress, 
+  AnalysisResults, 
+  Finding 
+} from './analysis';
 
-// Re-export individual APIs
-export { graphApi, savedViewsApi, simulationApi, analyticsApi };
-export { repositoryApi };
-export { default as savedViewsApiClient } from './savedViews';
+export { default as executiveApi } from './executive';
+export type { 
+  ExecutiveKPIs, 
+  TrendData, 
+  TeamPerformance, 
+  ROIMetrics, 
+  Report, 
+  ReportConfiguration, 
+  ReportGeneration,
+  DashboardFilter 
+} from './executive';
 
-// Re-export types
-export type { Repository, CreateRepositoryRequest, AIInsight, Recommendation } from './repository';
-export type { SavedView, CreateSavedViewRequest } from './savedViews';
+export { 
+  default as webSocketClient, 
+  WebSocketClient, 
+  useWebSocket, 
+  websocketUtils 
+} from './websocket';
+export type { 
+  WebSocketEvent, 
+  AnalysisProgressEvent, 
+  AnalysisCompletedEvent, 
+  FindingUpdatedEvent, 
+  SystemStatusEvent 
+} from './websocket';
 
-// Create a unified API object
+// Import the default exports to use in the api object
+import repositoryApiDefault from './repositories';
+import analysisApiDefault from './analysis';
+import executiveApiDefault from './executive';
+import webSocketClientDefault from './websocket';
+
+// Export all API functions in a single object for convenience
 export const api = {
-  graph: graphApi,
-  repository: repositoryApi,
-  savedViews: savedViewsApiClient,
-  simulation: simulationApi,
-  analytics: analyticsApi
+  repositories: repositoryApiDefault,
+  analysis: analysisApiDefault,
+  executive: executiveApiDefault,
+  websocket: webSocketClientDefault
 };
 
-export default api;

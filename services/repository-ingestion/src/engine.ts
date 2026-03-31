@@ -49,6 +49,7 @@ export class RepositoryIngestionEngine {
     // Repository ingestion endpoints
     this.app.post('/api/ingestion/repository', this.ingestRepository);
     this.app.post('/api/ingestion/directory', this.ingestDirectory);
+    this.app.post('/api/ingestion/ingest-local', this.ingestLocalRepository);
     this.app.get('/api/ingestion/status/:jobId', this.getIngestionStatus);
     this.app.get('/api/ingestion/jobs', this.getIngestionJobs);
     
@@ -148,6 +149,39 @@ export class RepositoryIngestionEngine {
       });
     } catch (error) {
       logger.error('Directory ingestion failed:', error);
+      return reply.status(500).send({
+        error: 'Ingestion failed',
+        message: error.message
+      });
+    }
+  };
+
+  private ingestLocalRepository = async (
+    request: FastifyRequest<{ Body: IngestDirectoryRequest }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { path, options = {} } = request.body;
+
+      // Validate repository path
+      if (!path) {
+        return reply.status(400).send({
+          error: 'Invalid repository path',
+          message: 'Please provide a valid local repository path'
+        });
+      }
+
+      // Start local repository ingestion job
+      const jobId = await this.ingestionService.ingestLocalRepository(path, options);
+
+      return reply.send({
+        success: true,
+        jobId,
+        message: 'Local repository ingestion started',
+        status_url: `/api/ingestion/status/${jobId}`
+      });
+    } catch (error) {
+      logger.error('Local repository ingestion failed:', error);
       return reply.status(500).send({
         error: 'Ingestion failed',
         message: error.message

@@ -96,21 +96,38 @@ export function LiveIngestionDashboard({
   useEffect(() => {
     if (!jobId) return;
 
-    const initialJob = ingestionService.getJob(jobId);
-    if (initialJob) {
-      setJob(initialJob);
-    } else {
-      setError('Ingestion job not found');
-      return;
-    }
+    const loadInitialJob = async () => {
+      try {
+        const initialJob = await ingestionService.getJob(jobId);
+        if (initialJob) {
+          setJob(initialJob);
+        } else {
+          setError('Ingestion job not found');
+          return;
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        setError(`Failed to load job: ${errorMessage}`);
+        console.error('Failed to load initial job:', error);
+      }
+    };
+
+    loadInitialJob();
 
     const unsubscribe = ingestionService.addEventListener((event: IngestionEvent) => {
       if (event.jobId !== jobId) return;
 
       switch (event.type) {
         case 'job-updated':
-          const updatedJob = ingestionService.getJob(jobId);
-          if (updatedJob) setJob(updatedJob);
+          const handleJobUpdate = async () => {
+            try {
+              const updatedJob = await ingestionService.getJob(jobId);
+              if (updatedJob) setJob(updatedJob);
+            } catch (error) {
+              console.error('Failed to update job:', error);
+            }
+          };
+          handleJobUpdate();
           break;
 
         case 'job-completed':
@@ -214,11 +231,11 @@ export function LiveIngestionDashboard({
                 <HStack justify="space-between" mb={2}>
                   <Text fontWeight="medium">Overall Progress</Text>
                   <Text fontSize="sm" color="gray.600">
-                    {Math.round(job.overallProgress)}%
+                    {Math.round(job.overallProgress ?? 0)}%
                   </Text>
                 </HStack>
                 <Progress 
-                  value={job.overallProgress} 
+                  value={job.overallProgress ?? 0} 
                   colorScheme={getStatusColor(job.status)}
                   hasStripe={job.status === 'running'}
                   isAnimated={job.status === 'running'}
@@ -236,7 +253,9 @@ export function LiveIngestionDashboard({
                 <Stat size="sm">
                   <StatLabel>Current Phase</StatLabel>
                   <StatNumber fontSize="md">
-                    {job.phases[job.currentPhase - 1]?.name.split(' ')[0] || 'Starting'}
+                    {job.phases && job.currentPhase && job.phases[job.currentPhase - 1] 
+                      ? job.phases[job.currentPhase - 1].name?.split(' ')[0] 
+                      : 'Starting'}
                   </StatNumber>
                 </Stat>
                 <Stat size="sm">
@@ -348,3 +367,4 @@ export function LiveIngestionDashboard({
 }
 
 export default LiveIngestionDashboard;
+

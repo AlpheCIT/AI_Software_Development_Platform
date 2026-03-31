@@ -208,6 +208,12 @@ class APIGateway {
     v1Router.get('/repositories/:id/ai-insights', this.getAIInsights.bind(this));
     v1Router.post('/repositories/:id/ai-insights', this.generateAIInsights.bind(this));
     v1Router.get('/repositories/:id/recommendations', this.getRecommendations.bind(this));
+    
+    // AI Chat Assistant routes
+    v1Router.post('/ai/chat', this.handleAIChat.bind(this));
+    v1Router.get('/ai/conversations/:id', this.getAIConversation.bind(this));
+    v1Router.post('/ai/analyze', this.performAIAnalysis.bind(this));
+    v1Router.post('/ai/feedback', this.submitAIFeedback.bind(this));
 
     // Analytics routes
     v1Router.get('/analytics/overview', this.getAnalyticsOverview.bind(this));
@@ -691,6 +697,108 @@ class APIGateway {
   }
 
   /**
+   * AI Chat Assistant endpoints
+   */
+  async handleAIChat(req, res, next) {
+    try {
+      const { message, context, mode = 'assistant', conversationId } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: 'Message is required' });
+      }
+      
+      // Generate AI response based on context and message
+      const aiResponse = await this.generateAIResponse(message, context, mode);
+      
+      // Store conversation if needed
+      if (conversationId) {
+        await this.storeConversationMessage(conversationId, {
+          type: 'user',
+          content: message,
+          timestamp: new Date()
+        });
+        
+        await this.storeConversationMessage(conversationId, {
+          type: 'ai',
+          content: aiResponse.content,
+          confidence: aiResponse.confidence,
+          highlights: aiResponse.highlights,
+          codeReferences: aiResponse.codeReferences,
+          timestamp: new Date()
+        });
+      }
+      
+      res.json(aiResponse);
+    } catch (error) {
+      next(error);
+    }
+  }
+  
+  async getAIConversation(req, res, next) {
+    try {
+      const { id } = req.params;
+      
+      // Mock conversation data - in real implementation, fetch from database
+      const conversation = {
+        id,
+        messages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      res.json(conversation);
+    } catch (error) {
+      next(error);
+    }
+  }
+  
+  async performAIAnalysis(req, res, next) {
+    try {
+      const { nodes, graphData, analysisType = 'comprehensive' } = req.body;
+      
+      if (!nodes || nodes.length === 0) {
+        return res.status(400).json({ error: 'Nodes are required for analysis' });
+      }
+      
+      // Generate analysis based on selected nodes
+      const analysis = await this.generateCodeAnalysis(nodes, graphData, analysisType);
+      
+      res.json({
+        analysisId: `analysis_${Date.now()}`,
+        analysisType,
+        results: analysis,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  
+  async submitAIFeedback(req, res, next) {
+    try {
+      const { messageId, conversationId, feedbackType, rating, comment } = req.body;
+      
+      // Store feedback for improving AI responses
+      const feedback = {
+        id: `feedback_${Date.now()}`,
+        messageId,
+        conversationId,
+        feedbackType,
+        rating,
+        comment,
+        timestamp: new Date().toISOString()
+      };
+      
+      // In real implementation, store in database
+      console.log('AI Feedback received:', feedback);
+      
+      res.json({ success: true, feedbackId: feedback.id });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * AI and insights endpoints
    */
   async getAIInsights(req, res, next) {
@@ -1040,6 +1148,158 @@ class APIGateway {
    */
   broadcast(event, data) {
     this.io.emit(event, data);
+  }
+  
+  /**
+   * AI Helper Methods
+   */
+  async generateAIResponse(message, context, mode) {
+    // Mock AI response generator - replace with real AI integration
+    const lowerMessage = message.toLowerCase();
+    
+    // Security analysis
+    if (lowerMessage.includes('security') || lowerMessage.includes('vulnerability')) {
+      return {
+        content: `🔒 **Security Analysis**\n\nI've analyzed the selected components for security vulnerabilities. Here are the key findings:\n\n**Critical Issues:**\n- **SQL Injection Risk**: Unparameterized queries detected\n- **XSS Vulnerability**: Unsanitized user input\n- **Authentication Bypass**: Missing role validation\n\n**Recommendations:**\n1. Use parameterized queries for all database operations\n2. Implement input sanitization with DOMPurify\n3. Add comprehensive role-based access control\n\nWould you like me to show specific code examples for these fixes?`,
+        confidence: 0.92,
+        highlights: context?.selectedNodes || [],
+        codeReferences: [
+          { file: 'UserController.js', line: 67, type: 'vulnerability' },
+          { file: 'CommentService.js', line: 23, type: 'vulnerability' }
+        ],
+        suggestions: [
+          {
+            type: 'security_fix',
+            priority: 'high',
+            title: 'Fix SQL Injection',
+            description: 'Replace string concatenation with parameterized queries'
+          }
+        ]
+      };
+    }
+    
+    // Performance analysis
+    if (lowerMessage.includes('performance') || lowerMessage.includes('slow') || lowerMessage.includes('bottleneck')) {
+      return {
+        content: `⚡ **Performance Analysis**\n\nI've identified several performance bottlenecks:\n\n**Major Issues:**\n- **Database N+1 Query**: Multiple queries in loop\n- **Memory Leak**: Uncleaned event listeners\n- **Blocking Operations**: Synchronous file I/O\n\n**Performance Metrics:**\n- Average response time: 1.2s (target: <300ms)\n- Memory usage: 85% (concerning)\n- CPU utilization: 70% (high load)\n\n**Optimization Suggestions:**\n1. Implement query batching\n2. Add event listener cleanup\n3. Switch to async file operations\n\nEstimated improvement: 60% faster response times`,
+        confidence: 0.88,
+        highlights: context?.selectedNodes || [],
+        codeReferences: [
+          { file: 'UserService.js', line: 89, type: 'performance' },
+          { file: 'EventHandler.js', line: 34, type: 'performance' }
+        ],
+        suggestions: [
+          {
+            type: 'performance_fix',
+            priority: 'high',
+            title: 'Optimize Database Queries',
+            description: 'Implement query batching to reduce N+1 queries'
+          }
+        ]
+      };
+    }
+    
+    // Architecture analysis
+    if (lowerMessage.includes('architecture') || lowerMessage.includes('design') || lowerMessage.includes('structure')) {
+      return {
+        content: `🏗️ **Architecture Analysis**\n\nYour current architecture analysis:\n\n**Strengths:**\n- Clean MVC pattern implementation\n- Proper dependency injection\n- Well-structured service layer\n\n**Areas for Improvement:**\n- **Tight Coupling**: PaymentService depends on 5 modules\n- **God Object**: UserManager handles too many responsibilities\n- **Missing Abstraction**: Database calls scattered across controllers\n\n**Recommended Refactoring:**\n1. Extract PaymentGateway interface\n2. Split UserManager into focused services\n3. Implement Repository pattern\n\n**Complexity Metrics:**\n- Cyclomatic complexity: 23 (high, target: <10)\n- Coupling factor: 0.67 (moderate)\n- Cohesion score: 0.73 (good)\n\nWould you like me to create a refactoring plan?`,
+        confidence: 0.85,
+        highlights: context?.selectedNodes || [],
+        codeReferences: [
+          { file: 'PaymentService.js', line: 1, type: 'architecture' },
+          { file: 'UserManager.js', line: 1, type: 'architecture' }
+        ],
+        suggestions: [
+          {
+            type: 'refactor',
+            priority: 'medium',
+            title: 'Split UserManager',
+            description: 'Break down UserManager into focused services'
+          }
+        ]
+      };
+    }
+    
+    // Code explanation
+    if (lowerMessage.includes('explain') || lowerMessage.includes('what does') || lowerMessage.includes('how does')) {
+      return {
+        content: `📝 **Code Explanation**\n\nBased on your selected components, here's a detailed breakdown:\n\n**Function Purpose:**\nThis component implements a data transformation pipeline with these responsibilities:\n\n**Key Operations:**\n1. **Input Validation** (lines 12-18): Validates incoming data structure\n2. **Data Transformation** (lines 20-35): Converts raw data to application format\n3. **Error Handling** (lines 37-42): Graceful error recovery and logging\n4. **Output Formatting** (lines 44-50): Structures response for consumers\n\n**Design Patterns:**\n- **Pipeline Pattern**: Sequential data processing stages\n- **Strategy Pattern**: Pluggable transformation strategies\n- **Observer Pattern**: Event emission for monitoring\n\n**Dependencies:**\n- Lodash for data manipulation\n- Joi for schema validation\n- Winston for structured logging\n\nThe implementation follows SOLID principles with clear separation of concerns.`,
+        confidence: 0.90,
+        highlights: context?.selectedNodes || [],
+        codeReferences: [
+          { file: 'DataTransformer.js', line: 12, type: 'explanation' },
+          { file: 'DataTransformer.js', line: 20, type: 'explanation' }
+        ],
+        suggestions: []
+      };
+    }
+    
+    // Default response
+    return {
+      content: `👋 I'm your AI Code Assistant! I can help you with:\n\n**Code Analysis:**\n- Explain complex functions and algorithms\n- Identify potential bugs and issues\n- Review code quality and patterns\n\n**Security Assessment:**\n- Scan for vulnerabilities\n- Check authentication and authorization\n- Review data validation and sanitization\n\n**Performance Optimization:**\n- Identify bottlenecks and slow queries\n- Suggest caching strategies\n- Recommend architectural improvements\n\n**Architecture Guidance:**\n- Analyze component relationships\n- Suggest refactoring opportunities\n- Design pattern recommendations\n\n**Questions I can answer:**\n- "What does this function do?"\n- "Are there security issues in this code?"\n- "How can I improve performance here?"\n- "What's the best way to refactor this?"\n\nTry asking me about specific parts of your codebase!`,
+      confidence: 1.0,
+      highlights: [],
+      codeReferences: [],
+      suggestions: []
+    };
+  }
+  
+  async generateCodeAnalysis(nodes, graphData, analysisType) {
+    // Mock analysis generator - replace with real analysis engine
+    const analysis = {
+      security: {
+        score: 75,
+        issues: [
+          {
+            severity: 'HIGH',
+            type: 'SQL_INJECTION',
+            description: 'Potential SQL injection vulnerability',
+            file: 'user.controller.ts',
+            line: 42,
+            suggestion: 'Use parameterized queries'
+          }
+        ]
+      },
+      performance: {
+        score: 68,
+        bottlenecks: [
+          {
+            type: 'N_PLUS_ONE',
+            description: 'Database N+1 query pattern detected',
+            file: 'user.service.ts',
+            line: 89,
+            impact: 'high'
+          }
+        ]
+      },
+      quality: {
+        score: 82,
+        metrics: {
+          cyclomaticComplexity: 23,
+          codeLines: 1250,
+          testCoverage: 75
+        }
+      },
+      architecture: {
+        score: 78,
+        patterns: ['MVC', 'Dependency Injection'],
+        smells: [
+          {
+            type: 'GOD_OBJECT',
+            component: 'UserManager',
+            description: 'Class has too many responsibilities'
+          }
+        ]
+      }
+    };
+    
+    return analysis;
+  }
+  
+  async storeConversationMessage(conversationId, message) {
+    // Mock storage - implement with real database
+    console.log(`Storing message for conversation ${conversationId}:`, message);
+    return true;
   }
 }
 

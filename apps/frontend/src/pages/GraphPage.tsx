@@ -32,7 +32,7 @@ import { Search, Settings, Save, FolderOpen } from 'lucide-react';
 
 // Import our world-class components
 import GraphCanvas from '../components/graph/GraphCanvas';
-import InspectorTabs from '../components/graph/inspector/InspectorTabs';
+import InspectorTabs from '../components/analysis/InspectorTabs';
 import SavedViews from '../components/graph/SavedViews';
 import GraphToolbar from '../components/graph/GraphToolbar';
 import GraphStatusBar from '../components/graph/GraphStatusBar';
@@ -47,7 +47,7 @@ import type { GraphNode, GraphEdge, GraphMode, OverlayType } from '../types/grap
 export default function GraphPage() {
   // State management
   const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] }>({ nodes: [], edges: [] });
-  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<GraphMode>('architecture');
@@ -97,14 +97,15 @@ export default function GraphPage() {
   }, [mode, toast]);
 
   // Handle node selection
-  const handleNodeSelect = useCallback((nodeId?: string) => {
+  const handleNodeSelect = useCallback((nodeId: string | null) => {
     setSelectedNodeId(nodeId);
+    
     if (nodeId) {
-      openInspector();
-    } else {
-      closeInspector();
+      // Load node inspector data if needed
+      // This would typically fetch additional node details
+      console.log('Selected node:', nodeId);
     }
-  }, [openInspector, closeInspector]);
+  }, []);
 
   // Handle node double-click (expansion)
   const handleNodeExpand = useCallback(async (nodeId: string) => {
@@ -118,13 +119,13 @@ export default function GraphPage() {
       setGraphData(prevData => ({
         nodes: [
           ...prevData.nodes,
-          ...neighborhoodData.nodes.filter(newNode => 
+          ...neighborhoodData.nodes.filter((newNode: any) => 
             !prevData.nodes.some(existingNode => existingNode.id === newNode.id)
           )
         ],
         edges: [
           ...prevData.edges,
-          ...neighborhoodData.edges.filter(newEdge => 
+          ...neighborhoodData.edges.filter((newEdge: any) => 
             !prevData.edges.some(existingEdge => existingEdge.id === newEdge.id)
           )
         ]
@@ -163,7 +164,8 @@ export default function GraphPage() {
       });
       
       // Filter current graph to show only matching nodes
-      const matchingNodeIds = new Set(searchResults.results.map(r => r.id));
+      const results = searchResults as any;
+      const matchingNodeIds = new Set(results.results.map((r: any) => r.id));
       
       setGraphData(prevData => ({
         nodes: prevData.nodes.filter(node => matchingNodeIds.has(node.id)),
@@ -190,7 +192,7 @@ export default function GraphPage() {
 
   // Subscribe to WebSocket updates
   useEffect(() => {
-    subscribeToGraph('current-repo');
+    subscribeToGraph();
     
     // Handle real-time node updates
     const handleNodeUpdate = (data: any) => {
@@ -368,10 +370,8 @@ export default function GraphPage() {
           {/* Graph Canvas */}
           <Box flex={1} position="relative">
             <GraphCanvas
-              data={graphData}
-              mode={mode}
-              overlay={activeOverlay}
-              selectedNodeId={selectedNodeId}
+              repositoryId={undefined} // Can be added later when needed
+              selectedNodeId={selectedNodeId || undefined}
               onNodeSelect={handleNodeSelect}
               onNodeDoubleClick={handleNodeExpand}
             />
@@ -380,7 +380,7 @@ export default function GraphPage() {
             <GraphStatusBar 
               nodeCount={graphData.nodes.length}
               edgeCount={graphData.edges.length}
-              selectedNodeId={selectedNodeId}
+              selectedNodeId={selectedNodeId ?? undefined}
               mode={mode}
             />
           </Box>
@@ -429,3 +429,5 @@ export default function GraphPage() {
     </Box>
   );
 }
+
+

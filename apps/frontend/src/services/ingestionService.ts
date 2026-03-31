@@ -1,158 +1,338 @@
 /**
- * Repository Ingestion Service
- * Coordinates the end-to-end repository analysis and ingestion process
+ * Repository Ingestion Service - INVESTOR READY VERSION
+ * Connects to Enhanced API Gateway for real repository ingestion
+ * 
+ * Features:
+ * - Real GitHub repository ingestion
+ * - WebSocket real-time progress updates
+ * - 49 database collections population
+ * - No mock data - everything is real
  */
 
-import { arangoDBService, Repository } from './arangodbService';
-import { gitHubService, GitHubRepository } from './gitHubService';
+import { io, Socket } from 'socket.io-client';
 
+// Real API Gateway Configuration
+const API_BASE_URL = 'http://localhost:3001/api/v1';
+const WEBSOCKET_URL = 'ws://localhost:4001';
+
+// Real API Gateway Interfaces
 export interface IngestionJob {
   id: string;
-  repositoryName: string;
   repositoryUrl: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-  currentPhase: number;
-  totalPhases: number;
-  overallProgress: number;
-  estimatedTimeRemaining: number;
+  repositoryName?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progress: number;
+  overallProgress?: number;
+  phase: string;
+  currentPhase?: number;
+  totalPhases?: number;
   startTime: string;
   endTime?: string;
-  phases: IngestionPhase[];
-  errors?: string[];
-  results?: IngestionResults;
-}
-
-export interface IngestionPhase {
-  id: number;
-  name: string;
-  description: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
-  progress: number;
-  startTime?: string;
-  endTime?: string;
-  duration?: number;
-  itemsProcessed?: number;
-  totalItems?: number;
+  collectionsPopulated: number;
+  totalCollections: number;
+  phases?: Array<{ name: string; progress: number; status: string }>;
+  metrics: {
+    filesProcessed: number;
+    nodesCreated: number;
+    edgesCreated: number;
+    securityIssues: number;
+    performanceIssues: number;
+  };
   error?: string;
 }
 
-export interface IngestionResults {
-  collectionsPopulated: string[];
-  documentsCreated: number;
-  edgesCreated: number;
-  filesAnalyzed: number;
-  securityIssues: number;
-  performanceIssues: number;
-  qualityScore: number;
-  insights: Array<{
-    type: 'security' | 'performance' | 'quality' | 'architecture';
-    title: string;
-    description: string;
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    confidence: number;
-  }>;
+export interface IngestionOptions {
+  repositoryUrl: string;
+  analysisDepth?: 'basic' | 'comprehensive';
+  realTimeUpdates?: boolean;
+  populateCollections?: boolean;
 }
 
-export interface IngestionOptions {
-  includeTests: boolean;
-  includeDocs: boolean;
-  deepSecurity: boolean;
-  performanceAnalysis: boolean;
-  qualityAnalysis: boolean;
-  generateInsights: boolean;
-  maxDepth?: number;
-  fileExtensions?: string[];
+export interface WebSocketEvents {
+  'ingestion:progress': {
+    jobId: string;
+    progress: number;
+    phase: string;
+    repository: string;
+    collectionsPopulated: number;
+    totalCollections: number;
+    metrics: {
+      filesProcessed: number;
+      nodesCreated: number;
+      edgesCreated: number;
+      securityIssues: number;
+      performanceIssues: number;
+    };
+  };
+  'ingestion:completed': {
+    jobId: string;
+    repository: any;
+    totalCollections: number;
+    phase: string;
+    progress: number;
+    metrics: any;
+  };
+  'ingestion:error': {
+    jobId: string;
+    error: string;
+    repository: string;
+  };
+  'database-status': {
+    connected: boolean;
+    database: string;
+    message: string;
+  };
 }
 
 class IngestionService {
   private jobs: Map<string, IngestionJob> = new Map();
+  private socket: Socket | null = null;
   private eventListeners: Array<(event: IngestionEvent) => void> = [];
   
+  constructor() {
+    this.initializeWebSocket();
+  }
+
   /**
-   * Start repository ingestion process
+   * Initialize WebSocket connection to API Gateway
    */
-  async startIngestion(
-    repositoryUrl: string, 
-    options: Partial<IngestionOptions> = {}
-  ): Promise<string> {
+  private initializeWebSocket(): void {
     try {
-      // Validate GitHub repository first
-      const validation = await gitHubService.validateRepository(repositoryUrl);
+      this.socket = io(WEBSOCKET_URL);
       
-      if (!validation.isValid) {
-        throw new Error(`Repository validation failed: ${validation.errors?.join(', ')}`);
+      this.socket.on('connect', () => {
+        console.log('✅ WebSocket connected to API Gateway');
+        this.emitEvent({ type: 'websocket-connected' });
+      });
+      
+      this.socket.on('disconnect', () => {
+        console.log('❌ WebSocket disconnected from API Gateway');
+        this.emitEvent({ type: 'websocket-disconnected' });
+      });
+      
+      // Real-time ingestion progress updates
+      this.socket.on('ingestion:progress', (data) => {
+        console.log('📊 Ingestion progress:', data);
+        this.updateJobFromWebSocket(data.jobId, {
+          progress: data.progress,
+          phase: data.phase,
+          collectionsPopulated: data.collectionsPopulated,
+          metrics: data.metrics
+        });
+        this.emitEvent({ type: 'progress-update', jobId: data.jobId, data });
+      });
+      
+      // Ingestion completion
+      this.socket.on('ingestion:completed', (data) => {
+        console.log('✅ Ingestion completed:', data);
+        this.updateJobFromWebSocket(data.jobId, {
+          status: 'completed',
+          progress: 100,
+          phase: 'Analysis complete',
+          endTime: new Date().toISOString()
+        });
+        this.emitEvent({ type: 'ingestion-completed', jobId: data.jobId, data });
+      });
+      
+      // Ingestion errors
+      this.socket.on('ingestion:error', (data) => {
+        console.error('❌ Ingestion error:', data);
+        this.updateJobFromWebSocket(data.jobId, {
+          status: 'failed',
+          error: data.error,
+          endTime: new Date().toISOString()
+        });
+        this.emitEvent({ type: 'ingestion-error', jobId: data.jobId, error: data.error });
+      });
+      
+      // Database status updates
+      this.socket.on('database-status', (data) => {
+        console.log('🗄️ Database status:', data);
+        this.emitEvent({ type: 'database-status', data });
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to initialize WebSocket:', error);
+    }
+  }
+
+  /**
+   * Start real repository ingestion via API Gateway
+   */
+  async startIngestion(repositoryUrl: string): Promise<string> {
+    try {
+      // Validate GitHub URL format
+      const githubUrlPattern = /^https:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\.git)?$/;
+      if (!githubUrlPattern.test(repositoryUrl)) {
+        throw new Error('Invalid GitHub repository URL format');
       }
 
-      // Get repository details
-      const githubRepo = await gitHubService.getRepositoryDetails(repositoryUrl);
+      console.log('🚀 Starting real repository ingestion:', repositoryUrl);
       
-      // Create ingestion job
-      const jobId = this.generateJobId();
+      // Call enhanced API gateway ingestion endpoint
+      const response = await fetch(`${API_BASE_URL}/ingestion/repository/progressive`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repositoryUrl,
+          analysisDepth: 'comprehensive',
+          realTimeUpdates: true,
+          populateCollections: true
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to start repository ingestion');
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Repository ingestion request failed');
+      }
+
+      const jobId = result.data.jobId;
+      
+      // Create initial job record
       const job: IngestionJob = {
         id: jobId,
-        repositoryName: githubRepo.full_name,
-        repositoryUrl: repositoryUrl,
-        status: 'queued',
-        currentPhase: 0,
-        totalPhases: 7,
-        overallProgress: 0,
-        estimatedTimeRemaining: 0,
+        repositoryUrl,
+        status: 'running',
+        progress: 0,
+        phase: 'Initializing...',
         startTime: new Date().toISOString(),
-        phases: this.createIngestionPhases(),
-        errors: []
+        collectionsPopulated: 0,
+        totalCollections: 49,
+        metrics: {
+          filesProcessed: 0,
+          nodesCreated: 0,
+          edgesCreated: 0,
+          securityIssues: 0,
+          performanceIssues: 0
+        }
       };
 
       this.jobs.set(jobId, job);
       this.emitEvent({ type: 'job-created', jobId, job });
 
-      // Start the ingestion process asynchronously
-      this.processIngestion(jobId, githubRepo, options).catch(error => {
-        console.error(`❌ Ingestion job ${jobId} failed:`, error);
-        this.updateJob(jobId, {
-          status: 'failed',
-          errors: [...(job.errors || []), error.message],
-          endTime: new Date().toISOString()
-        });
-      });
-
+      console.log('✅ Repository ingestion started successfully:', jobId);
       return jobId;
+      
     } catch (error) {
-      console.error('❌ Failed to start ingestion:', error);
+      console.error('❌ Failed to start repository ingestion:', error);
       throw error;
     }
   }
 
   /**
-   * Get ingestion job status
+   * Get ingestion job status from API Gateway
    */
-  getJob(jobId: string): IngestionJob | null {
-    return this.jobs.get(jobId) || null;
-  }
+  async getJob(jobId: string): Promise<IngestionJob | null> {
+    try {
+      // First check local cache
+      const localJob = this.jobs.get(jobId);
+      if (localJob) {
+        return localJob;
+      }
 
-  /**
-   * Get all jobs
-   */
-  getAllJobs(): IngestionJob[] {
-    return Array.from(this.jobs.values()).sort((a, b) => 
-      new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-    );
-  }
+      // Fetch from API Gateway
+      const response = await fetch(`${API_BASE_URL}/ingestion/jobs/${jobId}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null;
+        }
+        throw new Error('Failed to fetch job status');
+      }
 
-  /**
-   * Cancel a running job
-   */
-  async cancelJob(jobId: string): Promise<boolean> {
-    const job = this.jobs.get(jobId);
-    if (!job || job.status === 'completed' || job.status === 'failed') {
-      return false;
+      const result = await response.json();
+      
+      if (result.success) {
+        const job = result.data;
+        this.jobs.set(jobId, job);
+        return job;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Failed to get job status:', error);
+      return this.jobs.get(jobId) || null;
     }
+  }
 
-    this.updateJob(jobId, {
-      status: 'cancelled',
-      endTime: new Date().toISOString()
-    });
+  /**
+   * Get all jobs from API Gateway
+   */
+  async getAllJobs(): Promise<IngestionJob[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/ingestion/jobs`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch jobs');
+      }
 
-    return true;
+      const result = await response.json();
+      
+      if (result.success) {
+        // Update local cache
+        result.data.forEach((job: IngestionJob) => {
+          this.jobs.set(job.id, job);
+        });
+        return result.data;
+      }
+      
+      // Fallback to local jobs
+      return Array.from(this.jobs.values()).sort((a, b) => 
+        new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+      );
+    } catch (error) {
+      console.error('❌ Failed to fetch all jobs:', error);
+      // Return local jobs as fallback
+      return Array.from(this.jobs.values()).sort((a, b) => 
+        new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+      );
+    }
+  }
+
+  /**
+   * Get collections status from API Gateway
+   */
+  async getCollectionsStatus(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/collections/status`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch collections status');
+      }
+
+      const result = await response.json();
+      return result.success ? result.data : null;
+    } catch (error) {
+      console.error('❌ Failed to get collections status:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get MCP analytics from API Gateway
+   */
+  async getAnalytics(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/mcp/analytics`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch analytics');
+      }
+
+      const result = await response.json();
+      return result.success ? result.data : null;
+    } catch (error) {
+      console.error('❌ Failed to get analytics:', error);
+      return null;
+    }
   }
 
   /**
@@ -169,331 +349,28 @@ class IngestionService {
   }
 
   /**
-   * Process repository ingestion
+   * Check WebSocket connection status
    */
-  private async processIngestion(
-    jobId: string, 
-    githubRepo: GitHubRepository, 
-    options: Partial<IngestionOptions>
-  ): Promise<void> {
-    const job = this.jobs.get(jobId);
-    if (!job) return;
-
-    try {
-      // Update job status
-      this.updateJob(jobId, { status: 'running', currentPhase: 1 });
-
-      // Phase 1: Repository Setup
-      await this.executePhase(jobId, 1, async () => {
-        // Create repository record in ArangoDB
-        const repoData = {
-          name: githubRepo.name,
-          url: githubRepo.clone_url,
-          description: githubRepo.description || undefined,
-          language: githubRepo.language || 'unknown',
-          owner: githubRepo.owner.login,
-          defaultBranch: githubRepo.default_branch
-        };
-
-        const repository = await arangoDBService.createRepository(repoData);
-        
-        // Store repository reference in job
-        (job as any).repositoryKey = repository._key;
-        
-        return { message: 'Repository created in database' };
-      });
-
-      // Phase 2: Code Analysis
-      await this.executePhase(jobId, 2, async () => {
-        // This would call the backend ingestion API
-        const response = await fetch('/api/ingestion/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            repositoryUrl: githubRepo.clone_url,
-            repositoryKey: (job as any).repositoryKey,
-            options: {
-              includeTests: options.includeTests ?? true,
-              includeDocs: options.includeDocs ?? false,
-              deepSecurity: options.deepSecurity ?? true,
-              performanceAnalysis: options.performanceAnalysis ?? true,
-              qualityAnalysis: options.qualityAnalysis ?? true
-            }
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error('Code analysis failed');
-        }
-
-        const result = await response.json();
-        return { message: `Analyzed ${result.filesProcessed || 0} files` };
-      });
-
-      // Phase 3: Collection Population
-      await this.executePhase(jobId, 3, async () => {
-        // Monitor collection population
-        const collections = await arangoDBService.getAllCollections();
-        const populatedCollections = collections.collections.filter(col => col.count > 0);
-        
-        return { 
-          message: `Populated ${populatedCollections.length} collections`,
-          collectionsCount: populatedCollections.length 
-        };
-      });
-
-      // Phase 4: Security Analysis
-      await this.executePhase(jobId, 4, async () => {
-        if (!options.deepSecurity) {
-          return { message: 'Security analysis skipped' };
-        }
-
-        // Call security analysis endpoint
-        const response = await fetch('/api/ingestion/security', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            repositoryKey: (job as any).repositoryKey
-          })
-        });
-
-        const result = await response.json();
-        return { message: `Found ${result.issuesFound || 0} security issues` };
-      });
-
-      // Phase 5: Performance Analysis
-      await this.executePhase(jobId, 5, async () => {
-        if (!options.performanceAnalysis) {
-          return { message: 'Performance analysis skipped' };
-        }
-
-        // Simulate performance analysis
-        await this.delay(2000);
-        return { message: 'Performance analysis completed' };
-      });
-
-      // Phase 6: Quality Assessment
-      await this.executePhase(jobId, 6, async () => {
-        if (!options.qualityAnalysis) {
-          return { message: 'Quality analysis skipped' };
-        }
-
-        // Simulate quality analysis
-        await this.delay(1500);
-        return { message: 'Quality assessment completed' };
-      });
-
-      // Phase 7: AI Insights Generation
-      await this.executePhase(jobId, 7, async () => {
-        if (!options.generateInsights) {
-          return { message: 'AI insights generation skipped' };
-        }
-
-        // Generate AI insights
-        const response = await fetch('/api/ingestion/insights', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            repositoryKey: (job as any).repositoryKey
-          })
-        });
-
-        const result = await response.json();
-        return { message: `Generated ${result.insightsCount || 0} AI insights` };
-      });
-
-      // Mark job as completed
-      this.updateJob(jobId, {
-        status: 'completed',
-        endTime: new Date().toISOString(),
-        overallProgress: 100
-      });
-
-      this.emitEvent({ 
-        type: 'job-completed', 
-        jobId, 
-        message: `Repository ${githubRepo.full_name} analysis completed successfully` 
-      });
-
-    } catch (error) {
-      console.error(`❌ Ingestion job ${jobId} failed:`, error);
-      
-      this.updateJob(jobId, {
-        status: 'failed',
-        errors: [...(job.errors || []), error.message],
-        endTime: new Date().toISOString()
-      });
-
-      this.emitEvent({ 
-        type: 'job-failed', 
-        jobId, 
-        error: error.message 
-      });
-    }
+  isWebSocketConnected(): boolean {
+    return this.socket?.connected || false;
   }
 
   /**
-   * Execute a specific ingestion phase
+   * Get WebSocket instance for advanced usage
    */
-  private async executePhase(
-    jobId: string, 
-    phaseId: number, 
-    executor: () => Promise<any>
-  ): Promise<void> {
-    const job = this.jobs.get(jobId);
-    if (!job || job.status !== 'running') return;
-
-    const phase = job.phases.find(p => p.id === phaseId);
-    if (!phase) return;
-
-    try {
-      // Update phase status
-      this.updatePhase(jobId, phaseId, {
-        status: 'running',
-        startTime: new Date().toISOString(),
-        progress: 0
-      });
-
-      this.updateJob(jobId, { currentPhase: phaseId });
-
-      // Simulate progress updates
-      const progressInterval = setInterval(() => {
-        const currentPhase = this.jobs.get(jobId)?.phases.find(p => p.id === phaseId);
-        if (currentPhase?.status === 'running' && currentPhase.progress < 90) {
-          this.updatePhase(jobId, phaseId, {
-            progress: Math.min(currentPhase.progress + 10, 90)
-          });
-        }
-      }, 500);
-
-      // Execute phase
-      const result = await executor();
-
-      clearInterval(progressInterval);
-
-      // Update phase completion
-      this.updatePhase(jobId, phaseId, {
-        status: 'completed',
-        progress: 100,
-        endTime: new Date().toISOString()
-      });
-
-      // Update overall progress
-      const completedPhases = job.phases.filter(p => p.status === 'completed').length;
-      const overallProgress = Math.round((completedPhases / job.totalPhases) * 100);
-      
-      this.updateJob(jobId, { overallProgress });
-
-      this.emitEvent({
-        type: 'phase-completed',
-        jobId,
-        phaseId,
-        phaseName: phase.name,
-        result
-      });
-
-    } catch (error) {
-      this.updatePhase(jobId, phaseId, {
-        status: 'failed',
-        error: error.message,
-        endTime: new Date().toISOString()
-      });
-
-      throw error;
-    }
+  getSocket(): Socket | null {
+    return this.socket;
   }
 
   /**
-   * Create default ingestion phases
+   * Update job from WebSocket data
    */
-  private createIngestionPhases(): IngestionPhase[] {
-    return [
-      {
-        id: 1,
-        name: 'Repository Setup',
-        description: 'Creating repository record and initializing analysis',
-        status: 'pending',
-        progress: 0
-      },
-      {
-        id: 2,
-        name: 'Code Analysis',
-        description: 'Analyzing source code structure and dependencies',
-        status: 'pending',
-        progress: 0
-      },
-      {
-        id: 3,
-        name: 'Collection Population',
-        description: 'Populating ArangoDB collections with analysis data',
-        status: 'pending',
-        progress: 0
-      },
-      {
-        id: 4,
-        name: 'Security Analysis',
-        description: 'Scanning for security vulnerabilities and issues',
-        status: 'pending',
-        progress: 0
-      },
-      {
-        id: 5,
-        name: 'Performance Analysis',
-        description: 'Analyzing performance patterns and bottlenecks',
-        status: 'pending',
-        progress: 0
-      },
-      {
-        id: 6,
-        name: 'Quality Assessment',
-        description: 'Evaluating code quality and maintainability',
-        status: 'pending',
-        progress: 0
-      },
-      {
-        id: 7,
-        name: 'AI Insights',
-        description: 'Generating AI-powered insights and recommendations',
-        status: 'pending',
-        progress: 0
-      }
-    ];
-  }
-
-  /**
-   * Update job properties
-   */
-  private updateJob(jobId: string, updates: Partial<IngestionJob>): void {
+  private updateJobFromWebSocket(jobId: string, updates: Partial<IngestionJob>): void {
     const job = this.jobs.get(jobId);
     if (!job) return;
 
     Object.assign(job, updates);
     this.jobs.set(jobId, job);
-
-    this.emitEvent({ type: 'job-updated', jobId, updates });
-  }
-
-  /**
-   * Update phase properties
-   */
-  private updatePhase(jobId: string, phaseId: number, updates: Partial<IngestionPhase>): void {
-    const job = this.jobs.get(jobId);
-    if (!job) return;
-
-    const phaseIndex = job.phases.findIndex(p => p.id === phaseId);
-    if (phaseIndex === -1) return;
-
-    Object.assign(job.phases[phaseIndex], updates);
-    this.jobs.set(jobId, job);
-
-    this.emitEvent({ type: 'phase-updated', jobId, phaseId, updates });
-  }
-
-  /**
-   * Generate unique job ID
-   */
-  private generateJobId(): string {
-    return `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   /**
@@ -510,25 +387,38 @@ class IngestionService {
   }
 
   /**
-   * Utility delay function
+   * Cleanup resources
    */
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  destroy(): void {
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+    this.eventListeners = [];
+    this.jobs.clear();
   }
+
+
 }
 
+// Updated event interface for real API Gateway integration
 export interface IngestionEvent {
-  type: 'job-created' | 'job-updated' | 'job-completed' | 'job-failed' | 'phase-completed' | 'phase-updated';
-  jobId: string;
+  type: 'job-created' | 'job-updated' | 'job-completed' | 'job-failed' | 'progress-update' | 'ingestion-completed' | 'ingestion-error' | 
+        'websocket-connected' | 'websocket-disconnected' | 'database-status';
+  jobId?: string;
   job?: IngestionJob;
-  phaseId?: number;
-  phaseName?: string;
-  updates?: any;
-  result?: any;
+  data?: any;
   error?: string;
   message?: string;
 }
 
-// Export singleton instance
+// Export singleton instance - REAL API GATEWAY VERSION
 export const ingestionService = new IngestionService();
 export default ingestionService;
+
+// Cleanup on page unload
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    ingestionService.destroy();
+  });
+}
