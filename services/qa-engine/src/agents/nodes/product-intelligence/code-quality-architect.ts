@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../../config';
 import { persistConversation } from '../../persist-conversation';
 import { throttledInvoke, createModel } from '../../llm-throttle';
+import { isDSPyAvailable, callDSPyExpert, handleSubAgents } from '../../dspy-client.js';
 import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from '../graph-helpers.js';
 import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from '../scoring-helpers.js';
 
@@ -375,6 +376,119 @@ export async function codeQualityArchitectNode(
     acc + ((f.content || '').match(/: any[;\s,)]/g) || []).length, 0);
   const consoleLogCount = codeFiles.reduce((acc: number, f: any) =>
     acc + ((f.content || '').match(/console\.(log|warn|error)/g) || []).length, 0);
+
+  // === DSPy Expert Chain Path ===
+  if (dbClient) {
+    try {
+      const dspyAvailable = await isDSPyAvailable();
+      if (dspyAvailable) {
+        console.log('[CodeQualityArchitect] DSPy available — using Quality Architect chain');
+        eventPublisher?.emit('qa:agent.progress', {
+          runId, agent: 'code-quality-architect', progress: 10,
+          message: 'Using DSPy Quality Architect chain for multi-step analysis',
+        });
+
+        const sourceContext = codeFiles
+          .filter((f: any) => f.content && f.path !== '__business_context__')
+          .slice(0, 30)
+          .map((f: any) => `### ${f.path}\n${f.content}`)
+          .join('\n\n');
+
+        const dspyResult = await callDSPyExpert(
+          '/analyze/quality-architect',
+          sourceContext,
+          dbClient, runId, 'code-quality-architect', 'Code Quality Architect (DSPy)',
+          eventPublisher
+        );
+
+        // Handle sub-agents if requested
+        if (dspyResult.subAgentsNeeded.length > 0) {
+          const lastStepIndex = dspyResult.steps.length - 1;
+          const sessionId = `sess_${runId}_code-quality-architect_${Date.now()}`;
+          const parentStepId = `step_${sessionId}_${lastStepIndex}`;
+
+          const subResults = await handleSubAgents(
+            dspyResult.subAgentsNeeded, sourceContext,
+            dbClient, runId, sessionId, parentStepId, eventPublisher
+          );
+          if (dspyResult.report) dspyResult.report._subAgentResults = subResults;
+        }
+
+        // Map DSPy report to CodeQualityReport format
+        const dspyReport = dspyResult.report || {};
+        const report: CodeQualityReport = {
+          overallHealth: dspyReport.overallHealth || dspyReport.overall_health || {
+            score: 0, grade: 'N/A', summary: 'DSPy analysis completed', techDebtHours: 'Unknown'
+          },
+          codeSmells: dspyReport.codeSmells || dspyReport.code_smells || [],
+          duplicationHotspots: dspyReport.duplicationHotspots || dspyReport.duplication_hotspots || [],
+          complexityHotspots: dspyReport.complexityHotspots || dspyReport.complexity_hotspots || [],
+          architectureIssues: dspyReport.architectureIssues || dspyReport.architecture_issues || [],
+          refactoringRoadmap: dspyReport.refactoringRoadmap || dspyReport.refactoring_roadmap || {
+            quickWins: [], shortTerm: [], strategic: []
+          },
+          consolidationOpportunities: dspyReport.consolidationOpportunities || dspyReport.consolidation_opportunities || [],
+          deadCode: dspyReport.deadCode || dspyReport.dead_code || [],
+          bestPracticeViolations: dspyReport.bestPracticeViolations || dspyReport.best_practice_violations || [],
+          documentationCoverage: dspyReport.documentationCoverage || dspyReport.documentation_coverage || {
+            totalFiles: sourceFiles.length,
+            documentedFiles: documentedFiles.length,
+            undocumentedFiles: undocumentedFiles.length,
+            coveragePercent: docCoveragePercent,
+            criticalGaps: [],
+            missingReadmes: missingReadmeDirs,
+            totalFunctions: functions.length,
+            documentedFunctions: 0,
+          },
+        };
+
+        // Recalculate calibrated score
+        const allFindings = [
+          ...report.codeSmells.map((s: any) => ({ severity: s.severity || 'medium', confidence: 0.8, verified: true })),
+          ...report.complexityHotspots.map(() => ({ severity: 'medium' as const, confidence: 0.7, verified: true })),
+          ...report.architectureIssues.map((a: any) => ({ severity: a.severity || 'medium', confidence: 0.7, verified: true })),
+          ...report.bestPracticeViolations.map((b: any) => ({ severity: b.severity || 'low', confidence: 0.6, verified: true })),
+        ];
+        const { score: calibratedScore, grade: calibratedGrade } = calculateCalibratedScore(allFindings, codeFiles.length);
+        report.overallHealth.score = calibratedScore;
+        report.overallHealth.grade = calibratedGrade;
+
+        enrichFindingsWithBlastRadius(
+          report.codeSmells.map((s: any) => ({ ...s, file: s.file || (s.location || '').split(':')[0] })),
+          graphContext.dependentGraph
+        );
+        enrichFindingsWithBlastRadius(report.architectureIssues as any[], graphContext.dependentGraph);
+        enrichFindingsWithBlastRadius(report.complexityHotspots, graphContext.dependentGraph);
+
+        const totalFindings =
+          report.codeSmells.length + report.duplicationHotspots.length +
+          report.complexityHotspots.length + report.architectureIssues.length +
+          report.deadCode.length + report.bestPracticeViolations.length;
+
+        eventPublisher?.emit('qa:agent.completed', {
+          runId, agent: 'code-quality-architect',
+          result: {
+            healthScore: report.overallHealth.score, grade: report.overallHealth.grade,
+            totalFindings, codeSmells: report.codeSmells.length,
+            duplicationHotspots: report.duplicationHotspots.length,
+            complexityHotspots: report.complexityHotspots.length,
+            architectureIssues: report.architectureIssues.length,
+            quickWins: report.refactoringRoadmap.quickWins.length,
+            documentationCoverage: report.documentationCoverage?.coveragePercent ?? docCoveragePercent,
+            source: 'dspy',
+          },
+        });
+
+        console.log(`[CodeQualityArchitect] DSPy: Health: ${report.overallHealth.score}/100 (${report.overallHealth.grade}). ${totalFindings} findings`);
+        return report;
+      }
+    } catch (dspyErr) {
+      console.warn(`[CodeQualityArchitect] DSPy call failed, falling back to direct LLM: ${(dspyErr as Error).message}`);
+    }
+  }
+
+  // === Fallback: Direct LLM Call (original logic) ===
+  console.log('[CodeQualityArchitect] Using direct LLM call (DSPy unavailable)');
 
   eventPublisher?.emit('qa:agent.progress', {
     runId,

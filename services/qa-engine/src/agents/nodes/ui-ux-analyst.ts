@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
+import { isDSPyAvailable, callDSPyExpert, handleSubAgents } from '../dspy-client.js';
 import { packageExistsInManifests } from './verification-helpers.js';
 import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from './graph-helpers.js';
 import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from './scoring-helpers.js';
@@ -203,6 +204,128 @@ export async function uiUxAnalystNode(
   if (hasAntD) detectedFrameworks.push('Ant Design');
   if (hasRadix) detectedFrameworks.push('Radix UI');
   if (hasHeadlessUI) detectedFrameworks.push('Headless UI');
+
+  // === DSPy Expert Chain Path ===
+  if (dbClient) {
+    try {
+      const dspyAvailable = await isDSPyAvailable();
+      if (dspyAvailable) {
+        console.log('[UIUXAnalyst] DSPy available — using Frontend Expert chain');
+        eventPublisher?.emit('qa:agent.progress', {
+          runId, agent: 'ui-ux-analyst', progress: 10,
+          message: 'Using DSPy Frontend Expert chain for multi-step analysis',
+        });
+
+        const sourceContext = codeFiles
+          .filter((f: any) => f.content && f.path !== '__business_context__')
+          .slice(0, 30)
+          .map((f: any) => `### ${f.path}\n${f.content}`)
+          .join('\n\n');
+
+        const dspyResult = await callDSPyExpert(
+          '/analyze/frontend-expert',
+          sourceContext,
+          dbClient, runId, 'ui-ux-analyst', 'UI/UX Analyst (DSPy)',
+          eventPublisher
+        );
+
+        // Handle sub-agents if requested
+        if (dspyResult.subAgentsNeeded.length > 0) {
+          const lastStepIndex = dspyResult.steps.length - 1;
+          const sessionId = `sess_${runId}_ui-ux-analyst_${Date.now()}`;
+          const parentStepId = `step_${sessionId}_${lastStepIndex}`;
+
+          const subResults = await handleSubAgents(
+            dspyResult.subAgentsNeeded, sourceContext,
+            dbClient, runId, sessionId, parentStepId, eventPublisher
+          );
+          if (dspyResult.report) dspyResult.report._subAgentResults = subResults;
+        }
+
+        // Map DSPy report to UIAuditReport format
+        const dspyReport = dspyResult.report || {};
+        const report: UIAuditReport = {
+          accessibilityIssues: dspyReport.accessibilityIssues || dspyReport.accessibility_issues || [],
+          uxAntiPatterns: dspyReport.uxAntiPatterns || dspyReport.ux_anti_patterns || [],
+          componentIssues: dspyReport.componentIssues || dspyReport.component_issues || [],
+          userFlowIssues: dspyReport.userFlowIssues || dspyReport.user_flow_issues || [],
+          suggestions: dspyReport.suggestions || [],
+          accessibilityScore: dspyReport.accessibilityScore || dspyReport.accessibility_score || 0,
+          uxScore: dspyReport.uxScore || dspyReport.ux_score || 0,
+          summary: dspyReport.summary || `DSPy analysis completed (${dspyResult.steps.length} steps)`,
+        };
+
+        // Programmatic verification — filter framework-handled a11y issues
+        const chakraA11yComponents = [
+          'Button', 'IconButton', 'FormControl', 'FormLabel', 'Input', 'Select',
+          'Checkbox', 'Radio', 'Switch', 'Slider', 'Modal', 'Drawer', 'Menu',
+          'Popover', 'Tooltip', 'Tabs', 'Accordion', 'Alert', 'AlertDialog',
+        ];
+        const muiA11yComponents = [
+          'Button', 'IconButton', 'TextField', 'Select', 'Checkbox', 'Radio',
+          'Switch', 'Slider', 'Dialog', 'Menu', 'Popover', 'Tooltip', 'Tabs',
+          'Accordion', 'Alert', 'Snackbar', 'FormControl', 'InputLabel',
+        ];
+
+        if (hasChakra || hasMUI || hasAntD || hasRadix || hasHeadlessUI) {
+          const frameworkComponents = [
+            ...(hasChakra ? chakraA11yComponents : []),
+            ...(hasMUI ? muiA11yComponents : []),
+          ];
+
+          report.accessibilityIssues = (report.accessibilityIssues || []).filter(issue => {
+            const element = (issue.element || '').toLowerCase();
+            const isFrameworkHandled = frameworkComponents.some(comp =>
+              element.includes(comp.toLowerCase())
+            );
+            if (isFrameworkHandled && (issue.type === 'missing-aria' || issue.type === 'form-label' || issue.type === 'focus-indicator')) {
+              return false;
+            }
+            return true;
+          });
+        }
+
+        // Recalculate scores
+        const a11yFindings = report.accessibilityIssues.map((i: any) => ({
+          severity: i.severity || 'medium', confidence: 0.8, verified: true
+        }));
+        const { score: a11yScore } = calculateCalibratedScore(a11yFindings, codeFiles.length);
+        report.accessibilityScore = a11yScore;
+
+        const uxFindings = [
+          ...report.uxAntiPatterns.map(() => ({ severity: 'medium' as const, confidence: 0.7, verified: true })),
+          ...report.componentIssues.map((i: any) => ({ severity: i.severity || 'medium', confidence: 0.7, verified: true })),
+          ...report.userFlowIssues.map(() => ({ severity: 'medium' as const, confidence: 0.6, verified: true })),
+        ];
+        const { score: uxCalibratedScore } = calculateCalibratedScore(uxFindings, codeFiles.length);
+        report.uxScore = uxCalibratedScore;
+
+        enrichFindingsWithBlastRadius(report.accessibilityIssues, graphContext.dependentGraph);
+        enrichFindingsWithBlastRadius(report.componentIssues, graphContext.dependentGraph);
+
+        eventPublisher?.emit('qa:agent.completed', {
+          runId, agent: 'ui-ux-analyst',
+          result: {
+            accessibilityIssues: report.accessibilityIssues.length,
+            uxAntiPatterns: report.uxAntiPatterns.length,
+            componentIssues: report.componentIssues.length,
+            userFlowIssues: report.userFlowIssues.length,
+            suggestions: report.suggestions.length,
+            accessibilityScore: report.accessibilityScore,
+            uxScore: report.uxScore, source: 'dspy',
+          },
+        });
+
+        console.log(`[UIUXAnalyst] DSPy: A11y: ${report.accessibilityScore}/100, UX: ${report.uxScore}/100`);
+        return report;
+      }
+    } catch (dspyErr) {
+      console.warn(`[UIUXAnalyst] DSPy call failed, falling back to direct LLM: ${(dspyErr as Error).message}`);
+    }
+  }
+
+  // === Fallback: Direct LLM Call (original logic) ===
+  console.log('[UIUXAnalyst] Using direct LLM call (DSPy unavailable)');
 
   eventPublisher?.emit('qa:agent.progress', {
     runId,
