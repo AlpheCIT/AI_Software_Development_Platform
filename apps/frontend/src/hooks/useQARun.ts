@@ -352,8 +352,25 @@ export function useQARun(): UseQARunReturn {
         store.loadCompletedRun(run);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load run';
-      setError(message);
+      // API offline — fall back to persisted store data if available
+      const storeState = useQARunStore.getState();
+      if (storeState.currentRunId === id || storeState.totalTests > 0 || storeState.mutationScore > 0) {
+        setRunId(id);
+        setStatus(storeState.runStatus || 'completed');
+        setTotalTests(storeState.totalTests);
+        setPassedTests(storeState.passedTests);
+        setFailedTests(storeState.failedTests);
+        setMutation({ score: storeState.mutationScore, killed: 0, survived: 0, total: 0, timeout: 0, noCoverage: 0 });
+        // Re-trigger loadCompletedRun to infer agent statuses from stored data
+        const recentRun = storeState.recentRuns?.find((r: any) => (r.id || r._key || r.runId) === id);
+        if (recentRun) {
+          applyRunData(recentRun as any);
+          store.loadCompletedRun(recentRun);
+        }
+      } else {
+        const message = err instanceof Error ? err.message : 'Failed to load run';
+        setError(message);
+      }
     }
   }, [stopPolling, applyRunData, store]);
 

@@ -200,8 +200,11 @@ export const useQARunStore = create<QARunStore>()(
           agentStatuses['code-quality'] = { status: 'completed' };
         }
 
-        // Infer Track 1 (QA pipeline) agent statuses from test data
-        if (runData.testsGenerated > 0 || runData.totalTests > 0) {
+        // Infer Track 1 (QA pipeline) agent statuses from test data or completed run status
+        const hasTests = runData.testsGenerated > 0 || runData.totalTests > 0;
+        const hasMutation = runData.mutationScore > 0 || runData.mutation?.score > 0;
+        const isCompleted = runData.status === 'completed';
+        if (hasTests || (isCompleted && hasMutation)) {
           const track1 = ['repo-ingester', 'strategist', 'generator', 'critic', 'executor'];
           for (const id of track1) {
             if (!agentStatuses[id] || agentStatuses[id].status === 'idle') {
@@ -209,7 +212,7 @@ export const useQARunStore = create<QARunStore>()(
             }
           }
         }
-        if (runData.mutationScore > 0 || runData.mutation?.score > 0) {
+        if (hasMutation) {
           if (!agentStatuses['mutation'] || agentStatuses['mutation'].status === 'idle') {
             agentStatuses['mutation'] = { status: 'completed' };
           }

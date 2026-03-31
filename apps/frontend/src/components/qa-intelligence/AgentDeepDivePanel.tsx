@@ -88,10 +88,10 @@ export default function AgentDeepDivePanel({
   const bg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
-  const metaBg = metaBg;
-  const sysBg = sysBg;
-  const userBg = userBg;
-  const respBg = respBg;
+  const metaBg = useColorModeValue('gray.50', 'gray.700');
+  const sysBg = useColorModeValue('purple.50', 'purple.900');
+  const userBg = useColorModeValue('blue.50', 'blue.900');
+  const respBg = useColorModeValue('green.50', 'green.900');
 
   useEffect(() => {
     loadConversations();
