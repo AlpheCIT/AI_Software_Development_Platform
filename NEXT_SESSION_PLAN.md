@@ -1,161 +1,83 @@
-# Platform Vision: Intelligence Engine Powered by Graph Relationships
+# Next Session Plan: Fix Data Display + Calibrate Expert Agent Scoring
 
-## Session Summary (Completed)
-12 commits: Plant Manager Control Room, 13 AI agents, zero fake data, repo caching, security fixes, rich analytics, wiki auto-load, learnings engine, JS language detection, report enhancements.
+## Session Summary (This Session)
 
----
+### What Was Built
+- **7 DSPy Expert Chain modules** (Python): security_expert, frontend_expert, backend_expert, middleware_expert, quality_architect, test_strategist, product_visionary — each with 4-5 step ChainOfThought reasoning
+- **ArangoDB Reasoning Graph**: 8 collections (3 document + 5 edge) for full traceability of agent reasoning chains
+- **Sub-agent spawner**: Dynamic spawning when experts need focused research
+- **Frontend**: AgentSpawningTree (live execution tree), AgentReasoningTimeline (step-by-step conversations), "Agent Reasoning" tab
+- **Data flow centralization**: productData in Zustand store, agent status inference
+- **Critical fix**: businessContextAnalyzerNode missing dbClient parameter (caused cascade failure of ALL downstream agents)
+- **10+ hooks violations fixed** across AgentReportsTab, RunManager, AgentFlowDiagram, AgentReasoningTimeline, NotificationBell, AgentDeepDivePanel
 
-## TIER 1: Critical Fixes (Do First)
-
-### 1. Fix Dashboard Timestamp
-Show current run's startedAt when running, not previous run's completedAt.
-
-### 2. Fix Token/Cost Metrics
-Metrics tab shows 0 tokens. Check LangChain's `response.response_metadata?.usage` path.
-
-### 3. Show Commit SHA
-Display in QARunControl: "Analyzing commit: abc1234 — feat: Add heartbeat (Mar 26)"
-
-### 4. Surface Security Findings in Report
-API Validator found CRITICAL issues (unauthenticated endpoints) — these need to be prominent in the Cumulative Report, not buried in Agent Reports tab.
-
-### 5. PDF Export
-Add real PDF download for the Cumulative Report (html2pdf or puppeteer).
+### Latest Run: 22 of 30 agents selected, ALL succeeded
+- Unified Health Score: A (95/100) — BUT scores are unrealistically high (see Priority 3)
+- executionLog: 22 entries persisted to ArangoDB
+- Behavioral analyst ran via DSPy (42.5s)
 
 ---
 
-## TIER 2: Graph-Powered Intelligence (THE BIG IDEA)
+## Priority 1: Stats Cards Don't Load From Selected Run
 
-ArangoDB has 9 edge collections defining relationships between code entities, but the QA agents completely ignore them. The graph makes the platform exponentially smarter.
+**Symptom:** Dropdown shows "15 tests, 71% mutation" but stat cards show "Total Tests: 0, Mutation: --"
 
-### Graph Relationships Available
-- `qa_tests_file` — which test covers which file
-- `qa_tests_function` — which test covers which function
-- `qa_execution_of` — test execution → test case
-- `qa_failure_from` — failure → execution
-- `qa_suite_contains` — suite → test cases
-- `qa_run_uses_suite` — run → suite
-- `qa_spec_for` — spec → code entity
-- `qa_mutation_of` — mutation → test
-- `qa_similar_to` — similarity between code entities
+**Root Cause:** The QA dashboard stat cards read from `qaRun.totalTests`, `qaRun.mutation.score` (useQARun hook local state). `applyRunData()` doesn't map `run.testsGenerated` → `totalTests` or `run.mutationScore` → `mutation.score` correctly.
 
-### What Graph Intelligence Enables
+**Files to fix:**
+- `apps/frontend/src/hooks/useQARun.ts` — `applyRunData()` function
+- Map: `run.testsGenerated` → `setTotalTests`, `run.mutationScore` → `setMutation({ score: ... })`
 
-**Impact Analysis**: "If I change `auth.js`, what else might break?"
-- Traverse `imports` edges to find all files that depend on auth.js
-- Traverse `qa_tests_file` to find tests covering those files
-- Show blast radius: "Changing auth.js affects 12 files, 8 tests, 3 API endpoints"
+## Priority 2: Track 1 Agents IDLE Despite Run Completed
 
-**Smart Test Prioritization**: "Which tests should run first?"
-- Files with more dependents = higher risk = test first
-- If File A imports File B and B's test fails, A needs testing too
-- Weight risk by graph centrality (hub files are riskier)
+**Symptom:** Self-Healer/API Validator show COMPLETED but Strategist/Generator/Critic/Executor show IDLE
 
-**Dependency-Aware Code Quality**: "Why is this module risky?"
-- Circular dependency detection via graph cycles
-- Coupling analysis: modules with many cross-edges are tightly coupled
-- Cohesion analysis: modules whose functions don't call each other are poorly organized
+**Root Cause:** `loadCompletedRun()` in `qa-run-store.ts` infers agent statuses from report presence but only for intelligence pipeline agents. Add Track 1 inference:
+```typescript
+if (runData.testsGenerated > 0) {
+  agentStatuses['strategist'] = { status: 'completed' };
+  agentStatuses['generator'] = { status: 'completed' };
+  // etc
+}
+```
 
-**Cross-Agent Graph Queries**: Feed graph data to agents
-- Strategist: "Here are the top 10 most-connected files — prioritize these"
-- Self-Healer: "These import chains are circular — suggest breaking them"
-- Coverage Auditor: "These backend endpoints have no frontend consumer in the graph"
+**File:** `apps/frontend/src/stores/qa-run-store.ts`
 
-### Implementation Path
-1. Populate edge collections during repo-ingester (parse imports/requires)
-2. Add AQL queries to strategist: find high-centrality files
-3. Add "Impact Analysis" panel: select a file → see blast radius
-4. Add "Dependency Graph" to Wiki: per-file dependency visualization
-5. Feed graph metrics to all agents as additional context
+## Priority 3: DSPy Scores All 95/100 (Unrealistic)
 
----
+**Symptom:** Every agent reports 95/100 — unrealistic for any real codebase
 
-## TIER 3: Agent Evolution
+**Root Cause:** When DSPy is available, the TS agents use DSPy output but may bypass their own scoring/calibration logic, defaulting to high scores.
 
-### Multi-Round Agent Debates
-Currently agents are one-shot. Real intelligence comes from debate:
-- Strategist proposes risk areas → PM challenges priorities → Strategist revises
-- Generator creates tests → Critic reviews → Generator improves (this exists but could go deeper)
-- API Validator finds gaps → Self-Healer proposes fixes → Code Quality validates the fix doesn't introduce new issues
+**Fix:** After DSPy call, the TS agent should:
+1. Parse the DSPy report for actual findings (not just trust the score)
+2. Run existing scoring logic on those findings
+3. Use verification pass to filter false positives before scoring
 
-### Cross-Agent Validation
-- If 3+ agents flag the same file as problematic, weight it MUCH higher
-- Consensus scoring: combine all agent scores into a unified risk rating
-- Disagreement flagging: "Strategist says low-risk but API Validator found critical gap"
+**Files:** self-healer.ts, api-validator.ts, coverage-auditor.ts, ui-ux-analyst.ts, code-quality-architect.ts
 
-### Agent Memory Across Sessions
-- Remember which recommendations the team acted on vs ignored
-- Adjust future recommendations: "We suggested refactoring auth.js 3 times but it wasn't addressed. Escalate priority."
-- Track which agent predictions were accurate (strategist said high-risk → was a bug found?)
+## Priority 4: Remaining Hooks Violations
 
-### Diff-Aware Analysis
-- Only analyze changed files + their graph neighbors (dependents/dependencies)
-- Cache previous analysis for unchanged files
-- Show "Since last run: 3 new issues, 5 recurring, 2 resolved"
-- Estimated 60-80% token savings per incremental run
+Files with inline `useColorModeValue` in `.map()`:
+- `ActionCenter.tsx` lines 310, 477
+- `AgentConversationPanel.tsx` line 167
+- `AgentDebateView.tsx` line 164
+
+## Priority 5: Agent Spawning Tree Shows "NO DATA"
+
+The component reads from `productData.executionLog` but the data structure doesn't match what it expects (sessions with steps). It needs to read from the reasoning graph collections or be adapted to work with the flat executionLog.
 
 ---
 
-## TIER 4: Platform Integration
+## Working Branch: `claude/lucid-banzai`
 
-### Jira Integration (Auto-Create Tickets)
-- After run: auto-create Jira issues for HIGH/CRITICAL findings
-- Map: code smell → Jira task, security gap → Jira bug, refactoring → Jira story
-- Deduplicate: don't create duplicate issues for recurring findings
-- Link: Jira issue links to specific file + line in the platform
-- Track: "Jira issue PROJ-123 was resolved → mark finding as addressed"
+Start services:
+```bash
+cd services/visionary-agent/src && python -m uvicorn main:app --host 0.0.0.0 --port 8010
+cd services/qa-engine && npm run dev
+cd apps/frontend && npm run dev
+```
 
-### GitHub Integration
-- Auto-comment on PRs with QA findings for changed files
-- Status checks: "QA Analysis: 3 new issues found in this PR"
-- PR-scoped runs: analyze only files changed in the PR
-- Auto-suggest reviewers based on file ownership from git blame
+Test with: `https://github.com/AlpheCIT/MES` branch `dev`
 
-### CI/CD Pipeline
-- Run QA analysis as a CI step (GitHub Actions, Jenkins, GitLab CI)
-- Fail builds if mutation score drops below threshold
-- Generate test files that can be committed back to the repo
-- Nightly full analysis + daily incremental on changed files
-
----
-
-## TIER 5: Killer Features (Competitive Moats)
-
-### "What-If" Simulation
-The `WhatIfSimulation.tsx` component exists but is empty. Connect it to the graph:
-- "What if I delete this file?" → Show impact via graph traversal
-- "What if I add a new API endpoint?" → Suggest required tests, auth, validation
-- "What if I merge these two modules?" → Show dependency conflicts
-
-### Semantic Code Search
-The `SemanticSearchBox.tsx` exists. Connect it to the QA data:
-- "Find all unauthenticated endpoints" → query API Validator results
-- "Show me the riskiest functions" → query Strategist + mutation results
-- "Which files changed most often but have no tests?" → combine git + QA data
-
-### Auto-Generated Documentation
-The Wiki shows file entities but doesn't generate docs. Add:
-- AI-generated JSDoc for undocumented functions
-- Auto-generated README for each directory
-- Architecture diagrams from graph relationships
-- API documentation from endpoint analysis
-
-### Team Dashboard
-Currently single-user. Add:
-- Assign findings to team members
-- Track resolution progress
-- Code review queue based on QA priority
-- Weekly email digest: "Your codebase improved 5% this week"
-
----
-
-## Implementation Priority
-
-| Phase | Items | Effort | Impact |
-|-------|-------|--------|--------|
-| 1 (Next Session) | Tier 1 fixes + Security in report + PDF export | 1 day | Credibility |
-| 2 | Graph edge population + Impact Analysis panel | 2 days | Intelligence leap |
-| 3 | Diff-aware analysis + Issue tracking | 2 days | Cost savings + value |
-| 4 | Jira integration + Agent memory | 3 days | Enterprise readiness |
-| 5 | What-If simulation + Semantic search | 3 days | Competitive moat |
-| 6 | CI/CD integration + Team dashboard | 5 days | Market fit |
+Anthropic API key required for LLM calls. DSPy service (port 8010) required for expert chains.
