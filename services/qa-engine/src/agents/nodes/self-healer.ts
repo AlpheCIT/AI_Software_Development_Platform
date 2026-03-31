@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { qaConfig } from '../../config';
 import { persistConversation } from '../persist-conversation';
 import { throttledInvoke, createModel } from '../llm-throttle';
+import { isDSPyAvailable, callDSPyExpert, handleSubAgents } from '../dspy-client.js';
 import { fileExistsInCodeFiles, exportExistsInFile, packageExistsInManifests, isStandardDevProxy } from './verification-helpers.js';
 import { extractRelationships, buildGraphContext, formatGraphContextForPrompt } from './graph-helpers.js';
 import { calculateCalibratedScore, enrichFindingsWithBlastRadius } from './scoring-helpers.js';
@@ -154,6 +155,119 @@ export async function selfHealerNode(
   const relationships = extractRelationships(codeFiles);
   const graphContext = buildGraphContext(relationships, codeFiles);
   const graphPrompt = formatGraphContextForPrompt(graphContext);
+
+  // === DSPy Expert Chain Path ===
+  // Try DSPy first; fall back to direct LLM call if unavailable
+  if (dbClient) {
+    try {
+      const dspyAvailable = await isDSPyAvailable();
+      if (dspyAvailable) {
+        console.log('[SelfHealer] DSPy available — using Security Expert chain');
+        eventPublisher?.emit('qa:agent.progress', {
+          runId, agent: 'self-healer', progress: 10,
+          message: 'Using DSPy Security Expert chain for multi-step analysis',
+        });
+
+        // Build source context for DSPy
+        const sourceContext = codeFiles
+          .filter((f: any) => f.content && f.path !== '__business_context__')
+          .slice(0, 30)
+          .map((f: any) => `### ${f.path}\n${f.content}`)
+          .join('\n\n');
+
+        const dspyResult = await callDSPyExpert(
+          '/analyze/security-expert',
+          sourceContext,
+          dbClient, runId, 'self-healer', 'Self-Healing Code Analyst (DSPy)',
+          eventPublisher
+        );
+
+        // Handle sub-agents if DSPy chain requested them
+        if (dspyResult.subAgentsNeeded.length > 0) {
+          const lastStepIndex = dspyResult.steps.length - 1;
+          const sessionId = `sess_${runId}_self-healer_${Date.now()}`;
+          const parentStepId = `step_${sessionId}_${lastStepIndex}`;
+
+          const subResults = await handleSubAgents(
+            dspyResult.subAgentsNeeded, sourceContext,
+            dbClient, runId, sessionId, parentStepId, eventPublisher
+          );
+
+          // Merge sub-agent findings into the report
+          if (dspyResult.report) {
+            dspyResult.report._subAgentResults = subResults;
+          }
+        }
+
+        // Map DSPy report to SelfHealingReport format
+        const dspyReport = dspyResult.report || {};
+        const report: SelfHealingReport = {
+          typeMismatches: dspyReport.typeMismatches || dspyReport.type_mismatches || [],
+          brokenImports: dspyReport.brokenImports || dspyReport.broken_imports || [],
+          missingDeps: dspyReport.missingDeps || dspyReport.missing_deps || [],
+          configIssues: dspyReport.configIssues || dspyReport.config_issues || [],
+          autoFixes: dspyReport.autoFixes || dspyReport.auto_fixes || [],
+          healthScore: dspyReport.healthScore || dspyReport.health_score || 0,
+          summary: dspyReport.summary || `DSPy analysis completed (${dspyResult.steps.length} steps)`,
+        };
+
+        // Still run programmatic verification on DSPy results
+        report.brokenImports = (report.brokenImports || []).filter(imp => {
+          const mentionedFile = (imp.importStatement || imp.issue || imp.fix || '').match(/(\w[\w/.-]*\.(js|jsx|ts|tsx))/g);
+          if (mentionedFile) {
+            for (const mf of mentionedFile) {
+              const found = codeFiles.some(f => {
+                const norm = (f.path || '').replace(/\\/g, '/');
+                return norm.endsWith('/' + mf) || norm === mf || norm.endsWith(mf);
+              });
+              if (found) return false;
+            }
+          }
+          return true;
+        });
+
+        report.missingDeps = (report.missingDeps || []).filter(dep => {
+          if (dep.inPackageJson === true) return false;
+          return !packageExistsInManifests(codeFiles, dep.package);
+        });
+
+        // Recalculate calibrated score
+        const allFindings = [
+          ...report.typeMismatches.map((f: any) => ({ severity: f.severity || 'medium', confidence: 0.8, verified: true })),
+          ...report.brokenImports.map((f: any) => ({ severity: f.severity || 'medium', confidence: 0.8, verified: true })),
+          ...report.missingDeps.map(() => ({ severity: 'medium' as const, confidence: 0.7, verified: true })),
+          ...report.configIssues.map((f: any) => ({ severity: f.severity || 'medium', confidence: 0.8, verified: true })),
+        ];
+        const { score: calibratedScore } = calculateCalibratedScore(allFindings, codeFiles.length);
+        report.healthScore = calibratedScore;
+
+        enrichFindingsWithBlastRadius(report.typeMismatches, graphContext.dependentGraph);
+        enrichFindingsWithBlastRadius(report.brokenImports, graphContext.dependentGraph);
+        enrichFindingsWithBlastRadius(report.configIssues, graphContext.dependentGraph);
+
+        const totalIssues = report.typeMismatches.length + report.brokenImports.length +
+          report.missingDeps.length + report.configIssues.length;
+
+        eventPublisher?.emit('qa:agent.completed', {
+          runId, agent: 'self-healer',
+          result: {
+            totalIssues, typeMismatches: report.typeMismatches.length,
+            brokenImports: report.brokenImports.length, missingDeps: report.missingDeps.length,
+            configIssues: report.configIssues.length, autoFixes: report.autoFixes.length,
+            healthScore: report.healthScore, source: 'dspy',
+          },
+        });
+
+        console.log(`[SelfHealer] DSPy: Found ${totalIssues} issues, ${report.autoFixes.length} auto-fixes. Health: ${report.healthScore}/100`);
+        return report;
+      }
+    } catch (dspyErr) {
+      console.warn(`[SelfHealer] DSPy call failed, falling back to direct LLM: ${(dspyErr as Error).message}`);
+    }
+  }
+
+  // === Fallback: Direct LLM Call (original logic) ===
+  console.log('[SelfHealer] Using direct LLM call (DSPy unavailable)');
 
   // Package.json analysis
   const packageFiles = codeFiles.filter((f: any) => f.path?.endsWith('package.json'));
