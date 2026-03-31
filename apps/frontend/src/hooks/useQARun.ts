@@ -183,9 +183,9 @@ export function useQARun(): UseQARunReturn {
       runMutation.score = (run as any).mutationScore;
     }
     setMutation(runMutation);
-    setTotalTests(run.totalTests || 0);
-    setPassedTests(run.passedTests || 0);
-    setFailedTests(run.failedTests || 0);
+    setTotalTests((run as any).testsGenerated || run.totalTests || 0);
+    setPassedTests((run as any).testsPassed || run.passedTests || 0);
+    setFailedTests((run as any).testsFailed || run.failedTests || 0);
     setSkippedTests(run.skippedTests || 0);
     setStartedAt(run.startedAt || null);
     setCompletedAt(run.completedAt || null);

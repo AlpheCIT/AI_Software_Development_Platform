@@ -26,7 +26,7 @@ export function calculateCalibratedScore(
   totalFiles: number
 ): { score: number; grade: string; gradeDescription: string } {
   if (findings.length === 0) {
-    return { score: 95, grade: 'A', gradeDescription: 'Excellent — no issues found' };
+    return { score: 70, grade: 'C', gradeDescription: 'No verified issues found — limited analysis' };
   }
 
   let deductions = 0;

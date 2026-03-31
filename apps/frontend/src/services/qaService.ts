@@ -381,7 +381,29 @@ export const qaService = {
     const response = await fetch(`${QA_ENGINE_URL}/qa/runs/${runId}`);
     if (!response.ok) throw new Error(`QA Engine request failed: ${response.status}`);
     const data = await response.json();
-    return { ...data, id: data._key || data.runId || runId, runId: data._key || data.runId || runId };
+    // API returns { run: {...}, summary: {...}, testCases, executions, ... }
+    // Normalize: flatten run + summary into top-level fields matching QARun interface
+    const runDoc = data.run || data;
+    const summary = data.summary || {};
+    const id = runDoc._key || runDoc.runId || data._key || data.runId || runId;
+    return {
+      ...runDoc,
+      ...data,
+      id,
+      runId: id,
+      // Normalize test stats: try summary first, then run doc fields, then interface fields
+      totalTests: summary.totalTests ?? runDoc.testsGenerated ?? runDoc.totalTests ?? 0,
+      passedTests: summary.passed ?? runDoc.testsPassed ?? runDoc.passedTests ?? 0,
+      failedTests: summary.failed ?? runDoc.testsFailed ?? runDoc.failedTests ?? 0,
+      skippedTests: summary.skipped ?? runDoc.skippedTests ?? 0,
+      mutationScore: summary.mutationScore ?? runDoc.mutationScore ?? runDoc.mutation?.score ?? 0,
+      // Preserve nested data for downstream consumers
+      testsGenerated: runDoc.testsGenerated ?? summary.totalTests ?? 0,
+      testsPassed: runDoc.testsPassed ?? summary.passed ?? 0,
+      testsFailed: runDoc.testsFailed ?? summary.failed ?? 0,
+      // Preserve executionLog from run doc for Agent Spawning Tree
+      executionLog: runDoc.executionLog || data.executionLog,
+    };
   },
 
   /**

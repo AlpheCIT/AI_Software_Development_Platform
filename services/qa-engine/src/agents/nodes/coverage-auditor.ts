@@ -218,8 +218,20 @@ export async function coverageAuditorNode(
           ...report.dataShapeMismatches.map(() => ({ severity: 'high' as const, confidence: 0.7, verified: true })),
           ...report.orphanedRoutes.map(() => ({ severity: 'low' as const, confidence: 0.6, verified: true })),
         ];
-        const { score: calibratedScore } = calculateCalibratedScore(allFindings, codeFiles.length);
-        report.coverageScore = calibratedScore;
+        let calibratedResult = calculateCalibratedScore(allFindings, codeFiles.length);
+
+        // Blend with DSPy chain's own score when it provides a more conservative assessment
+        const dspyScore = dspyReport?.coverageScore ?? dspyReport?.coverage_score ?? dspyReport?.healthScore ?? dspyReport?.health_score;
+        if (typeof dspyScore === 'number' && dspyScore > 0 && dspyScore < calibratedResult.score) {
+          calibratedResult = {
+            ...calibratedResult,
+            score: Math.round(calibratedResult.score * 0.4 + dspyScore * 0.6),
+          };
+          // Re-derive grade from blended score
+          calibratedResult.grade = calibratedResult.score >= 90 ? 'A' : calibratedResult.score >= 75 ? 'B' : calibratedResult.score >= 60 ? 'C' : calibratedResult.score >= 40 ? 'D' : 'F';
+        }
+
+        report.coverageScore = calibratedResult.score;
 
         enrichFindingsWithBlastRadius(report.brokenFrontendCalls, graphContext.dependentGraph);
         enrichFindingsWithBlastRadius(report.dataShapeMismatches, graphContext.dependentGraph);
