@@ -157,6 +157,7 @@ export default function AgentReasoningTimeline({
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
   const promptBg = useColorModeValue('blue.50', 'blue.900');
   const responseBg = useColorModeValue('green.50', 'green.900');
+  const hoverBg = useColorModeValue('gray.50', 'gray.700');
 
   // Fetch conversations on mount or when runId/agentId changes
   useEffect(() => {
@@ -280,7 +281,7 @@ export default function AgentReasoningTimeline({
               px={3}
               py={2}
               borderRadius="md"
-              _hover={{ bg: useColorModeValue('gray.50', 'gray.700') }}
+              _hover={{ bg: hoverBg }}
             >
               <HStack flex={1} spacing={2}>
                 <Icon
