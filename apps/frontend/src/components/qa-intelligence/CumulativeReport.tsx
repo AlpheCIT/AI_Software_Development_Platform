@@ -226,6 +226,8 @@ const DeveloperActionItems: React.FC<{ data: ProductData }> = ({ data }) => {
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
+  const beforeBg = useColorModeValue('red.50', 'red.900');
+  const afterBg = useColorModeValue('green.50', 'green.900');
 
   if (!codeQuality) return null;
 
@@ -293,13 +295,13 @@ const DeveloperActionItems: React.FC<{ data: ProductData }> = ({ data }) => {
               )}
             </HStack>
             {(item.before || item.codeExample) && (
-              <Box mt={2} p={2} bg={useColorModeValue('red.50', 'red.900')} borderRadius="sm" fontSize="xs" fontFamily="mono">
+              <Box mt={2} p={2} bg={beforeBg} borderRadius="sm" fontSize="xs" fontFamily="mono">
                 <Text color="red.500" fontWeight="bold" mb={1}>Before:</Text>
                 <Text whiteSpace="pre-wrap">{item.before || item.codeExample}</Text>
               </Box>
             )}
             {(item.after || item.suggestedFix) && (
-              <Box mt={1} p={2} bg={useColorModeValue('green.50', 'green.900')} borderRadius="sm" fontSize="xs" fontFamily="mono">
+              <Box mt={1} p={2} bg={afterBg} borderRadius="sm" fontSize="xs" fontFamily="mono">
                 <Text color="green.500" fontWeight="bold" mb={1}>After:</Text>
                 <Text whiteSpace="pre-wrap">{item.after || item.suggestedFix}</Text>
               </Box>
@@ -1124,6 +1126,7 @@ const ReportChat: React.FC<{ runId: string }> = ({ runId }) => {
 
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const chatBg = useColorModeValue('gray.50', 'gray.800');
+  const assistantMsgBg = useColorModeValue('gray.100', 'gray.700');
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1225,7 +1228,7 @@ const ReportChat: React.FC<{ runId: string }> = ({ runId }) => {
               alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'}
               maxW="85%"
               px={3} py={2} borderRadius="lg"
-              bg={msg.role === 'user' ? 'blue.500' : useColorModeValue('gray.100', 'gray.700')}
+              bg={msg.role === 'user' ? 'blue.500' : assistantMsgBg}
               color={msg.role === 'user' ? 'white' : 'inherit'}
               fontSize="sm"
               whiteSpace="pre-wrap"

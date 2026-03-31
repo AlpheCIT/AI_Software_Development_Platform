@@ -149,3 +149,4 @@ export function useJiraMetadata(projectKey: string): UseJiraMetadataReturn {
 }
 
 export default useJiraMetadata;
+

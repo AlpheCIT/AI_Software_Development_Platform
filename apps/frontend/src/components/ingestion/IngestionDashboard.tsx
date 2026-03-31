@@ -1,1 +1,686 @@
-/**\n * Real-Time Ingestion Dashboard Components\n * Frontend components for progressive repository analysis\n */\n\nimport React, { useState, useEffect } from 'react';\nimport {\n  Box,\n  VStack,\n  HStack,\n  Text,\n  Progress,\n  Badge,\n  Card,\n  CardHeader,\n  CardBody,\n  Stepper,\n  Step,\n  StepIndicator,\n  StepStatus,\n  StepIcon,\n  StepNumber,\n  StepTitle,\n  StepDescription,\n  Spinner,\n  SimpleGrid,\n  Container,\n  Heading,\n  Button,\n  useToast,\n  Modal,\n  ModalOverlay,\n  ModalContent,\n  ModalHeader,\n  ModalBody,\n  ModalFooter,\n  FormControl,\n  FormLabel,\n  Input,\n  CheckboxGroup,\n  Checkbox\n} from '@chakra-ui/react';\nimport { AddIcon } from '@chakra-ui/icons';\n\n// Types\ninterface IngestionJob {\n  id: string;\n  repositoryName: string;\n  status: 'queued' | 'running' | 'completed' | 'failed';\n  currentPhase: number;\n  totalPhases: number;\n  overallProgress: number;\n  estimatedTimeRemaining: number;\n  phases: IngestionPhase[];\n}\n\ninterface IngestionPhase {\n  id: number;\n  name: string;\n  status: 'pending' | 'running' | 'completed' | 'failed';\n  progress: number;\n}\n\ninterface CollectionStatus {\n  name: string;\n  currentCount: number;\n  expectedCount: number;\n  status: 'empty' | 'populating' | 'complete';\n}\n\n// Repository Addition Modal\nexport function AddRepositoryModal({ isOpen, onClose }: {\n  isOpen: boolean;\n  onClose: () => void;\n}) {\n  const [url, setUrl] = useState('');\n  const [options, setOptions] = useState({\n    includeTests: true,\n    includeDocs: false,\n    deepSecurity: true,\n    performanceAnalysis: true,\n    qualityAnalysis: true\n  });\n  const toast = useToast();\n\n  const handleSubmit = async () => {\n    try {\n      // Call API to start ingestion\n      const response = await fetch('/api/ingestion/repository/progressive', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ url, options })\n      });\n      \n      const result = await response.json();\n      \n      if (response.ok) {\n        toast({\n          title: 'Repository Analysis Started',\n          description: `Analysis of ${url} has begun. You can monitor progress in the dashboard.`,\n          status: 'success',\n          duration: 5000\n        });\n        onClose();\n        setUrl('');\n      } else {\n        throw new Error(result.error || 'Failed to start analysis');\n      }\n    } catch (error) {\n      toast({\n        title: 'Analysis Failed to Start',\n        description: error.message,\n        status: 'error',\n        duration: 5000\n      });\n    }\n  };\n\n  return (\n    <Modal isOpen={isOpen} onClose={onClose} size=\"xl\">\n      <ModalOverlay />\n      <ModalContent>\n        <ModalHeader>Add Repository for Analysis</ModalHeader>\n        <ModalBody>\n          <VStack spacing={4}>\n            <FormControl>\n              <FormLabel>Repository URL</FormLabel>\n              <Input\n                placeholder=\"https://github.com/user/repo\"\n                value={url}\n                onChange={(e) => setUrl(e.target.value)}\n              />\n            </FormControl>\n            \n            <FormControl>\n              <FormLabel>Analysis Options</FormLabel>\n              <CheckboxGroup>\n                <VStack align=\"start\">\n                  <Checkbox \n                    isChecked={options.includeTests}\n                    onChange={(e) => setOptions({...options, includeTests: e.target.checked})}\n                  >\n                    Include Test Files\n                  </Checkbox>\n                  <Checkbox \n                    isChecked={options.includeDocs}\n                    onChange={(e) => setOptions({...options, includeDocs: e.target.checked})}\n                  >\n                    Include Documentation\n                  </Checkbox>\n                  <Checkbox \n                    isChecked={options.deepSecurity}\n                    onChange={(e) => setOptions({...options, deepSecurity: e.target.checked})}\n                  >\n                    Deep Security Analysis\n                  </Checkbox>\n                  <Checkbox \n                    isChecked={options.performanceAnalysis}\n                    onChange={(e) => setOptions({...options, performanceAnalysis: e.target.checked})}\n                  >\n                    Performance Analysis\n                  </Checkbox>\n                  <Checkbox \n                    isChecked={options.qualityAnalysis}\n                    onChange={(e) => setOptions({...options, qualityAnalysis: e.target.checked})}\n                  >\n                    Quality Analysis\n                  </Checkbox>\n                </VStack>\n              </CheckboxGroup>\n            </FormControl>\n          </VStack>\n        </ModalBody>\n        <ModalFooter>\n          <Button variant=\"ghost\" mr={3} onClick={onClose}>Cancel</Button>\n          <Button \n            colorScheme=\"blue\" \n            onClick={handleSubmit}\n            isDisabled={!url}\n          >\n            Start Analysis\n          </Button>\n        </ModalFooter>\n      </ModalContent>\n    </Modal>\n  );\n}\n\n// Individual Job Card\nexport function IngestionJobCard({ job, isHighlighted }: {\n  job: IngestionJob;\n  isHighlighted?: boolean;\n}) {\n  const getStatusColor = (status: string) => {\n    switch (status) {\n      case 'running': return 'blue';\n      case 'completed': return 'green';\n      case 'failed': return 'red';\n      default: return 'gray';\n    }\n  };\n\n  const formatTimeRemaining = (seconds: number) => {\n    if (seconds < 60) return `${Math.round(seconds)}s`;\n    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;\n    return `${Math.round(seconds / 3600)}h`;\n  };\n\n  return (\n    <Card \n      variant={isHighlighted ? 'elevated' : 'outline'}\n      borderColor={isHighlighted ? 'blue.500' : undefined}\n      borderWidth={isHighlighted ? 2 : 1}\n    >\n      <CardHeader>\n        <HStack justify=\"space-between\">\n          <Text fontWeight=\"bold\" noOfLines={1}>{job.repositoryName}</Text>\n          <Badge colorScheme={getStatusColor(job.status)}>\n            {job.status.toUpperCase()}\n          </Badge>\n        </HStack>\n      </CardHeader>\n      <CardBody>\n        <VStack spacing={3} align=\"stretch\">\n          <Progress \n            value={job.overallProgress} \n            colorScheme={getStatusColor(job.status)}\n            hasStripe={job.status === 'running'}\n            isAnimated={job.status === 'running'}\n          />\n          \n          <HStack justify=\"space-between\">\n            <Text fontSize=\"sm\">\n              Phase {job.currentPhase}/{job.totalPhases}: \n              {job.phases[job.currentPhase - 1]?.name || 'Initializing'}\n            </Text>\n            <Text fontSize=\"sm\" color=\"gray.500\">\n              {Math.round(job.overallProgress)}%\n            </Text>\n          </HStack>\n          \n          {job.status === 'running' && (\n            <Text fontSize=\"xs\" color=\"gray.500\">\n              ETA: {formatTimeRemaining(job.estimatedTimeRemaining)}\n            </Text>\n          )}\n        </VStack>\n      </CardBody>\n    </Card>\n  );\n}\n\n// Phase Progress Stepper\nexport function PhaseProgressStepper({ phases, currentPhase }: {\n  phases: IngestionPhase[];\n  currentPhase: number;\n}) {\n  return (\n    <Stepper index={currentPhase - 1} orientation=\"vertical\" size=\"sm\">\n      {phases.map((phase, index) => (\n        <Step key={phase.id}>\n          <StepIndicator>\n            <StepStatus\n              complete={<StepIcon />}\n              incomplete={<StepNumber />}\n              active={<Spinner size=\"sm\" />}\n            />\n          </StepIndicator>\n          <Box flexShrink=\"0\">\n            <StepTitle>{phase.name}</StepTitle>\n            <StepDescription>\n              {phase.status === 'running' && (\n                <Progress value={phase.progress} size=\"sm\" mt={1} />\n              )}\n              {phase.status === 'completed' && (\n                <Text fontSize=\"xs\" color=\"green.500\">Complete</Text>\n              )}\n              {phase.status === 'failed' && (\n                <Text fontSize=\"xs\" color=\"red.500\">Failed</Text>\n              )}\n            </StepDescription>\n          </Box>\n        </Step>\n      ))}\n    </Stepper>\n  );\n}\n\n// Collection Status Grid\nexport function CollectionStatusGrid({ collections }: {\n  collections: CollectionStatus[];\n}) {\n  const getStatusColor = (status: string) => {\n    switch (status) {\n      case 'complete': return 'green';\n      case 'populating': return 'blue';\n      default: return 'gray';\n    }\n  };\n\n  return (\n    <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} spacing={4}>\n      {collections.map(collection => (\n        <Card key={collection.name} size=\"sm\">\n          <CardBody>\n            <VStack spacing={2}>\n              <HStack justify=\"space-between\" w=\"full\">\n                <Text fontSize=\"sm\" fontWeight=\"medium\" noOfLines={1}>\n                  {collection.name}\n                </Text>\n                <Badge \n                  colorScheme={getStatusColor(collection.status)}\n                  size=\"sm\"\n                >\n                  {collection.currentCount}\n                </Badge>\n              </HStack>\n              <Progress \n                value={(collection.currentCount / collection.expectedCount) * 100} \n                size=\"sm\" \n                w=\"full\"\n                colorScheme={getStatusColor(collection.status)}\n              />\n            </VStack>\n          </CardBody>\n        </Card>\n      ))}\n    </SimpleGrid>\n  );\n}\n\n// Main Dashboard Page\nexport default function IngestionDashboard() {\n  const [jobs, setJobs] = useState<IngestionJob[]>([]);\n  const [collections, setCollections] = useState<CollectionStatus[]>([]);\n  const [isAddModalOpen, setIsAddModalOpen] = useState(false);\n  const toast = useToast();\n\n  // WebSocket connection for real-time updates\n  useEffect(() => {\n    const ws = new WebSocket('ws://localhost:4001/ws/ingestion');\n    \n    ws.onmessage = (event) => {\n      const data = JSON.parse(event.data);\n      \n      switch (data.event) {\n        case 'ingestion:job-progress':\n          setJobs(prev => prev.map(job => \n            job.id === data.jobId ? { ...job, ...data } : job\n          ));\n          break;\n          \n        case 'ingestion:phase-completed':\n          toast({\n            title: `${data.phaseName} Completed`,\n            description: `New capabilities available: ${data.newCapabilities.join(', ')}`,\n            status: 'success',\n            duration: 3000\n          });\n          break;\n          \n        case 'ingestion:collection-updated':\n          setCollections(prev => prev.map(col =>\n            col.name === data.collection \n              ? { ...col, currentCount: data.newCount, status: 'populating' }\n              : col\n          ));\n          break;\n          \n        case 'ingestion:job-completed':\n          toast({\n            title: 'Analysis Complete',\n            description: `${data.repositoryName} analysis finished successfully`,\n            status: 'success',\n            duration: 5000\n          });\n          break;\n      }\n    };\n    \n    return () => ws.close();\n  }, [toast]);\n\n  // Load initial data\n  useEffect(() => {\n    fetchJobs();\n    fetchCollectionStatus();\n  }, []);\n\n  const fetchJobs = async () => {\n    try {\n      const response = await fetch('/api/ingestion/jobs');\n      const data = await response.json();\n      setJobs(data.jobs || []);\n    } catch (error) {\n      console.error('Failed to fetch jobs:', error);\n    }\n  };\n\n  const fetchCollectionStatus = async () => {\n    try {\n      const response = await fetch('/api/ingestion/collections/status');\n      const data = await response.json();\n      setCollections(data.collections || []);\n    } catch (error) {\n      console.error('Failed to fetch collection status:', error);\n    }\n  };\n\n  const activeJobs = jobs.filter(job => job.status === 'running');\n  const recentJobs = jobs.filter(job => job.status !== 'running').slice(0, 10);\n\n  return (\n    <Container maxW=\"7xl\" py={8}>\n      <VStack spacing={8} align=\"stretch\">\n        <HStack justify=\"space-between\">\n          <Heading size=\"lg\">Repository Analysis Dashboard</Heading>\n          <Button \n            colorScheme=\"blue\" \n            leftIcon={<AddIcon />} \n            onClick={() => setIsAddModalOpen(true)}\n          >\n            Add Repository\n          </Button>\n        </HStack>\n\n        {/* Active Jobs */}\n        {activeJobs.length > 0 && (\n          <Box>\n            <Heading size=\"md\" mb={4}>Active Analysis Jobs</Heading>\n            <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>\n              {activeJobs.map(job => (\n                <IngestionJobCard key={job.id} job={job} />\n              ))}\n            </SimpleGrid>\n          </Box>\n        )}\n\n        {/* Collection Status */}\n        <Box>\n          <Heading size=\"md\" mb={4}>Collection Population Status</Heading>\n          <CollectionStatusGrid collections={collections} />\n        </Box>\n\n        {/* Recent Jobs */}\n        {recentJobs.length > 0 && (\n          <Box>\n            <Heading size=\"md\" mb={4}>Recent Jobs</Heading>\n            <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>\n              {recentJobs.map(job => (\n                <IngestionJobCard key={job.id} job={job} />\n              ))}\n            </SimpleGrid>\n          </Box>\n        )}\n\n        {jobs.length === 0 && (\n          <Box textAlign=\"center\" py={16}>\n            <Text fontSize=\"lg\" color=\"gray.500\" mb={4}>\n              No repositories have been analyzed yet.\n            </Text>\n            <Button \n              colorScheme=\"blue\" \n              onClick={() => setIsAddModalOpen(true)}\n            >\n              Add Your First Repository\n            </Button>\n          </Box>\n        )}\n      </VStack>\n\n      <AddRepositoryModal \n        isOpen={isAddModalOpen} \n        onClose={() => setIsAddModalOpen(false)} \n      />\n    </Container>\n  );\n}\n\n// Export all components\nexport {\n  AddRepositoryModal,\n  IngestionJobCard,\n  PhaseProgressStepper,\n  CollectionStatusGrid\n};
+/**
+ * Repository Ingestion Dashboard
+ * 
+ * Real-time dashboard for repository ingestion progress, job management,
+ * and ingestion analytics with WebSocket integration.
+ */
+
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  LinearProgress,
+  Button,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Grid,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  IconButton,
+  Chip,
+  Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Switch,
+  FormControlLabel,
+  Divider,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+} from '@mui/material';
+import {
+  PlayArrow as StartIcon,
+  Stop as StopIcon,
+  Refresh as RefreshIcon,
+  Delete as DeleteIcon,
+  Visibility as ViewIcon,
+  CloudDownload as IngestionIcon,
+  Analytics as AnalyticsIcon,
+  Timeline as ProgressIcon,
+  CheckCircle as CompleteIcon,
+  Error as ErrorIcon,
+  Schedule as PendingIcon,
+} from '@mui/icons-material';
+
+// Hooks
+import { useWebSocket } from '../../hooks/useWebSocket';
+import { useNotifications } from '../../hooks/useNotifications';
+
+// Utils
+import { apiClient } from '../../utils/apiClient';
+
+interface IngestionJob {
+  jobId: string;
+  repositoryUrl: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  phase: string;
+  startTime: string;
+  endTime?: string;
+  config: {
+    analysisDepth: 'shallow' | 'medium' | 'deep';
+    realTimeUpdates: boolean;
+    populateCollections: boolean;
+  };
+  metrics: {
+    filesProcessed: number;
+    functionsExtracted: number;
+    dependenciesFound: number;
+    securityIssues: number;
+    qualityScore: number;
+    collectionsPopulated: string[];
+  };
+}
+
+interface IngestionMetrics {
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  averageProcessingTime: number;
+  totalRepositories: number;
+  totalCollectionsPopulated: number;
+}
+
+const IngestionDashboard: React.FC = () => {
+  const [jobs, setJobs] = useState<IngestionJob[]>([]);
+  const [metrics, setMetrics] = useState<IngestionMetrics | null>(null);
+  const [newJobDialog, setNewJobDialog] = useState(false);
+  const [jobDetailsDialog, setJobDetailsDialog] = useState<IngestionJob | null>(null);
+  const [loading, setLoading] = useState(false);
+  
+  // New job form state
+  const [repositoryUrl, setRepositoryUrl] = useState('');
+  const [analysisDepth, setAnalysisDepth] = useState<'shallow' | 'medium' | 'deep'>('medium');
+  const [realTimeUpdates, setRealTimeUpdates] = useState(true);
+  const [populateCollections, setPopulateCollections] = useState(true);
+
+  const { isConnected, socket } = useWebSocket();
+  const { addNotification } = useNotifications();
+
+  // Load initial data
+  useEffect(() => {
+    loadJobs();
+    loadMetrics();
+  }, []);
+
+  // WebSocket event listeners
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleIngestionProgress = (data: any) => {
+      setJobs(prevJobs => 
+        prevJobs.map(job => 
+          job.jobId === data.jobId 
+            ? { ...job, progress: data.progress, phase: data.phase, metrics: data.metrics }
+            : job
+        )
+      );
+    };
+
+    const handleIngestionCompleted = (data: any) => {
+      setJobs(prevJobs => 
+        prevJobs.map(job => 
+          job.jobId === data.jobId 
+            ? { ...job, status: 'completed', progress: 100, phase: data.phase, endTime: new Date().toISOString() }
+            : job
+        )
+      );
+      
+      addNotification({
+        type: 'success',
+        message: `Repository ${data.repository} ingestion completed successfully!`
+      });
+      
+      loadMetrics(); // Refresh metrics
+    };
+
+    const handleIngestionFailed = (data: any) => {
+      setJobs(prevJobs => 
+        prevJobs.map(job => 
+          job.jobId === data.jobId 
+            ? { ...job, status: 'failed', phase: `Error: ${data.error}`, endTime: new Date().toISOString() }
+            : job
+        )
+      );
+      
+      addNotification({
+        type: 'error',
+        message: `Repository ${data.repository} ingestion failed: ${data.error}`
+      });
+    };
+
+    socket.on('ingestion:progress', handleIngestionProgress);
+    socket.on('ingestion:completed', handleIngestionCompleted);
+    socket.on('ingestion:failed', handleIngestionFailed);
+
+    return () => {
+      socket.off('ingestion:progress', handleIngestionProgress);
+      socket.off('ingestion:completed', handleIngestionCompleted);
+      socket.off('ingestion:failed', handleIngestionFailed);
+    };
+  }, [socket, addNotification]);
+
+  const loadJobs = async () => {
+    try {
+      setLoading(true);
+      const response = await apiClient.get('/api/v1/ingestion/jobs');
+      setJobs(response.data.jobs || []);
+    } catch (error) {
+      console.error('Failed to load ingestion jobs:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMetrics = async () => {
+    try {
+      const response = await apiClient.get('/api/v1/ingestion/metrics');
+      setMetrics(response.data);
+    } catch (error) {
+      console.error('Failed to load ingestion metrics:', error);
+    }
+  };
+
+  const startIngestion = async () => {
+    if (!repositoryUrl.trim()) {
+      addNotification({
+        type: 'error',
+        message: 'Repository URL is required'
+      });
+      return;
+    }
+
+    try {
+      const response = await apiClient.post('/api/v1/ingestion/repository/progressive', {
+        repositoryUrl: repositoryUrl.trim(),
+        analysisDepth,
+        realTimeUpdates,
+        populateCollections
+      });
+
+      const newJob: IngestionJob = {
+        jobId: response.data.jobId,
+        repositoryUrl: repositoryUrl.trim(),
+        status: 'pending',
+        progress: 0,
+        phase: 'Initializing...',
+        startTime: new Date().toISOString(),
+        config: { analysisDepth, realTimeUpdates, populateCollections },
+        metrics: {
+          filesProcessed: 0,
+          functionsExtracted: 0,
+          dependenciesFound: 0,
+          securityIssues: 0,
+          qualityScore: 0,
+          collectionsPopulated: []
+        }
+      };
+
+      setJobs(prev => [newJob, ...prev]);
+      setNewJobDialog(false);
+      setRepositoryUrl('');
+      
+      addNotification({
+        type: 'success',
+        message: 'Repository ingestion started successfully!'
+      });
+
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: `Failed to start ingestion: ${error.message}`
+      });
+    }
+  };
+
+  const cancelJob = async (jobId: string) => {
+    try {
+      await apiClient.post(`/api/v1/ingestion/jobs/${jobId}/cancel`);
+      
+      setJobs(prev => 
+        prev.map(job => 
+          job.jobId === jobId 
+            ? { ...job, status: 'cancelled', endTime: new Date().toISOString() }
+            : job
+        )
+      );
+      
+      addNotification({
+        type: 'info',
+        message: 'Ingestion job cancelled successfully'
+      });
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: `Failed to cancel job: ${error.message}`
+      });
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CompleteIcon color="success" />;
+      case 'failed':
+      case 'cancelled':
+        return <ErrorIcon color="error" />;
+      case 'running':
+        return <ProgressIcon color="primary" />;
+      default:
+        return <PendingIcon color="action" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'success';
+      case 'failed':
+      case 'cancelled':
+        return 'error';
+      case 'running':
+        return 'primary';
+      default:
+        return 'default';
+    }
+  };
+
+  const formatDuration = (startTime: string, endTime?: string) => {
+    const start = new Date(startTime);
+    const end = endTime ? new Date(endTime) : new Date();
+    const duration = Math.floor((end.getTime() - start.getTime()) / 1000);
+    
+    if (duration < 60) {
+      return `${duration}s`;
+    } else if (duration < 3600) {
+      return `${Math.floor(duration / 60)}m ${duration % 60}s`;
+    } else {
+      const hours = Math.floor(duration / 3600);
+      const minutes = Math.floor((duration % 3600) / 60);
+      return `${hours}h ${minutes}m`;
+    }
+  };
+
+  return (
+    <Box sx={{ p: 3 }}>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1">
+          Repository Ingestion Dashboard
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<IngestionIcon />}
+          onClick={() => setNewJobDialog(true)}
+        >
+          Start New Ingestion
+        </Button>
+      </Box>
+
+      {/* Connection Status */}
+      {!isConnected && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          WebSocket connection lost. Real-time updates are unavailable.
+        </Alert>
+      )}
+
+      {/* Metrics Cards */}
+      {metrics && (
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card>
+              <CardContent>
+                <Typography color="text.secondary" gutterBottom>
+                  Total Jobs
+                </Typography>
+                <Typography variant="h4">
+                  {metrics.totalJobs}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card>
+              <CardContent>
+                <Typography color="text.secondary" gutterBottom>
+                  Completed
+                </Typography>
+                <Typography variant="h4" color="success.main">
+                  {metrics.completedJobs}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card>
+              <CardContent>
+                <Typography color="text.secondary" gutterBottom>
+                  Failed
+                </Typography>
+                <Typography variant="h4" color="error.main">
+                  {metrics.failedJobs}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card>
+              <CardContent>
+                <Typography color="text.secondary" gutterBottom>
+                  Avg. Processing Time
+                </Typography>
+                <Typography variant="h4">
+                  {Math.round(metrics.averageProcessingTime / 60)}m
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+
+      {/* Active Jobs */}
+      <Card sx={{ mb: 4 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">
+              Active Jobs
+            </Typography>
+            <IconButton onClick={loadJobs} disabled={loading}>
+              <RefreshIcon />
+            </IconButton>
+          </Box>
+
+          {jobs.length === 0 ? (
+            <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+              No ingestion jobs found. Start a new ingestion to see progress here.
+            </Typography>
+          ) : (
+            <List>
+              {jobs.map((job, index) => (
+                <React.Fragment key={job.jobId}>
+                  <ListItem>
+                    <Box sx={{ width: '100%' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                        {getStatusIcon(job.status)}
+                        <Typography variant="subtitle1" sx={{ ml: 1, flexGrow: 1 }}>
+                          {job.repositoryUrl}
+                        </Typography>
+                        <Chip 
+                          label={job.status} 
+                          size="small" 
+                          color={getStatusColor(job.status) as any}
+                          sx={{ mr: 1 }}
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                          {formatDuration(job.startTime, job.endTime)}
+                        </Typography>
+                      </Box>
+                      
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        {job.phase}
+                      </Typography>
+                      
+                      {job.status === 'running' && (
+                        <Box sx={{ mb: 1 }}>
+                          <LinearProgress 
+                            variant="determinate" 
+                            value={job.progress} 
+                            sx={{ height: 8, borderRadius: 4 }}
+                          />
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                            {job.progress}% complete
+                          </Typography>
+                        </Box>
+                      )}
+                      
+                      <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                        <Chip 
+                          label={`Files: ${job.metrics.filesProcessed}`} 
+                          size="small" 
+                          variant="outlined"
+                        />
+                        <Chip 
+                          label={`Functions: ${job.metrics.functionsExtracted}`} 
+                          size="small" 
+                          variant="outlined"
+                        />
+                        <Chip 
+                          label={`Dependencies: ${job.metrics.dependenciesFound}`} 
+                          size="small" 
+                          variant="outlined"
+                        />
+                        {job.metrics.qualityScore > 0 && (
+                          <Chip 
+                            label={`Quality: ${job.metrics.qualityScore}`} 
+                            size="small" 
+                            variant="outlined"
+                          />
+                        )}
+                      </Box>
+                    </Box>
+                    
+                    <ListItemSecondaryAction>
+                      <IconButton 
+                        onClick={() => setJobDetailsDialog(job)}
+                        size="small"
+                      >
+                        <ViewIcon />
+                      </IconButton>
+                      {job.status === 'running' && (
+                        <IconButton 
+                          onClick={() => cancelJob(job.jobId)}
+                          size="small"
+                          color="error"
+                        >
+                          <StopIcon />
+                        </IconButton>
+                      )}
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                  {index < jobs.length - 1 && <Divider />}
+                </React.Fragment>
+              ))}
+            </List>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* New Job Dialog */}
+      <Dialog open={newJobDialog} onClose={() => setNewJobDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Start New Repository Ingestion</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Repository URL"
+            type="url"
+            fullWidth
+            variant="outlined"
+            value={repositoryUrl}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRepositoryUrl(e.target.value)}
+            placeholder="https://github.com/user/repository"
+            sx={{ mb: 2 }}
+          />
+          
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>Analysis Depth</InputLabel>
+            <Select
+              value={analysisDepth}
+              label="Analysis Depth"
+              onChange={(e: any) => setAnalysisDepth(e.target.value as any)}
+            >
+              <MenuItem value="shallow">Shallow - Basic structure only</MenuItem>
+              <MenuItem value="medium">Medium - Standard analysis</MenuItem>
+              <MenuItem value="deep">Deep - Comprehensive analysis</MenuItem>
+            </Select>
+          </FormControl>
+          
+          <FormControlLabel
+            control={
+              <Switch 
+                checked={realTimeUpdates} 
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRealTimeUpdates(e.target.checked)} 
+              />
+            }
+            label="Real-time progress updates"
+            sx={{ mb: 1 }}
+          />
+          
+          <FormControlLabel
+            control={
+              <Switch 
+                checked={populateCollections} 
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPopulateCollections(e.target.checked)} 
+              />
+            }
+            label="Populate database collections"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setNewJobDialog(false)}>Cancel</Button>
+          <Button onClick={startIngestion} variant="contained">
+            Start Ingestion
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Job Details Dialog */}
+      <Dialog 
+        open={!!jobDetailsDialog} 
+        onClose={() => setJobDetailsDialog(null)} 
+        maxWidth="md" 
+        fullWidth
+      >
+        {jobDetailsDialog && (
+          <>
+            <DialogTitle>
+              Ingestion Job Details
+            </DialogTitle>
+            <DialogContent>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12 }}>
+                  <Typography variant="h6" gutterBottom>
+                    {jobDetailsDialog.repositoryUrl}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                    <Chip 
+                      label={jobDetailsDialog.status} 
+                      color={getStatusColor(jobDetailsDialog.status) as any}
+                    />
+                    <Chip 
+                      label={jobDetailsDialog.config.analysisDepth} 
+                      variant="outlined"
+                    />
+                  </Box>
+                </Grid>
+                
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Progress Information
+                  </Typography>
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableBody>
+                        <TableRow>
+                          <TableCell>Status</TableCell>
+                          <TableCell>{jobDetailsDialog.status}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Progress</TableCell>
+                          <TableCell>{jobDetailsDialog.progress}%</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Current Phase</TableCell>
+                          <TableCell>{jobDetailsDialog.phase}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Duration</TableCell>
+                          <TableCell>
+                            {formatDuration(jobDetailsDialog.startTime, jobDetailsDialog.endTime)}
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Grid>
+                
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Processing Metrics
+                  </Typography>
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableBody>
+                        <TableRow>
+                          <TableCell>Files Processed</TableCell>
+                          <TableCell>{jobDetailsDialog.metrics.filesProcessed}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Functions Extracted</TableCell>
+                          <TableCell>{jobDetailsDialog.metrics.functionsExtracted}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Dependencies Found</TableCell>
+                          <TableCell>{jobDetailsDialog.metrics.dependenciesFound}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Security Issues</TableCell>
+                          <TableCell>{jobDetailsDialog.metrics.securityIssues}</TableCell>
+                        </TableRow>
+                        {jobDetailsDialog.metrics.qualityScore > 0 && (
+                          <TableRow>
+                            <TableCell>Quality Score</TableCell>
+                            <TableCell>{jobDetailsDialog.metrics.qualityScore}</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Grid>
+                
+                {jobDetailsDialog.metrics.collectionsPopulated.length > 0 && (
+                  <Grid size={{ xs: 12 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Collections Populated
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {jobDetailsDialog.metrics.collectionsPopulated.map((collection) => (
+                        <Chip 
+                          key={collection} 
+                          label={collection} 
+                          size="small" 
+                          variant="outlined"
+                          color="success"
+                        />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+              </Grid>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setJobDetailsDialog(null)}>Close</Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+    </Box>
+  );
+};
+
+export default IngestionDashboard;
+
+

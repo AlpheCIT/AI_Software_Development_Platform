@@ -145,9 +145,10 @@ export function IssueModal({
         duration: 3000
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       toast({
         title: `${mode === 'create' ? 'Creation' : 'Update'} Failed`,
-        description: error.message || 'An error occurred',
+        description: errorMessage,
         status: 'error',
         duration: 5000
       });
@@ -413,3 +414,5 @@ export function IssueModal({
 }
 
 export default IssueModal;
+
+

@@ -19,6 +19,94 @@ export interface SecurityIssue {
   detectedAt: string;
 }
 
+// Performance optimization types
+export interface PerformanceOptimization {
+  id: string;
+  type: 'performance' | 'memory' | 'cpu' | 'io';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  impact: string;
+  solution: string;
+  estimatedImprovement: string;
+}
+
+// Inspector overview interface
+export interface InspectorOverview {
+  name?: string;
+  properties?: Record<string, any>;
+  [key: string]: any;
+}
+
+// Graph configuration interfaces
+export interface AdvancedLayoutConfig {
+  type?: string;
+  options?: Record<string, any>;
+}
+
+export interface EnhancedLayoutConfig extends AdvancedLayoutConfig {
+  // All layout configs inherit from this base
+}
+
+// Node metadata extension
+export interface NodeMetadata {
+  dependencies?: string[];
+  complexity?: number;
+  security?: 'low' | 'medium' | 'high' | 'critical';
+  labelVisible?: boolean;
+  [key: string]: any;
+}
+
+// Edge metadata extension
+export interface EdgeMetadata {
+  connectionCount?: number;
+  lastActivity?: string;
+  averageLatency?: number;
+  label?: string;
+  [key: string]: any;
+}
+
+// MCP Collection interface
+export interface MCPCollection {
+  name: string;
+  count: number;
+  type: string;
+  status: 'active' | 'inactive' | 'error';
+}
+
+// Query result interfaces
+export interface UseQueryResult<T> {
+  data: T | undefined;
+  loading: boolean;
+  error: Error | null;
+  refetch: () => void;
+}
+
+// Ingestion job interface
+export interface IngestionJob {
+  id: string;
+  repositoryId: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  progress: number;
+  currentPhase?: string;
+  totalPhases?: number;
+  overallProgress?: number;
+  collectionsPopulated?: number;
+  totalCollections?: number;
+  errors?: string[];
+  startedAt?: string;
+  completedAt?: string;
+}
+
+// Saved view interface
+export interface SavedView {
+  id: string;
+  name: string;
+  description?: string;
+  graphState: any;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PerformanceMetric {
   name: string;
   value: number;
@@ -191,3 +279,4 @@ export interface LoadingState {
   progress?: number;
   message?: string;
 }
+

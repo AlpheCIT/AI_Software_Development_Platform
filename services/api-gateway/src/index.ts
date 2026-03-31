@@ -24,6 +24,7 @@ import { healthRoutes } from './routes/health';
 import { repositoryRoutes } from './routes/repositories';
 import { aiRoutes } from './routes/ai';
 import { integrationRoutes } from './routes/integrations';
+import { mcpProxyRoutes } from './routes/mcp-proxy';
 
 async function createServer() {
   const fastify = Fastify({
@@ -104,6 +105,7 @@ async function createServer() {
   await fastify.register(repositoryRoutes, { prefix: '/api/repositories' });
   await fastify.register(aiRoutes, { prefix: '/api/ai' });
   await fastify.register(integrationRoutes, { prefix: '/api/integrations' });
+  await fastify.register(mcpProxyRoutes, { prefix: '/api/v1/mcp' });
 
   // Global error handler
   fastify.setErrorHandler((error, request, reply) => {

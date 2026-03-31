@@ -51,6 +51,7 @@ import {
 // Context
 import { AppProvider, useAppContext } from './contexts/AppContext';
 import { WebSocketProvider } from './contexts/WebSocketContext';
+import { AIProvider } from './contexts/AIContext';
 
 // Components
 import DashboardOverview from './components/DashboardOverview';
@@ -383,9 +384,11 @@ function App() {
       <CssBaseline />
       <AppProvider>
         <WebSocketProvider>
-          <Router>
-            <AppLayout />
-          </Router>
+          <AIProvider>
+            <Router>
+              <AppLayout />
+            </Router>
+          </AIProvider>
         </WebSocketProvider>
       </AppProvider>
     </ThemeProvider>

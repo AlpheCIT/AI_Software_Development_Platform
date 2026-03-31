@@ -6,6 +6,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import { Database } from '@ai-code-management/database';
 import { RepositoryIngestionEngine } from './engine';
 import { WebSocketService } from './services/websocket-service';
+import { SophisticatedAnalysisEngine } from './services/sophisticated-analysis-engine';
 import { logger } from './utils/logger';
 import * as dotenv from 'dotenv';
 
@@ -39,6 +40,7 @@ export class RepositoryIngestionService {
   private database: Database;
   private wsService: WebSocketService;
   private ingestionEngine: RepositoryIngestionEngine;
+  private sophisticatedEngine: SophisticatedAnalysisEngine;
 
   constructor(config?: Partial<ServiceConfig>) {
     this.config = this.loadConfiguration(config);
@@ -96,6 +98,15 @@ export class RepositoryIngestionService {
       this.database,
       this.wsService
     );
+    
+    // Initialize sophisticated analysis engine (SCRUM-91)
+    this.sophisticatedEngine = new SophisticatedAnalysisEngine(
+      this.app,
+      this.database,
+      this.wsService
+    );
+    
+    logger.info('✅ All analysis engines initialized (including sophisticated backend engines)');
   }
 
   private async setupMiddleware(): Promise<void> {
@@ -357,8 +368,8 @@ export class RepositoryIngestionService {
     return this.wsService;
   }
 
-  getIngestionEngine(): RepositoryIngestionEngine {
-    return this.ingestionEngine;
+  getSophisticatedEngine(): SophisticatedAnalysisEngine {
+    return this.sophisticatedEngine;
   }
 
   async healthCheck(): Promise<{

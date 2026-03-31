@@ -767,6 +767,7 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
       return;
     }
 
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
 
@@ -774,7 +775,7 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
       try {
         // Try the provided runId first
         if (runId) {
-          const res = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`);
+          const res = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`, { signal: controller.signal });
           if (res.ok) {
             const json = await res.json();
             if (json.roadmap || json.codeQuality) {
@@ -785,27 +786,33 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
           }
         }
 
-        // Fallback: find ANY completed run with product intelligence data
-        const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+        // Fallback: find ANY completed run with product intelligence data (limit to 3 most recent)
+        const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
         if (runsRes.ok) {
           const runsData = await runsRes.json();
-          const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
-          for (const run of completedRuns) {
-            const rid = run._key || run.runId;
-            const prodRes = await fetch(`${QA_ENGINE_URL}/qa/product/${rid}`);
-            if (prodRes.ok) {
-              const json = await prodRes.json();
-              if (json.roadmap || json.codeQuality) {
-                setData(json);
-                setLoading(false);
-                return;
+          const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed').slice(0, 3);
+          const results = await Promise.allSettled(
+            completedRuns.map(async (run: any) => {
+              const rid = run._key || run.runId;
+              const prodRes = await fetch(`${QA_ENGINE_URL}/qa/product/${rid}`, { signal: controller.signal });
+              if (prodRes.ok) {
+                const json = await prodRes.json();
+                if (json.roadmap || json.codeQuality) return json;
               }
-            }
+              return null;
+            })
+          );
+          const found = results.find(r => r.status === 'fulfilled' && r.value !== null);
+          if (found && found.status === 'fulfilled' && found.value) {
+            setData(found.value);
+            setLoading(false);
+            return;
           }
         }
 
         setError('No product intelligence data found. Run a QA analysis to generate insights.');
       } catch (err: any) {
+        if (err.name === 'AbortError') return;
         setError(err.message || 'Failed to load Action Center data');
       } finally {
         setLoading(false);
@@ -816,8 +823,9 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
     // Only poll if a run is active
     if (runId) {
       const interval = setInterval(fetchData, 10000);
-      return () => clearInterval(interval);
+      return () => { controller.abort(); clearInterval(interval); };
     }
+    return () => controller.abort();
   }, [runId, productData]);
 
   // Loading

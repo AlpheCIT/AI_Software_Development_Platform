@@ -505,3 +505,5 @@ export default function SemanticSearchBox() {
     </Box>
   );
 }
+
+

@@ -51,7 +51,7 @@ export default function HistoryTab({ nodeId }: HistoryTabProps) {
   }
 
   // Mock recent activity if not available - this would come from the API
-  const recentActivity: Activity[] = data.recentActivity || [
+  const recentActivity: Activity[] = (data as any)?.recentActivity || [
     {
       type: 'commit',
       author: 'john.doe',
@@ -75,7 +75,7 @@ export default function HistoryTab({ nodeId }: HistoryTabProps) {
     }
   ];
 
-  const lastUpdated = data.metadata?.lastUpdated;
+  const lastUpdated = (data as any)?.metadata?.lastUpdated;
 
   const getActivityIcon = (type: Activity['type']) => {
     switch (type) {
@@ -304,3 +304,5 @@ export default function HistoryTab({ nodeId }: HistoryTabProps) {
     </VStack>
   );
 }
+
+

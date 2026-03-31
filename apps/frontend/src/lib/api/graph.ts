@@ -3,7 +3,7 @@
  * Handles all graph-related API calls for the frontend
  */
 
-import { apiClient } from './client';
+import { apiRequest } from './client';
 import type { GraphNode, GraphEdge, GraphData, SavedView } from '../../types/graph';
 
 export interface GraphSeedsParams {
@@ -38,11 +38,12 @@ export const graphApi = {
   async getSeeds(params: GraphSeedsParams = {}) {
     try {
       const limit = params.limit || 50;
-      const response = await apiClient.getGraphSeeds(limit);
+      const response = await apiRequest.get(`/api/graph/seeds?limit=${limit}`);
+      const data = response as any;
       return {
-        nodes: response.nodes || [],
-        edges: response.edges || [],
-        metadata: { total: response.total || 0 }
+        nodes: data.nodes || [],
+        edges: data.edges || [],
+        metadata: { total: data.total || 0 }
       };
     } catch (error) {
       console.error('Error fetching graph seeds:', error);
@@ -53,30 +54,22 @@ export const graphApi = {
   // Get detailed node information
   async getNodeDetails(nodeId: string) {
     try {
-      const response = await apiClient.getNodeDetails(nodeId);
+      const response = await apiRequest.get(`/api/graph/nodes/${nodeId}/details`);
       return response;
     } catch (error) {
       console.error('Error fetching node details:', error);
-      throw error;
+      return null;
     }
   },
 
-  // Search nodes and edges
+  // Search graph nodes and edges
   async search(params: SearchParams) {
     try {
-      const response = await apiClient.searchGraph(params.q, params.limit);
-      return {
-        query: params.q,
-        results: response.results || [],
-        metadata: response.metadata || {}
-      };
+      const response = await apiRequest.get(`/api/graph/search?q=${encodeURIComponent(params.q)}&limit=${params.limit || 20}`);
+      return response;
     } catch (error) {
       console.error('Error searching graph:', error);
-      return {
-        query: params.q,
-        results: [],
-        metadata: {}
-      };
+      return { nodes: [], edges: [] };
     }
   },
 
@@ -84,12 +77,13 @@ export const graphApi = {
   async getNeighborhood(nodeId: string, params: Omit<NeighborhoodParams, 'nodeId'> = {}) {
     try {
       const depth = params.depth || 1;
-      const response = await apiClient.expandNodeNeighborhood(nodeId, depth);
+      const response = await apiRequest.get(`/api/graph/nodes/${nodeId}/expand?depth=${depth}`);
+      const data = response as any;
       return {
         centerNode: nodeId,
-        nodes: response.nodes || [],
-        edges: response.edges || [],
-        metadata: response.metadata || {}
+        nodes: data.nodes || [],
+        edges: data.edges || [],
+        metadata: data.metadata || {}
       };
     } catch (error) {
       console.error('Error fetching node neighborhood:', error);
@@ -108,7 +102,7 @@ export const savedViewsApi = {
   // Get all saved views
   async getAll() {
     try {
-      return await apiClient.getSavedViews();
+      return await apiRequest.get('/api/graph/saved-views');
     } catch (error) {
       console.error('Error fetching saved views:', error);
       return [];
@@ -116,21 +110,20 @@ export const savedViewsApi = {
   },
 
   // Get saved view by ID
-  async getById(id: string) {
+  async getById(id: string): Promise<SavedView | null> {
     try {
-      // This would need to be implemented in the API client if needed
-      const allViews = await apiClient.getSavedViews();
-      return allViews.find((view: any) => view.id === id);
+      const allViews = await apiRequest.get('/api/graph/saved-views');
+      return Array.isArray(allViews) ? allViews.find((view: any) => view.id === id) || null : null;
     } catch (error) {
-      console.error('Error fetching saved view by ID:', error);
-      throw error;
+      console.error('Error fetching saved view:', error);
+      return null;
     }
   },
 
   // Create new saved view
   async create(view: Omit<SavedView, 'id' | 'createdAt' | 'updatedAt'>) {
     try {
-      return await apiClient.createSavedView(view);
+      return await apiRequest.post('/api/graph/saved-views', view);
     } catch (error) {
       console.error('Error creating saved view:', error);
       throw error;
@@ -140,7 +133,7 @@ export const savedViewsApi = {
   // Update saved view
   async update(id: string, view: Partial<SavedView>) {
     try {
-      return await apiClient.updateSavedView(id, view);
+      return await apiRequest.put(`/api/graph/saved-views/${id}`, view);
     } catch (error) {
       console.error('Error updating saved view:', error);
       throw error;
@@ -150,43 +143,9 @@ export const savedViewsApi = {
   // Delete saved view
   async delete(id: string) {
     try {
-      await apiClient.deleteSavedView(id);
-      return { success: true };
+      await apiRequest.delete(`/api/graph/saved-views/${id}`);
     } catch (error) {
       console.error('Error deleting saved view:', error);
-      throw error;
-    }
-  },
-
-  // Import saved views
-  async import(views: SavedView[]) {
-    try {
-      // This would need to be implemented in the API client if needed
-      let imported = 0;
-      let skipped = 0;
-      
-      for (const view of views) {
-        try {
-          await this.create(view);
-          imported++;
-        } catch (error) {
-          skipped++;
-        }
-      }
-      
-      return { imported, skipped };
-    } catch (error) {
-      console.error('Error importing saved views:', error);
-      throw error;
-    }
-  },
-
-  // Export saved views
-  async export() {
-    try {
-      return await apiClient.getSavedViews();
-    } catch (error) {
-      console.error('Error exporting saved views:', error);
       throw error;
     }
   }
@@ -212,7 +171,7 @@ export const analyticsApi = {
   // Get overview metrics
   async getOverview() {
     try {
-      return await apiClient.getRepositoryAnalytics();
+      return await apiRequest.get('/api/analytics/repository');
     } catch (error) {
       console.error('Error fetching analytics overview:', error);
       return null;
@@ -253,3 +212,4 @@ export default {
   simulation: simulationApi,
   analytics: analyticsApi
 };
+

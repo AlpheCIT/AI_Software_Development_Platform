@@ -108,6 +108,55 @@ export class RepositoryIngestionService {
     return jobId;
   }
 
+  /**
+   * Ingest local repository - alias for ingestDirectory with repository-specific handling
+   */
+  async ingestLocalRepository(repositoryPath: string, options: IngestionOptions = {}): Promise<string> {
+    // Validate that the path exists and is a git repository
+    const fs = require('fs');
+    const path = require('path');
+    
+    if (!fs.existsSync(repositoryPath)) {
+      throw new Error(`Repository path does not exist: ${repositoryPath}`);
+    }
+    
+    // Check if it's a git repository
+    const gitPath = path.join(repositoryPath, '.git');
+    if (!fs.existsSync(gitPath)) {
+      console.warn(`Warning: ${repositoryPath} does not appear to be a Git repository (no .git directory found)`);
+    }
+    
+    // Use the existing directory ingestion logic but mark it as a repository
+    const jobId = uuidv4();
+    const job: IngestionJob = {
+      id: jobId,
+      type: 'repository',
+      source: repositoryPath,
+      status: 'pending',
+      progress: 0,
+      currentStep: 'Initializing local repository analysis',
+      startTime: new Date()
+    };
+
+    this.jobs.set(jobId, job);
+    this.broadcastJobUpdate(job);
+
+    // Start ingestion process asynchronously with repository-specific options
+    const repoOptions = {
+      ...options,
+      recursive: true, // Always scan recursively for repositories
+      includeTests: options.includeTests !== false, // Include tests by default
+      includeDocs: options.includeDocs !== false // Include docs by default
+    };
+    
+    this.processDirectoryIngestion(jobId, repositoryPath, repoOptions).catch(error => {
+      logger.error(`Local repository ingestion failed for job ${jobId}:`, error);
+      this.updateJobStatus(jobId, 'failed', error.message);
+    });
+
+    return jobId;
+  }
+
   private async processRepositoryIngestion(jobId: string, url: string, branch: string, options: IngestionOptions): Promise<void> {
     this.updateJobStatus(jobId, 'running', undefined, 5, 'Cloning repository');
 
@@ -127,11 +176,14 @@ export class RepositoryIngestionService {
   }
 
   private async processDirectoryIngestion(jobId: string, directoryPath: string, options: IngestionOptions): Promise<void> {
-    this.updateJobStatus(jobId, 'running', undefined, 5, 'Analyzing directory structure');
+    const job = this.jobs.get(jobId);
+    const analysisType = job?.type === 'repository' ? 'repository' : 'directory';
+    
+    this.updateJobStatus(jobId, 'running', undefined, 5, `Analyzing ${analysisType} structure`);
     
     // Verify directory exists
     if (!fs.existsSync(directoryPath)) {
-      throw new Error(`Directory does not exist: ${directoryPath}`);
+      throw new Error(`${analysisType.charAt(0).toUpperCase() + analysisType.slice(1)} does not exist: ${directoryPath}`);
     }
 
     await this.processDirectory(jobId, directoryPath, directoryPath, options);

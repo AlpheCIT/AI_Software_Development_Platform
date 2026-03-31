@@ -121,6 +121,12 @@ export default function KanbanBoard({ projectKey }: KanbanBoardProps) {
   const bgColor = useColorModeValue('gray.50', 'gray.900');
   const cardBg = useColorModeValue('white', 'gray.800');
 
+  // Wrapper function to match IssueCard's expected signature
+  const handleUpdateIssue = async (issueId: string, updates: Partial<JiraIssue>): Promise<void> => {
+    await updateIssue(issueId, updates);
+    // Return void to match expected interface
+  };
+
   // Initialize columns when issues load
   useEffect(() => {
     if (issues && issues.length > 0) {
@@ -222,7 +228,7 @@ export default function KanbanBoard({ projectKey }: KanbanBoardProps) {
     }
   };
 
-  const handleCreateIssue = async (issueData: Partial<JiraIssue>) => {
+  const handleCreateIssue = async (issueData: Partial<JiraIssue> & { projectKey: string }) => {
     try {
       await createIssue(issueData);
       onCreateClose();
@@ -393,7 +399,7 @@ export default function KanbanBoard({ projectKey }: KanbanBoardProps) {
                             >
                               <IssueCard 
                                 issue={issue} 
-                                onUpdate={updateIssue}
+                                onUpdate={handleUpdateIssue}
                               />
                             </Box>
                           )}
@@ -432,3 +438,5 @@ export default function KanbanBoard({ projectKey }: KanbanBoardProps) {
     </Box>
   );
 }
+
+

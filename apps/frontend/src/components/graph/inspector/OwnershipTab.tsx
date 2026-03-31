@@ -53,7 +53,7 @@ export default function OwnershipTab({ nodeId }: OwnershipTabProps) {
     );
   }
 
-  const ownership = data.ownership;
+  const ownership = (data as any)?.ownership;
 
   if (!ownership) {
     return (
@@ -67,9 +67,9 @@ export default function OwnershipTab({ nodeId }: OwnershipTabProps) {
   }
 
   const handleContactOwner = () => {
-    const subject = `Question about ${data.name || nodeId}`;
-    const body = `Hi ${ownership.owner},\n\nI have a question about the ${data.name || nodeId} component.\n\nThanks!`;
-    window.open(`mailto:${ownership.contact}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+    const subject = `Question about ${(data as any)?.name || nodeId}`;
+    const body = `Hi ${ownership?.owner || 'there'},\n\nI have a question about the ${(data as any)?.name || nodeId} component.\n\nThanks!`;
+    window.open(`mailto:${ownership?.contact}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   };
 
   const handleSlackContact = () => {
@@ -161,7 +161,7 @@ export default function OwnershipTab({ nodeId }: OwnershipTabProps) {
             </Text>
             
             <VStack spacing={3} align="stretch">
-              {ownership.maintainers.map((maintainer, index) => (
+              {ownership.maintainers.map((maintainer: string, index: number) => (
                 <HStack key={index} spacing={3}>
                   <Avatar name={maintainer} size="sm" />
                   <Box flex="1">
@@ -240,3 +240,5 @@ export default function OwnershipTab({ nodeId }: OwnershipTabProps) {
     </VStack>
   );
 }
+
+

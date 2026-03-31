@@ -7,13 +7,21 @@ interface UseWebSocketProps {
   maxReconnectionAttempts?: number;
 }
 
-interface UseWebSocketReturn {
+export interface UseWebSocketReturn {
   socket: Socket | null;
   isConnected: boolean;
   isConnecting: boolean;
   error: string | null;
   connect: () => void;
   disconnect: () => void;
+  lastMessage: any;
+  sendMessage: (message: any) => void;
+  subscribe: (eventName: string, callback: (data: any) => void) => void;
+  unsubscribe: (eventName: string, callback?: (data: any) => void) => void;
+  emit: (eventName: string, data?: any) => void;
+  on: (eventName: string, callback: (data: any) => void) => void;
+  off: (eventName: string, callback?: (data: any) => void) => void;
+  subscribeToGraph: () => void;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
@@ -31,6 +39,7 @@ export const useWebSocket = (
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastMessage, setLastMessage] = useState<any>(null);
   const socketRef = useRef<Socket | null>(null);
   const reconnectionAttemptsRef = useRef(0);
   const reconnectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -89,6 +98,11 @@ export const useWebSocket = (
         setError(`Socket error: ${error}`);
       });
 
+      // Listen for all messages
+      socketRef.current.onAny((eventName, ...args) => {
+        setLastMessage({ eventName, data: args });
+      });
+
     } catch (error) {
       console.error('Failed to create socket connection:', error);
       setIsConnecting(false);
@@ -129,6 +143,57 @@ export const useWebSocket = (
     reconnectionAttemptsRef.current = 0;
   };
 
+  // Helper methods for compatibility
+  const sendMessage = (message: any) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('message', message);
+    }
+  };
+
+  const subscribe = (eventName: string, callback: (data: any) => void) => {
+    if (socketRef.current) {
+      socketRef.current.on(eventName, callback);
+    }
+  };
+
+  const unsubscribe = (eventName: string, callback?: (data: any) => void) => {
+    if (socketRef.current) {
+      if (callback) {
+        socketRef.current.off(eventName, callback);
+      } else {
+        socketRef.current.removeAllListeners(eventName);
+      }
+    }
+  };
+
+  const emit = (eventName: string, data?: any) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit(eventName, data);
+    }
+  };
+
+  const on = (eventName: string, callback: (data: any) => void) => {
+    if (socketRef.current) {
+      socketRef.current.on(eventName, callback);
+    }
+  };
+
+  const off = (eventName: string, callback?: (data: any) => void) => {
+    if (socketRef.current) {
+      if (callback) {
+        socketRef.current.off(eventName, callback);
+      } else {
+        socketRef.current.removeAllListeners(eventName);
+      }
+    }
+  };
+
+  const subscribeToGraph = () => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('subscribe', 'graph-updates');
+    }
+  };
+
   useEffect(() => {
     // Don't attempt WebSocket if API gateway is known to be down
     if ((window as any).__apiGatewayDown) return;
@@ -167,6 +232,14 @@ export const useWebSocket = (
     isConnecting,
     error,
     connect,
-    disconnect
+    disconnect,
+    lastMessage,
+    sendMessage,
+    subscribe,
+    unsubscribe,
+    emit,
+    on,
+    off,
+    subscribeToGraph
   };
 };

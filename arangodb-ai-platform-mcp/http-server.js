@@ -6,7 +6,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { Database } from 'arangojs';
 
 const app = express();
-const PORT = 3002;
+const PORT = process.env.MCP_PORT || 3003;
 
 // Enable CORS and JSON parsing
 app.use(cors());

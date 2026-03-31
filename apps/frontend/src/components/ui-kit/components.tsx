@@ -20,3 +20,4 @@ export function CoverageRing({ value = 0.8, size = 24 }: { value: number; size?:
   
   return <div style={style} aria-label={`Coverage ${pct}%`} />;
 }
+

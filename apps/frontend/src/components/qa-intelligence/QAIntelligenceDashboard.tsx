@@ -7,7 +7,7 @@
  *   Bottom: Intelligence tabs (Risk Heatmap, Mutation Trends placeholders)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import {
   Box,
   Grid,
@@ -31,6 +31,8 @@ import {
   StatLabel,
   StatNumber,
   StatHelpText,
+  Spinner,
+  Center,
 } from '@chakra-ui/react';
 import {
   Shield,
@@ -53,27 +55,31 @@ import {
 } from 'lucide-react';
 
 import QARunControl from './QARunControl';
-import AgentPipeline from './AgentPipeline';
 import AgentLogStream from './AgentLogStream';
 import TestResultsPanel from './TestResultsPanel';
-import ActionCenter from './ActionCenter';
 import ActionableSummary from './ActionableSummary';
-import RiskHeatmap from './RiskHeatmap';
-import MutationTrends from './MutationTrends';
-import CumulativeReport from './CumulativeReport';
 import AgentControlRoom from './AgentControlRoom';
+
+// Lazy-load heavy below-fold components to prevent scroll freeze
+const AgentPipeline = React.lazy(() => import('./AgentPipeline'));
+const ActionCenter = React.lazy(() => import('./ActionCenter'));
+const RiskHeatmap = React.lazy(() => import('./RiskHeatmap'));
+const MutationTrends = React.lazy(() => import('./MutationTrends'));
+const CumulativeReport = React.lazy(() => import('./CumulativeReport'));
 import OperatorTerminal from './OperatorTerminal';
-import HealthScoreDashboard from './HealthScoreDashboard';
 import RunReplayPlayer from './RunReplayPlayer';
 import NotificationBell from './NotificationBell';
-import AgentReportsTab from './AgentReportsTab';
-import AgentDebateView from './AgentDebateView';
-import LearningsPanel from './LearningsPanel';
-import BehaviorSpecsTab from './BehaviorSpecsTab';
-import BehaviorChangesTab from './BehaviorChangesTab';
 import BehaviorExportButton from './BehaviorExportButton';
 import AgentSpawningTree from './AgentSpawningTree';
 import AgentReasoningTimeline from './AgentReasoningTimeline';
+
+// Lazy-load tab content components (only rendered when tab is clicked)
+const HealthScoreDashboard = React.lazy(() => import('./HealthScoreDashboard'));
+const AgentReportsTab = React.lazy(() => import('./AgentReportsTab'));
+const AgentDebateView = React.lazy(() => import('./AgentDebateView'));
+const LearningsPanel = React.lazy(() => import('./LearningsPanel'));
+const BehaviorSpecsTab = React.lazy(() => import('./BehaviorSpecsTab'));
+const BehaviorChangesTab = React.lazy(() => import('./BehaviorChangesTab'));
 import { useQARun } from '../../hooks/useQARun';
 import { useAgentStream } from '../../hooks/useAgentStream';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -85,6 +91,7 @@ const RiskHeatmapPlaceholder: React.FC = () => {
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
+  const emptyStateBg = useColorModeValue('gray.50', 'gray.700');
 
   return (
     <Box bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="lg" p={6}>
@@ -100,7 +107,7 @@ const RiskHeatmapPlaceholder: React.FC = () => {
         </Text>
 
         {/* Empty state — no fake data */}
-        <Box py={4} px={6} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md" maxW="500px">
+        <Box py={4} px={6} bg={emptyStateBg} borderRadius="md" maxW="500px">
           <Text fontSize="sm" color={subtextColor} textAlign="center">
             Run a QA analysis to generate real risk data from your codebase.
             The heatmap will show actual complexity, test coverage, and failure patterns.
@@ -244,7 +251,7 @@ const QAIntelligenceDashboard: React.FC = () => {
 
   // Merge real-time agent status from Socket.IO stream + persistent store into agent tiles
   const storeAgentStatuses = useQARunStore(s => s.agentStatuses);
-  const liveAgents = qaRun.agents.map(a => {
+  const liveAgents = useMemo(() => qaRun.agents.map(a => {
     const backendName = a.name === 'mutation' ? 'mutation-verifier' : a.name;
     // Live stream takes priority
     if (agentStream.activeAgent === a.name || agentStream.activeAgent === backendName) {
@@ -260,7 +267,7 @@ const QAIntelligenceDashboard: React.FC = () => {
       if (storeStatus.status === 'running') return { ...a, status: 'active' as const };
     }
     return a;
-  });
+  }), [qaRun.agents, agentStream.activeAgent, agentStream.handoffData, storeAgentStatuses]);
 
   // Operator Terminal (full-screen overlay)
   if (showTerminal) {
@@ -431,15 +438,19 @@ const QAIntelligenceDashboard: React.FC = () => {
         )}
 
         {/* Agent Pipeline (compact fallback — shows all 13 tiles) */}
-        <AgentPipeline
-          agents={liveAgents}
-          runId={qaRun.runId}
-          streamingState={agentStream.streamingState}
-        />
+        <Suspense fallback={<Center py={8}><Spinner size="lg" color="blue.400" /></Center>}>
+          <AgentPipeline
+            agents={liveAgents}
+            runId={qaRun.runId}
+            streamingState={agentStream.streamingState}
+          />
+        </Suspense>
 
         {/* Agent Debate View (when loops occurred and user clicked button) */}
         {showDebate && qaRun.runId && (
-          <AgentDebateView runId={qaRun.runId} onClose={() => setShowDebate(false)} />
+          <Suspense fallback={<Center py={4}><Spinner /></Center>}>
+            <AgentDebateView runId={qaRun.runId} onClose={() => setShowDebate(false)} />
+          </Suspense>
         )}
 
         {/* Show test results + log stream when running */}
@@ -474,6 +485,7 @@ const QAIntelligenceDashboard: React.FC = () => {
         )}
 
         {/* ═══ ZONE 3: Intelligence Panels ═══ */}
+        <Suspense fallback={<Center py={8}><Spinner size="lg" color="blue.400" /></Center>}>
         <Tabs variant="enclosed" colorScheme="blue" size="sm" isLazy>
           <TabList>
             <Tab>
@@ -602,6 +614,7 @@ const QAIntelligenceDashboard: React.FC = () => {
             </TabPanel>
           </TabPanels>
         </Tabs>
+        </Suspense>
       </VStack>
     </Box>
   );

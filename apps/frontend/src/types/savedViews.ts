@@ -30,3 +30,4 @@ export interface SavedViewsActions {
   export: () => string;
   import: (data: string) => void;
 }
+

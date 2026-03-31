@@ -35,7 +35,7 @@ interface HealthScoreDashboardProps {
 }
 
 // Circular gauge component
-function ScoreGauge({
+const ScoreGauge = React.memo(function ScoreGauge({
   score,
   label,
   icon: IconComponent,
@@ -107,7 +107,7 @@ function ScoreGauge({
       )}
     </Box>
   );
-}
+});
 
 export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProps) {
   const [scores, setScores] = useState<HealthScores | null>(null);
