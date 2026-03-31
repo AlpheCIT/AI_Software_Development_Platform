@@ -522,6 +522,18 @@ export const qaService = {
     return response.json();
   },
 
+  /**
+   * Get agent conversations for a specific agent in a run (simplified URL-based API)
+   */
+  async getAgentConversations(runId: string, agentId?: string): Promise<any[]> {
+    const url = agentId
+      ? `${QA_ENGINE_URL}/qa/conversations/${runId}/${agentId}`
+      : `${QA_ENGINE_URL}/qa/conversations/${runId}`;
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    return response.json();
+  },
+
   async getFreshness(repositoryId: string): Promise<{
     repositoryId: string;
     lastAnalyzedCommit: string | null;
