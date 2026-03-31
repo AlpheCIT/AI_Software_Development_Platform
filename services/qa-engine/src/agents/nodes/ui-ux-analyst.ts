@@ -243,7 +243,13 @@ export async function uiUxAnalystNode(
         }
 
         // Map DSPy report to UIAuditReport format
-        const dspyReport = dspyResult.report || {};
+        let dspyReport = dspyResult.report || {};
+        if (typeof dspyReport === 'string') {
+          try { dspyReport = JSON.parse(dspyReport); } catch { dspyReport = {}; }
+        }
+        if (dspyReport.error) {
+          throw new Error(`DSPy returned error: ${dspyReport.error}`);
+        }
         const report: UIAuditReport = {
           accessibilityIssues: dspyReport.accessibilityIssues || dspyReport.accessibility_issues || [],
           uxAntiPatterns: dspyReport.uxAntiPatterns || dspyReport.ux_anti_patterns || [],
