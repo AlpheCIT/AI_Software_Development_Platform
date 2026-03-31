@@ -424,7 +424,7 @@ export async function codeQualityArchitectNode(
         }
         const report: CodeQualityReport = {
           overallHealth: dspyReport.overallHealth || dspyReport.overall_health || {
-            score: 0, grade: 'N/A', summary: 'DSPy analysis completed', techDebtHours: 'Unknown'
+            score: null, grade: 'N/A', summary: 'DSPy analysis returned no health data', techDebtHours: 'Unknown'
           },
           codeSmells: dspyReport.codeSmells || dspyReport.code_smells || [],
           duplicationHotspots: dspyReport.duplicationHotspots || dspyReport.duplication_hotspots || [],
@@ -644,9 +644,12 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     report = JSON.parse(cleaned);
   } catch (error) {
-    console.error('[CodeQualityArchitect] Failed to parse response, using fallback');
+    console.error('[CodeQualityArchitect] Failed to parse response:', error);
+    console.error('[CodeQualityArchitect] Raw response:', (typeof response.content === 'string' ? response.content : '').substring(0, 500));
     report = {
-      overallHealth: { score: 0, grade: 'N/A', summary: 'Analysis failed — retry recommended', techDebtHours: 'Unknown' },
+      __failed: true,
+      error: 'LLM response parse failed — retry recommended',
+      overallHealth: { score: null, grade: 'N/A', summary: 'Analysis failed — LLM response could not be parsed', techDebtHours: 'Unknown' },
       codeSmells: [],
       duplicationHotspots: [],
       complexityHotspots: [],
@@ -665,7 +668,7 @@ Respond with ONLY valid JSON, no markdown fencing.`;
         totalFunctions: functions.length,
         documentedFunctions: 0,
       },
-    };
+    } as any;
   }
 
   // Ensure documentationCoverage is always present (LLM may omit it)

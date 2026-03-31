@@ -14,6 +14,7 @@ export const QA_COLLECTIONS = {
   WIKI_DATA: 'qa_wiki_data',
   AGENT_CONVERSATIONS: 'qa_agent_conversations',
   CHAT_CONVERSATIONS: 'qa_chat_conversations',
+  DIFFS: 'qa_diffs',
 
   // Edge collections
   TESTS_FILE: 'qa_tests_file',
@@ -66,6 +67,7 @@ export async function ensureCollections(dbClient: any): Promise<void> {
     'qa_code_quality_reports', 'qa_self_healing_reports', 'qa_api_validation_reports',
     'qa_coverage_audit_reports', 'qa_ui_audit_reports',
     'qa_behavioral_specs', 'qa_gherkin_features', 'qa_behavior_changes', 'qa_fullstack_audit_reports',
+    'qa_diffs',
   ];
 
   let created = 0;

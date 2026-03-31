@@ -149,19 +149,17 @@ Respond with ONLY valid JSON, no markdown fencing.`;
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     strategy = JSON.parse(cleaned);
   } catch (error) {
-    console.error('[Strategist] Failed to parse Claude response, using fallback strategy');
+    console.error('[Strategist] Failed to parse Claude response:', error);
+    console.error('[Strategist] Raw response:', (typeof response.content === 'string' ? response.content : '').substring(0, 500));
     strategy = {
-      riskAreas: codeFiles.slice(0, 5).map((f: any) => ({
-        filePath: f.path,
-        riskLevel: 'medium' as const,
-        reason: 'Default analysis - file in repository',
-        suggestedTestTypes: state.config.testTypes,
-      })),
-      priorityScore: 0.5,
-      coverageStrategy: 'Basic coverage of main files',
-      suggestedTestCount: Math.min(state.config.maxTests, 10),
-      focusAreas: ['general'],
-    };
+      riskAreas: [],
+      priorityScore: null as any,
+      coverageStrategy: 'Strategy generation failed — LLM response could not be parsed',
+      suggestedTestCount: 0,
+      focusAreas: [],
+      error: 'Failed to parse LLM response into test strategy',
+    } as any;
+    state.errors = [...(state.errors || []), { agent: 'strategist', error: 'Failed to parse LLM response' }];
   }
 
   eventPublisher?.emit('qa:agent.completed', {

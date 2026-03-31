@@ -194,7 +194,7 @@ export async function coverageAuditorNode(
           orphanedRoutes: dspyReport.orphanedRoutes || dspyReport.orphaned_routes || [],
           dataShapeMismatches: dspyReport.dataShapeMismatches || dspyReport.data_shape_mismatches || [],
           missingCrudOperations: dspyReport.missingCrudOperations || dspyReport.missing_crud_operations || [],
-          coverageScore: dspyReport.coverageScore || dspyReport.coverage_score || 0,
+          coverageScore: dspyReport.coverageScore ?? dspyReport.coverage_score ?? null,
           summary: dspyReport.summary || `DSPy analysis completed (${dspyResult.steps.length} steps)`,
         };
 

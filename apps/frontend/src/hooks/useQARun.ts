@@ -66,13 +66,16 @@ function computeUnifiedCodeHealth(agentScores: Record<string, number>): CodeHeal
     }
   }
 
-  const score = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 50;
+  const score = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
 
-  let grade = 'F', gradeDescription = 'Critical issues';
-  if (score >= 90) { grade = 'A'; gradeDescription = 'Production-ready'; }
-  else if (score >= 75) { grade = 'B'; gradeDescription = 'Good quality'; }
-  else if (score >= 60) { grade = 'C'; gradeDescription = 'Acceptable'; }
-  else if (score >= 40) { grade = 'D'; gradeDescription = 'Below average'; }
+  let grade = 'N/A', gradeDescription = 'Insufficient data';
+  if (score !== null) {
+    if (score >= 90) { grade = 'A'; gradeDescription = 'Production-ready'; }
+    else if (score >= 75) { grade = 'B'; gradeDescription = 'Good quality'; }
+    else if (score >= 60) { grade = 'C'; gradeDescription = 'Acceptable'; }
+    else if (score >= 40) { grade = 'D'; gradeDescription = 'Below average'; }
+    else { grade = 'F'; gradeDescription = 'Critical issues'; }
+  }
 
   return { score, grade, gradeDescription, breakdown: agentScores };
 }
