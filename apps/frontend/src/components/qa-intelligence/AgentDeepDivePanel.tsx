@@ -88,6 +88,10 @@ export default function AgentDeepDivePanel({
   const bg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
+  const metaBg = metaBg;
+  const sysBg = sysBg;
+  const userBg = userBg;
+  const respBg = respBg;
 
   useEffect(() => {
     loadConversations();
@@ -203,14 +207,14 @@ export default function AgentDeepDivePanel({
                   {conversations.map((conv, idx) => (
                     <Box key={idx} border="1px solid" borderColor={borderColor} borderRadius="md" overflow="hidden">
                       {/* Meta */}
-                      <HStack px={2} py={1} bg={useColorModeValue('gray.50', 'gray.700')} fontSize="2xs" color={subtextColor} spacing={3}>
+                      <HStack px={2} py={1} bg={metaBg} fontSize="2xs" color={subtextColor} spacing={3}>
                         <HStack><Clock size={10} /><Text>{new Date(conv.timestamp).toLocaleTimeString()}</Text></HStack>
                         <HStack><Cpu size={10} /><Text>{(conv.durationMs / 1000).toFixed(1)}s</Text></HStack>
                         {conv.tokensUsed?.input && <Text>{((conv.tokensUsed.input || 0) + (conv.tokensUsed.output || 0)).toLocaleString()} tokens</Text>}
                       </HStack>
 
                       {/* System Prompt */}
-                      <Box px={2} py={1} bg={useColorModeValue('purple.50', 'purple.900')} cursor="pointer" onClick={() => toggleSection(`sys-${idx}`)}>
+                      <Box px={2} py={1} bg={sysBg} cursor="pointer" onClick={() => toggleSection(`sys-${idx}`)}>
                         <HStack justify="space-between">
                           <HStack><Bot size={12} /><Text fontSize="xs" fontWeight="semibold" color="purple.500">System Prompt</Text></HStack>
                           {expandedSections[`sys-${idx}`] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -223,7 +227,7 @@ export default function AgentDeepDivePanel({
                       </Collapse>
 
                       {/* User Message */}
-                      <Box px={2} py={1} bg={useColorModeValue('blue.50', 'blue.900')} cursor="pointer" onClick={() => toggleSection(`user-${idx}`)}>
+                      <Box px={2} py={1} bg={userBg} cursor="pointer" onClick={() => toggleSection(`user-${idx}`)}>
                         <HStack justify="space-between">
                           <HStack><User size={12} /><Text fontSize="xs" fontWeight="semibold" color="blue.500">Context Sent</Text></HStack>
                           {expandedSections[`user-${idx}`] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -236,7 +240,7 @@ export default function AgentDeepDivePanel({
                       </Collapse>
 
                       {/* Response */}
-                      <Box px={2} py={1} bg={useColorModeValue('green.50', 'green.900')} cursor="pointer" onClick={() => toggleSection(`resp-${idx}`)}>
+                      <Box px={2} py={1} bg={respBg} cursor="pointer" onClick={() => toggleSection(`resp-${idx}`)}>
                         <HStack justify="space-between">
                           <HStack><Bot size={12} /><Text fontSize="xs" fontWeight="semibold" color="green.500">Claude Response</Text></HStack>
                           {expandedSections[`resp-${idx}`] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -262,7 +266,7 @@ export default function AgentDeepDivePanel({
                     <Badge colorScheme="blue" fontSize="xs">INPUT</Badge>
                     <Text fontSize="sm" fontWeight="bold">What {agentLabel} Received</Text>
                   </HStack>
-                  <Box p={3} bg={useColorModeValue('blue.50', 'blue.900')} borderRadius="md" fontSize="sm">
+                  <Box p={3} bg={userBg} borderRadius="md" fontSize="sm">
                     {conversations[0] ? (
                       <VStack align="start" spacing={1}>
                         <Text>Context size: <strong>{conversations[0].userMessage.length.toLocaleString()}</strong> characters</Text>
@@ -283,7 +287,7 @@ export default function AgentDeepDivePanel({
                     <Badge colorScheme="green" fontSize="xs">OUTPUT</Badge>
                     <Text fontSize="sm" fontWeight="bold">What {agentLabel} Produced</Text>
                   </HStack>
-                  <Box p={3} bg={useColorModeValue('green.50', 'green.900')} borderRadius="md" fontSize="sm">
+                  <Box p={3} bg={respBg} borderRadius="md" fontSize="sm">
                     {handoffData ? (
                       <VStack align="start" spacing={1}>
                         <Text fontWeight="bold">{handoffData.summary}</Text>
