@@ -53,6 +53,7 @@ function ScoreGauge({
   const bg = useColorModeValue('white', 'gray.750');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const textColor = useColorModeValue('gray.700', 'gray.200');
+  const trackStroke = useColorModeValue('#E2E8F0', '#2D3748');
 
   const displayScore = score ?? 0;
   const scoreColor = score === null ? 'gray' : displayScore >= 80 ? 'green' : displayScore >= 60 ? 'yellow' : 'red';
@@ -75,7 +76,7 @@ function ScoreGauge({
       <Box position="relative" w="90px" h="90px" mx="auto" mb={2}>
         <svg width="90" height="90" viewBox="0 0 90 90">
           {/* Background circle */}
-          <circle cx="45" cy="45" r="40" fill="none" stroke={useColorModeValue('#E2E8F0', '#2D3748')} strokeWidth="6" />
+          <circle cx="45" cy="45" r="40" fill="none" stroke={trackStroke} strokeWidth="6" />
           {/* Score arc */}
           <circle
             cx="45" cy="45" r="40" fill="none"

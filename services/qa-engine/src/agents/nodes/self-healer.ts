@@ -238,8 +238,20 @@ export async function selfHealerNode(
           ...report.missingDeps.map(() => ({ severity: 'medium' as const, confidence: 0.7, verified: true })),
           ...report.configIssues.map((f: any) => ({ severity: f.severity || 'medium', confidence: 0.8, verified: true })),
         ];
-        const { score: calibratedScore } = calculateCalibratedScore(allFindings, codeFiles.length);
-        report.healthScore = calibratedScore;
+        let calibratedResult = calculateCalibratedScore(allFindings, codeFiles.length);
+
+        // Blend with DSPy chain's own score when it provides a more conservative assessment
+        const dspyScore = dspyReport?.healthScore ?? dspyReport?.risk_score ?? dspyReport?.health_score ?? dspyReport?.overallHealth?.score;
+        if (typeof dspyScore === 'number' && dspyScore > 0 && dspyScore < calibratedResult.score) {
+          calibratedResult = {
+            ...calibratedResult,
+            score: Math.round(calibratedResult.score * 0.4 + dspyScore * 0.6),
+          };
+          // Re-derive grade from blended score
+          calibratedResult.grade = calibratedResult.score >= 90 ? 'A' : calibratedResult.score >= 75 ? 'B' : calibratedResult.score >= 60 ? 'C' : calibratedResult.score >= 40 ? 'D' : 'F';
+        }
+
+        report.healthScore = calibratedResult.score;
 
         enrichFindingsWithBlastRadius(report.typeMismatches, graphContext.dependentGraph);
         enrichFindingsWithBlastRadius(report.brokenImports, graphContext.dependentGraph);

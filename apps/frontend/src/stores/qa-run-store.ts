@@ -176,7 +176,7 @@ export const useQARunStore = create<QARunStore>()(
         for (const entry of (runData.executionLog || [])) {
           const agentId = entry.agentId || entry.agent;
           if (!agentId) continue;
-          agentStatuses[agentId] = {
+          const parsed: AgentStatus = {
             status: entry.status === 'success' ? 'completed'
                   : entry.status === 'failure' || entry.status === 'timeout' || entry.status === 'dependency-missing' ? 'error'
                   : entry.status === 'skipped' ? 'error'
@@ -184,23 +184,34 @@ export const useQARunStore = create<QARunStore>()(
             completedAt: entry.completedAt ? new Date(entry.completedAt).toISOString() : undefined,
             result: entry.error ? { error: entry.error, duration: entry.durationMs } : undefined,
           };
+          agentStatuses[agentId] = parsed;
+          // Backend uses 'code-quality' but frontend uses 'code-quality-architect' — sync both
+          if (agentId === 'code-quality') agentStatuses['code-quality-architect'] = parsed;
+          if (agentId === 'code-quality-architect') agentStatuses['code-quality'] = parsed;
         }
 
-        // Infer agent statuses from data presence when executionLog is empty
-        if (Object.keys(agentStatuses).length === 0) {
-          if (runData.selfHealing) agentStatuses['self-healer'] = { status: 'completed' };
-          if (runData.apiValidation) agentStatuses['api-validator'] = { status: 'completed' };
-          if (runData.coverageAudit) agentStatuses['coverage-auditor'] = { status: 'completed' };
-          if (runData.uiAudit) agentStatuses['ui-ux-analyst'] = { status: 'completed' };
-          if (runData.codeQuality) agentStatuses['code-quality'] = { status: 'completed' };
-          // Mark QA pipeline agents as completed if tests exist
-          if (runData.testsGenerated > 0 || runData.totalTests > 0) {
-            agentStatuses['repo_ingester'] = { status: 'completed' };
-            agentStatuses['strategist'] = { status: 'completed' };
-            agentStatuses['generator'] = { status: 'completed' };
-            agentStatuses['critic'] = { status: 'completed' };
-            agentStatuses['executor'] = { status: 'completed' };
-            agentStatuses['mutation-verifier'] = { status: 'completed' };
+        // Infer Track 2 agent statuses from data presence (fill gaps not covered by executionLog)
+        if (runData.selfHealing && !agentStatuses['self-healer']) agentStatuses['self-healer'] = { status: 'completed' };
+        if (runData.apiValidation && !agentStatuses['api-validator']) agentStatuses['api-validator'] = { status: 'completed' };
+        if (runData.coverageAudit && !agentStatuses['coverage-auditor']) agentStatuses['coverage-auditor'] = { status: 'completed' };
+        if (runData.uiAudit && !agentStatuses['ui-ux-analyst']) agentStatuses['ui-ux-analyst'] = { status: 'completed' };
+        if (runData.codeQuality && !agentStatuses['code-quality-architect'] && !agentStatuses['code-quality']) {
+          agentStatuses['code-quality-architect'] = { status: 'completed' };
+          agentStatuses['code-quality'] = { status: 'completed' };
+        }
+
+        // Infer Track 1 (QA pipeline) agent statuses from test data
+        if (runData.testsGenerated > 0 || runData.totalTests > 0) {
+          const track1 = ['repo-ingester', 'strategist', 'generator', 'critic', 'executor'];
+          for (const id of track1) {
+            if (!agentStatuses[id] || agentStatuses[id].status === 'idle') {
+              agentStatuses[id] = { status: 'completed' };
+            }
+          }
+        }
+        if (runData.mutationScore > 0 || runData.mutation?.score > 0) {
+          if (!agentStatuses['mutation'] || agentStatuses['mutation'].status === 'idle') {
+            agentStatuses['mutation'] = { status: 'completed' };
           }
         }
 

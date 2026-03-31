@@ -152,6 +152,7 @@ const DeveloperView: React.FC<{ data: ProductData }> = ({ data }) => {
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
+  const consolidationBg = useColorModeValue('blue.50', 'blue.900');
 
   if (!codeQuality) {
     return (
@@ -307,7 +308,7 @@ const DeveloperView: React.FC<{ data: ProductData }> = ({ data }) => {
                   )}
                   {/* Consolidation recommendation */}
                   {consolidationOpps[i] && (
-                    <Box mt={2} p={2} bg={useColorModeValue('blue.50', 'blue.900')} borderRadius="md">
+                    <Box mt={2} p={2} bg={consolidationBg} borderRadius="md">
                       <Text fontSize="xs" color="blue.500" fontWeight="semibold">
                         Recommendation: {consolidationOpps[i].recommendation || consolidationOpps[i].description || 'Consolidate into shared module'}
                       </Text>
@@ -331,6 +332,7 @@ const PMView: React.FC<{ data: ProductData }> = ({ data }) => {
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const subtextColor = useColorModeValue('gray.500', 'gray.400');
   const hoverBg = useColorModeValue('gray.50', 'gray.700');
+  const competitorBg = useColorModeValue('gray.50', 'gray.700');
 
   if (!roadmap) {
     return (
@@ -474,7 +476,7 @@ const PMView: React.FC<{ data: ProductData }> = ({ data }) => {
                 </Text>
               )}
               {competitiveAnalysis.topCompetitor && (
-                <Box p={2} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md">
+                <Box p={2} bg={competitorBg} borderRadius="md">
                   <Text fontSize="xs" fontWeight="semibold" mb={1}>Top Competitor</Text>
                   <Text fontSize="sm">{competitiveAnalysis.topCompetitor.name || competitiveAnalysis.topCompetitor}</Text>
                   {competitiveAnalysis.topCompetitor.comparison && (
