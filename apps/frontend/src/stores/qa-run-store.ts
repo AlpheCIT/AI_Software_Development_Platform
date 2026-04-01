@@ -199,6 +199,8 @@ export const useQARunStore = create<QARunStore>()(
           agentStatuses['code-quality-architect'] = { status: 'completed' };
           agentStatuses['code-quality'] = { status: 'completed' };
         }
+        if (runData.roadmap && !agentStatuses['product-manager']) agentStatuses['product-manager'] = { status: 'completed' };
+        if (runData.research && !agentStatuses['research-assistant']) agentStatuses['research-assistant'] = { status: 'completed' };
 
         // Infer Track 1 (QA pipeline) agent statuses from test data or completed run status
         const hasTests = runData.testsGenerated > 0 || runData.totalTests > 0;
@@ -218,6 +220,22 @@ export const useQARunStore = create<QARunStore>()(
           }
         }
 
+        // Synthesize activity log from executionLog for completed runs
+        const activityLog = (runData.executionLog || []).map((entry: any) => {
+          const agent = entry.agentId || entry.agent || 'unknown';
+          const durSec = Math.round((entry.durationMs || 0) / 1000);
+          return {
+            timestamp: entry.completedAt || entry.startedAt || new Date().toISOString(),
+            agent,
+            message: entry.status === 'success'
+              ? `${agent} completed (${durSec}s)`
+              : entry.status === 'failure'
+              ? `${agent} failed: ${entry.error || 'unknown error'}`
+              : `${agent} ${entry.status}`,
+            type: entry.status === 'failure' ? 'error' as const : 'info' as const,
+          };
+        });
+
         set({
           currentRunId: runData.runId || runData._key || runData.id,
           runStatus: 'completed',
@@ -231,6 +249,7 @@ export const useQARunStore = create<QARunStore>()(
           selectedAgents: runData.selectedAgents || [],
           skippedAgents: runData.skippedAgents || [],
           agentStatuses,
+          activityLog,
           codeHealth: runData.unifiedHealthScore ? {
             score: runData.unifiedHealthScore.score,
             grade: runData.unifiedHealthScore.grade,

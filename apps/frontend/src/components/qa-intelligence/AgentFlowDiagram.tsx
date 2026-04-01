@@ -491,9 +491,12 @@ const AgentFlowDiagram: React.FC<AgentFlowDiagramProps> = ({
 
   const allAgents = [...TRACK_1_AGENTS, ...TRACK_2_ROW_1, ...TRACK_2_ROW_2];
   const activeCount = allAgents.filter((n) => getAgentState(agents, n).status === 'active').length;
-  const completedCount = allAgents.filter(
-    (n) => getAgentState(agents, n).status === 'completed'
-  ).length;
+  const completedCount = hasDynamicSelection
+    ? storeSelectedAgents.filter((a: any) => {
+        const id = typeof a === 'string' ? a : a.id;
+        return storeAgentStatuses[id]?.status === 'completed';
+      }).length
+    : allAgents.filter((n) => getAgentState(agents, n).status === 'completed').length;
   const totalRegisteredAgents = hasDynamicSelection
     ? storeSelectedAgents.length + storeSkippedAgents.length
     : allAgents.length;
