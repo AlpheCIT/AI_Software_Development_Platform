@@ -319,6 +319,11 @@ export function useQARun(): UseQARunReturn {
     try {
       stopPolling();
       setError(null);
+      // Clear stale data immediately so UI shows loading state
+      setTotalTests(0);
+      setSyntaxValid(0);
+      setFailedTests(0);
+      setMutationScore(0);
       const run = await qaService.getRunStatus(id);
       setRunId(run.id || id);
       applyRunData(run);
