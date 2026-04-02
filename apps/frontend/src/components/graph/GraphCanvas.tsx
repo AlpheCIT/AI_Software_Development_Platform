@@ -127,27 +127,21 @@ export default function GraphCanvas({
       setIsLoading(true);
       setError(null);
 
-      // Mock data for now - replace with real API call
-      const mockData: GraphData = {
-        nodes: [
-          { id: '1', label: 'main.js', type: 'file', metadata: { path: 'src/main.js', language: 'javascript', complexity: 5, importance: 10 }, position: { x: 100, y: 100 }, color: '#4299E1', size: 12 },
-          { id: '2', label: 'utils.js', type: 'file', metadata: { path: 'src/utils.js', language: 'javascript', complexity: 3, importance: 7 }, position: { x: 200, y: 150 }, color: '#4299E1', size: 10 },
-          { id: '3', label: 'Component.tsx', type: 'file', metadata: { path: 'src/Component.tsx', language: 'typescript', complexity: 8, importance: 9 }, position: { x: 150, y: 200 }, color: '#48BB78', size: 14 },
-          { id: '4', label: 'processData', type: 'function', metadata: { complexity: 4, importance: 8 }, position: { x: 250, y: 120 }, color: '#ED8936', size: 11 },
-          { id: '5', label: 'UserClass', type: 'class', metadata: { complexity: 6, importance: 9 }, position: { x: 120, y: 250 }, color: '#9F7AEA', size: 13 }
-        ],
-        edges: [
-          { id: 'e1', source: '1', target: '2', type: 'imports', weight: 2, color: '#ED8936' },
-          { id: 'e2', source: '1', target: '3', type: 'imports', weight: 3, color: '#ED8936' },
-          { id: 'e3', source: '2', target: '4', type: 'calls', weight: 1, color: '#4299E1' },
-          { id: 'e4', source: '3', target: '5', type: 'depends_on', weight: 2, color: '#48BB78' },
-          { id: 'e5', source: '4', target: '5', type: 'references', weight: 1, color: '#9F7AEA' }
-        ]
-      };
-
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setGraphData(mockData);
+      // Fetch real graph data from ArangoDB via QA engine
+      const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+      const response = await fetch(`${QA_ENGINE_URL}/graph/nodes${repositoryId ? `?repositoryId=${repositoryId}` : ''}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.nodes?.length > 0) {
+          setGraphData(data);
+        } else {
+          setGraphData({ nodes: [], edges: [] });
+          setError('No graph data available. Run a repository ingestion first to populate the code graph.');
+        }
+      } else {
+        setGraphData({ nodes: [], edges: [] });
+        setError('Graph data endpoint not available. Run a repository ingestion first.');
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load graph data');

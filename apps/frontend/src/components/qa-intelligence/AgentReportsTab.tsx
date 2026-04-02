@@ -1,12 +1,11 @@
 /**
  * AgentReportsTab - Wrapper showing all 4 specialist agent reports in an accordion
- * Fetches product intelligence data and renders each panel
+ * Reads product intelligence data from the store (single source of truth)
  */
 
 import React, { useState, useEffect } from 'react';
 import {
   Box,
-  VStack,
   Text,
   Spinner,
   Accordion,
@@ -21,7 +20,6 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import { Wrench, Shield, Layers, Eye } from 'lucide-react';
-import qaService from '../../services/qaService';
 import type { SelfHealingReport, APIValidationReport, CoverageAuditReport, UIAuditReport } from '../../services/qaService';
 import SelfHealerPanel from './SelfHealerPanel';
 import APIValidatorPanel from './APIValidatorPanel';
@@ -29,8 +27,6 @@ import CoverageAuditorPanel from './CoverageAuditorPanel';
 import UIUXAnalystPanel from './UIUXAnalystPanel';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { useQARunStore } from '../../stores/qa-run-store';
-
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
 
 interface AgentReportsTabProps {
   runId?: string;
@@ -41,62 +37,26 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
   const [apiValidation, setApiValidation] = useState<APIValidationReport | null>(null);
   const [coverageAudit, setCoverageAudit] = useState<CoverageAuditReport | null>(null);
   const [uiAudit, setUiAudit] = useState<UIAuditReport | null>(null);
-  const [loading, setLoading] = useState(false);
   const [expandedIndices, setExpandedIndices] = useState<number[]>([]);
 
+  // ALL hooks MUST be called before any early returns (React Rules of Hooks)
   const bg = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
   const productData = useQARunStore(s => s.productData);
 
+  // Single source of truth: read from store only (no independent API fetch)
   useEffect(() => {
-    loadReports();
-  }, [runId, productData]);
-
-  function applyProductData(data: any) {
-    setSelfHealing(data.selfHealing || null);
-    setApiValidation(data.apiValidation || null);
-    setCoverageAudit(data.coverageAudit || null);
-    setUiAudit(data.uiAudit || null);
-  }
-
-  async function loadReports() {
-    // Prefer store data
-    if (productData && (productData.selfHealing || productData.apiValidation || productData.coverageAudit || productData.uiAudit)) {
-      applyProductData(productData);
-      setLoading(false);
-      return;
+    if (productData) {
+      setSelfHealing(productData.selfHealing || null);
+      setApiValidation(productData.apiValidation || null);
+      setCoverageAudit(productData.coverageAudit || null);
+      setUiAudit(productData.uiAudit || null);
     }
+  }, [productData]);
 
-    setLoading(true);
-    try {
-      let effectiveRunId = runId;
+  const hasAnyData = selfHealing || apiValidation || coverageAudit || uiAudit;
 
-      // If no runId provided, fetch the latest completed run
-      if (!effectiveRunId) {
-        try {
-          const runsResponse = await fetch(`${QA_ENGINE_URL}/qa/runs`);
-          if (runsResponse.ok) {
-            const runsData = await runsResponse.json();
-            const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
-            const latestRun = completedRuns[0];
-            if (latestRun) {
-              effectiveRunId = latestRun._key || latestRun.runId;
-            }
-          }
-        } catch { /* ignore */ }
-      }
-
-      if (!effectiveRunId) {
-        setLoading(false);
-        return;
-      }
-
-      const data = await qaService.getProductIntelligence(effectiveRunId);
-      applyProductData(data);
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
-  }
-
-  if (loading) {
+  if (!productData && !hasAnyData) {
     return (
       <Box p={6} textAlign="center">
         <Spinner size="lg" />
@@ -104,8 +64,6 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
       </Box>
     );
   }
-
-  const hasAnyData = selfHealing || apiValidation || coverageAudit || uiAudit;
 
   if (!hasAnyData) {
     return (
@@ -124,7 +82,6 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
 
   // Lazy-render panel content only when accordion is expanded
   function renderPanelContent(panel: typeof panels[number], index: number) {
-    // Only render if this panel is expanded
     if (!expandedIndices.includes(index)) return null;
 
     const report = panel.data as any;
@@ -180,8 +137,6 @@ export default function AgentReportsTab({ runId }: AgentReportsTabProps) {
     }
     return null;
   }
-
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
 
   return (
     <Accordion allowMultiple index={expandedIndices} onChange={(indices) => setExpandedIndices(indices as number[])}>
