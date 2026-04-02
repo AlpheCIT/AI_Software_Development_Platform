@@ -140,11 +140,13 @@ export default function GraphCanvas({
         }
       } else {
         setGraphData({ nodes: [], edges: [] });
-        setError('Graph data endpoint not available. Run a repository ingestion first.');
+        setError('Graph visualization requires a repository ingestion first. Navigate to the Ingestion page to analyze a repository.');
       }
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load graph data');
+      setGraphData({ nodes: [], edges: [] });
+      const msg = err instanceof Error ? err.message : 'Failed to load graph data';
+      setError(msg.includes('not valid JSON') ? 'Graph visualization requires a repository ingestion first. Navigate to the Ingestion page to analyze a repository.' : msg);
     } finally {
       setIsLoading(false);
     }
