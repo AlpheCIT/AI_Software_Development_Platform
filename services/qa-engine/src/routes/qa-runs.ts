@@ -183,9 +183,9 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
     try {
       const { runId } = req.params;
 
-      // Check active runs first
+      // Check active runs first (only for non-completed — completed runs have full data in DB)
       const active = activeRuns.get(runId);
-      if (active) {
+      if (active && active.status !== 'completed') {
         return res.json({
           runId,
           status: active.status,
@@ -193,7 +193,7 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
         });
       }
 
-      // Check ArangoDB
+      // Check ArangoDB for full run data (includes testsGenerated, mutationScore, executionLog, etc.)
       const run = await dbClient.getDocument(QA_COLLECTIONS.RUNS, runId);
       if (!run) {
         return res.status(404).json({ error: 'Run not found' });
