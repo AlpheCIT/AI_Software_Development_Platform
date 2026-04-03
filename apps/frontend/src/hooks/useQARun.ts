@@ -187,6 +187,14 @@ export function useQARun(): UseQARunReturn {
       if (store.mutationScore > 0) {
         setMutation(prev => ({ ...prev, score: store.mutationScore }));
       }
+      // Re-fetch completed run to populate activity log from executionLog
+      if (store.runStatus === 'completed') {
+        qaService.getRunStatus(store.currentRunId).then((run: any) => {
+          if (run?.executionLog?.length) {
+            store.loadCompletedRun(run);
+          }
+        }).catch(() => { /* silently fail — cached data is still shown */ });
+      }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

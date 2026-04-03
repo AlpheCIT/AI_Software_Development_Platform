@@ -378,7 +378,7 @@ export const useMCP = (): UseMCPReturn => {
         result = await (async () => {
         // Fall back to real QA engine data from ArangoDB — use honest labels
         try {
-          const runsRes = await fetch(`${QA_URL}/qa/runs`).then(r => r.ok ? r.json() : null).catch(() => null);
+          const runsRes = await fetch(`${QA_URL}/qa/runs?limit=100`).then(r => r.ok ? r.json() : null).catch(() => null);
           const runs = runsRes?.runs || [];
           const completedRuns = runs.filter((r: any) => r.status === 'completed');
 
