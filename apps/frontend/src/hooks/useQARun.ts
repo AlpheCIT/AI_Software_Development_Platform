@@ -184,6 +184,9 @@ export function useQARun(): UseQARunReturn {
       setTotalTests(store.totalTests);
       setPassedTests(store.passedTests);
       setFailedTests(store.failedTests);
+      if (store.mutationScore > 0) {
+        setMutation(prev => ({ ...prev, score: store.mutationScore }));
+      }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
