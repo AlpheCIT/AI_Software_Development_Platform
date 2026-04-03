@@ -83,8 +83,23 @@ function computeUnifiedCodeHealth(agentScores: Record<string, number>): CodeHeal
 async function fetchAndComputeCodeHealth(runId: string, store: ReturnType<typeof useQARunStore.getState>) {
   try {
     const data = await qaService.getProductIntelligence(runId);
-    const scores: Record<string, number> = {};
 
+    // Prefer the backend-computed unified score (stored in DB) over frontend recalculation
+    if (data.summary?.unifiedHealthScore?.score != null) {
+      const uhs = data.summary.unifiedHealthScore;
+      store.setCodeHealth({
+        score: uhs.score,
+        grade: uhs.grade || 'N/A',
+        gradeDescription: '',
+        breakdown: Object.fromEntries(
+          Object.entries(uhs.breakdown || {}).map(([k, v]: [string, any]) => [k, v.score])
+        ),
+      });
+      return;
+    }
+
+    // Fallback: compute from individual agent scores if no unified score stored
+    const scores: Record<string, number> = {};
     if (data.selfHealing?.healthScore != null) scores.selfHealer = data.selfHealing.healthScore;
     if (data.apiValidation?.apiHealthScore != null) scores.apiValidator = data.apiValidation.apiHealthScore;
     if (data.coverageAudit?.coverageScore != null) scores.coverage = data.coverageAudit.coverageScore;
@@ -92,8 +107,6 @@ async function fetchAndComputeCodeHealth(runId: string, store: ReturnType<typeof
     else if (data.codeQuality?.summary?.overallScore != null) scores.codeQuality = data.codeQuality.summary.overallScore;
     if (data.uiAudit?.accessibilityScore != null) scores.accessibility = data.uiAudit.accessibilityScore;
     if (data.uiAudit?.uxScore != null) scores.ux = data.uiAudit.uxScore;
-
-    // Also try summary-level scores as fallback
     if (!scores.codeQuality && data.summary?.codeHealthScore != null) scores.codeQuality = data.summary.codeHealthScore;
     if (!scores.selfHealer && data.summary?.selfHealingScore != null) scores.selfHealer = data.summary.selfHealingScore;
     if (!scores.apiValidator && data.summary?.apiHealthScore != null) scores.apiValidator = data.summary.apiHealthScore;
