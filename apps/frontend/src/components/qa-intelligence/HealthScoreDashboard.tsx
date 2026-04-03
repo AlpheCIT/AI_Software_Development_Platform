@@ -117,6 +117,7 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
   const productData = useQARunStore(s => s.productData);
+  const storeMutationScore = useQARunStore(s => s.mutationScore);
 
   useEffect(() => {
     loadScores();
@@ -136,7 +137,7 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
       coverage: unified?.breakdown?.['coverage-auditor']?.score ?? data.summary?.coverageScore ?? null,
       accessibility: data.summary?.accessibilityScore ?? null,
       ux: unified?.breakdown?.['ui-ux-analyst']?.score ?? data.summary?.uxScore ?? null,
-      mutation: null, // Comes from run data, not product intelligence
+      mutation: storeMutationScore > 0 ? storeMutationScore : null,
     });
   }
 

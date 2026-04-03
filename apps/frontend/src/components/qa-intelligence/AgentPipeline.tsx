@@ -439,7 +439,12 @@ const AgentPipeline: React.FC<AgentPipelineProps> = ({ agents: propAgents, runId
   };
 
   const activeCount = allAgents.filter(n => getAgent(n).status === 'active').length;
-  const completedCount = allAgents.filter(n => getAgent(n).status === 'completed').length;
+  const completedCount = hasDynamicSelection
+    ? storeSelectedAgents.filter((a: any) => {
+        const id = typeof a === 'string' ? a : a.id;
+        return storeAgentStatuses[id]?.status === 'completed';
+      }).length
+    : allAgents.filter(n => getAgent(n).status === 'completed').length;
   const anyRunning = activeCount > 0;
   const totalRegisteredAgents = hasDynamicSelection
     ? storeSelectedAgents.length + storeSkippedAgents.length
