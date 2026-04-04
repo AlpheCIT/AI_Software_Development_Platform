@@ -369,6 +369,14 @@ export function useQARun(): UseQARunReturn {
       setRunId(run.id || id);
       applyRunData(run);
 
+      // If the run is still active, start polling to track it
+      if (run.status === 'running' || run.status === 'queued') {
+        setStatus('running');
+        store.startRun(run.id || id, run.repoUrl || '', run.branch || '');
+        startPolling(run.id || id);
+        return;
+      }
+
       // Also try to fetch full results for completed runs
       if (run.status === 'completed') {
         try {
