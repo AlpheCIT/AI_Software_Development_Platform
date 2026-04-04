@@ -187,13 +187,22 @@ export function useQARun(): UseQARunReturn {
       if (store.mutationScore > 0) {
         setMutation(prev => ({ ...prev, score: store.mutationScore }));
       }
-      // Re-fetch completed run to populate activity log from executionLog
+      // Re-fetch completed run + product intelligence to populate all agent statuses
       if (store.runStatus === 'completed') {
-        qaService.getRunStatus(store.currentRunId).then((run: any) => {
-          if (run?.executionLog?.length) {
-            store.loadCompletedRun(run);
+        const runId = store.currentRunId;
+        Promise.all([
+          qaService.getRunStatus(runId).catch(() => null),
+          qaService.getProductIntelligence(runId).catch(() => null),
+        ]).then(([run, product]) => {
+          if (run) {
+            if (product) {
+              store.setProductData(product);
+              store.loadCompletedRun({ ...run, ...product });
+            } else if (run.executionLog?.length) {
+              store.loadCompletedRun(run);
+            }
           }
-        }).catch(() => { /* silently fail — cached data is still shown */ });
+        });
       }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -459,6 +468,9 @@ export function useQARun(): UseQARunReturn {
 
     try {
       socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
+      socket.on('connect', () => {
+        socket?.emit('subscribe', { runId });
+      });
 
       socket.on('qa:run.completed', (data: any) => {
         setStatus('completed');
@@ -509,7 +521,17 @@ export function useQARun(): UseQARunReturn {
 
     const loadLatestRun = async () => {
       try {
-        const runs = await qaService.listRuns(1);
+        const runs = await qaService.listRuns(3);
+        // Check for running runs first — auto-attach to them
+        const activeRun = runs.find(r => r.status === 'running' || r.status === 'queued');
+        if (activeRun) {
+          setRunId(activeRun.id);
+          setStatus('running');
+          applyRunData(activeRun);
+          store.startRun(activeRun.id, activeRun.repoUrl || '', activeRun.branch || '');
+          startPolling(activeRun.id);
+          return;
+        }
         const completedRun = runs.find(r => r.status === 'completed');
         if (completedRun) {
           setRunId(completedRun.id);

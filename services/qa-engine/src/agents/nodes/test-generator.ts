@@ -108,7 +108,7 @@ ${state.mutationResult.survivors.slice(0, 10).map(s =>
     message: `Generating tests for ${highRiskFiles.length} high-risk files (iteration ${state.iteration + 1})`,
   });
 
-  const model = createModel({ temperature: 0.4, maxTokens: 16384 });
+  const model = createModel({ temperature: 0.4, maxTokens: 32768 });
 
   // Detect project language from code files
   const jsFiles = state.codeFiles.filter(f => f.language === 'javascript' || f.path?.endsWith('.js') || f.path?.endsWith('.jsx'));
@@ -185,10 +185,28 @@ Respond with ONLY a valid JSON array, no markdown fencing.`;
     }));
   } catch (error) {
     console.error('[Generator] Failed to parse Claude response:', error);
-    console.error('[Generator] Raw response:', (typeof response.content === 'string' ? response.content : '').substring(0, 500));
-    // No fake tests — pipeline continues with 0 tests, mutation verifier reports accurately
-    tests = [];
-    state.errors = [...(state.errors || []), { agent: 'generator', error: 'Failed to parse LLM response into test cases' }];
+    // Attempt truncated JSON recovery — find last complete object in array
+    const raw = typeof response.content === 'string' ? response.content : '';
+    const lastBrace = raw.lastIndexOf('}');
+    if (lastBrace > 0) {
+      try {
+        const truncated = raw.substring(0, lastBrace + 1) + ']';
+        const recovered = JSON.parse(truncated);
+        const recoveredArray = Array.isArray(recovered) ? recovered : [recovered];
+        tests = recoveredArray.filter((t: any) => t.code && t.name).map((t: any) => ({
+          ...t, id: uuidv4(), iteration: state.iteration + 1,
+        }));
+        console.log(`[Generator] Recovered ${tests.length} tests from truncated JSON`);
+      } catch {
+        tests = [];
+        console.error('[Generator] Truncated JSON recovery also failed');
+      }
+    } else {
+      tests = [];
+    }
+    if (tests.length === 0) {
+      state.errors = [...(state.errors || []), { agent: 'generator', error: 'Failed to parse LLM response into test cases' }];
+    }
   }
 
   eventPublisher?.emit('qa:agent.completed', {

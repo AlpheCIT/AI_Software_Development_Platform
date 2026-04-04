@@ -307,23 +307,28 @@ const QAIntelligenceDashboard: React.FC = () => {
               <Select
                 placeholder="Load past run..."
                 size="sm"
-                maxW="340px"
+                maxW="400px"
+                bg={cardBg}
+                borderColor={borderColor}
                 value={qaRun.runId || ''}
                 onChange={(e) => {
                   if (e.target.value) {
                     qaRun.loadRun(e.target.value);
                   }
                 }}
+                sx={{ '& option': { bg: cardBg, color: 'inherit' } }}
               >
                 {qaRun.recentRuns.map((run) => {
                   const runKey = run.id || (run as any)._key || (run as any).runId;
                   const date = run.startedAt ? new Date(run.startedAt).toLocaleString() : 'Unknown date';
                   const tests = run.totalTests || 0;
                   const mutScore = (run as any).mutationScore ?? run.mutation?.score ?? 0;
+                  const health = (run as any).unifiedHealthScore;
+                  const grade = health ? ` · ${health.grade} (${health.score}/100)` : '';
                   const statusLabel = run.status === 'completed' ? '' : ` [${run.status}]`;
                   return (
                     <option key={runKey} value={runKey}>
-                      {date} — {tests} tests, {Math.round(mutScore)}% mutation{statusLabel}
+                      {date} — {tests} tests, {Math.round(mutScore)}% mutation{grade}{statusLabel}
                     </option>
                   );
                 })}
