@@ -3,7 +3,7 @@
  * Connects to the QA Intelligence Engine for AI-driven test generation and mutation testing
  */
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -337,7 +337,7 @@ export interface AgentLogEntry {
 // ── API Client ─────────────────────────────────────────────────────────────
 
 async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${QA_ENGINE_URL}${path}`;
+  const url = `${path}`;
   try {
     const response = await fetch(url, {
       headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -353,7 +353,7 @@ async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
     return result.data ?? result;
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
-      console.warn('QA Engine is not reachable at', QA_ENGINE_URL);
+      console.warn('QA Engine is not reachable');
       throw new Error('QA Engine is offline. Start the service on port 3005.');
     }
     throw error;
@@ -365,7 +365,7 @@ export const qaService = {
    * Start a new QA run against a repository
    */
   async startRun(config: QARunConfig): Promise<{ runId: string }> {
-    const response = await fetch(`${QA_ENGINE_URL}/qa/run`, {
+    const response = await fetch(`/qa/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
@@ -378,7 +378,7 @@ export const qaService = {
    * Get the current status of a QA run
    */
   async getRunStatus(runId: string): Promise<QARun> {
-    const response = await fetch(`${QA_ENGINE_URL}/qa/runs/${runId}`);
+    const response = await fetch(`/qa/runs/${runId}`);
     if (!response.ok) throw new Error(`QA Engine request failed: ${response.status}`);
     const data = await response.json();
     // API returns { run: {...}, summary: {...}, testCases, executions, ... }
@@ -410,7 +410,7 @@ export const qaService = {
    * Get test results for a completed run
    */
   async getResults(runId: string): Promise<{ tests: TestResult[]; mutation: MutationResult }> {
-    const response = await fetch(`${QA_ENGINE_URL}/qa/results/${runId}`);
+    const response = await fetch(`/qa/results/${runId}`);
     if (!response.ok) throw new Error(`QA Engine request failed: ${response.status}`);
     return response.json();
   },
@@ -420,7 +420,7 @@ export const qaService = {
    */
   async listRuns(limit: number = 20): Promise<QARun[]> {
     // Call QA engine directly (not through API gateway)
-    const response = await fetch(`${QA_ENGINE_URL}/qa/runs?limit=${limit}`);
+    const response = await fetch(`/qa/runs?limit=${limit}`);
     if (!response.ok) return [];
     const data = await response.json();
     // Map ArangoDB fields to frontend QARun interface
@@ -440,14 +440,15 @@ export const qaService = {
    * Cancel a running QA run
    */
   async cancelRun(runId: string): Promise<void> {
-    await fetch(`${QA_ENGINE_URL}/qa/runs/${runId}/cancel`, { method: 'POST' });
+    await fetch(`/qa/runs/${runId}/cancel`, { method: 'POST' });
   },
 
   /**
    * Get the WebSocket URL for real-time updates
    */
   getWebSocketUrl(): string {
-    return QA_ENGINE_URL.replace('http', 'ws');
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}`;
   },
 
   // getProductIntelligence is defined above with the enhanced 8-report version
@@ -465,7 +466,7 @@ export const qaService = {
    * Get the auto-generated repository wiki for a run
    */
   async getRepoWiki(runId: string): Promise<Record<string, unknown>> {
-    const url = `${QA_ENGINE_URL}/qa/wiki/${runId}`;
+    const url = `/qa/wiki/${runId}`;
     const response = await fetch(url, {
       headers: { 'Content-Type': 'application/json' },
     });
@@ -487,7 +488,7 @@ export const qaService = {
     agent: string;
     runId: string;
   }> {
-    const response = await fetch(`${QA_ENGINE_URL}/qa/chat`, {
+    const response = await fetch(`/qa/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ runId, agent, message, conversationId }),
@@ -504,7 +505,7 @@ export const qaService = {
     messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: string }>;
     total: number;
   }> {
-    const response = await fetch(`${QA_ENGINE_URL}/qa/chat/${conversationId}`);
+    const response = await fetch(`/qa/chat/${conversationId}`);
     if (!response.ok) return { conversationId, messages: [], total: 0 };
     return response.json();
   },
@@ -517,7 +518,7 @@ export const qaService = {
     total: number;
   }> {
     const params = agent ? `?agent=${agent}` : '';
-    const response = await fetch(`${QA_ENGINE_URL}/qa/conversations/${runId}${params}`);
+    const response = await fetch(`/qa/conversations/${runId}${params}`);
     if (!response.ok) return { conversations: [], total: 0 };
     return response.json();
   },
@@ -526,7 +527,7 @@ export const qaService = {
    * Get full product intelligence (all 8 reports) for a run
    */
   async getProductIntelligence(runId: string): Promise<ProductIntelligenceData> {
-    const response = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`);
+    const response = await fetch(`/qa/product/${runId}`);
     if (!response.ok) throw new Error(`Product intelligence not available: ${response.status}`);
     return response.json();
   },
@@ -539,7 +540,7 @@ export const qaService = {
     history: HealthHistoryEntry[];
     total: number;
   }> {
-    const response = await fetch(`${QA_ENGINE_URL}/qa/product/health-history/${repositoryId}`);
+    const response = await fetch(`/qa/product/health-history/${repositoryId}`);
     if (!response.ok) return { repositoryId, history: [], total: 0 };
     return response.json();
   },
@@ -549,8 +550,8 @@ export const qaService = {
    */
   async getAgentConversations(runId: string, agentId?: string): Promise<any[]> {
     const url = agentId
-      ? `${QA_ENGINE_URL}/qa/conversations/${runId}/${agentId}`
-      : `${QA_ENGINE_URL}/qa/conversations/${runId}`;
+      ? `/qa/conversations/${runId}/${agentId}`
+      : `/qa/conversations/${runId}`;
     const response = await fetch(url);
     if (!response.ok) return [];
     return response.json();
@@ -565,7 +566,7 @@ export const qaService = {
     isStale: boolean | 'unknown';
     commitsBehind: number | null;
   }> {
-    const response = await fetch(`${QA_ENGINE_URL}/qa/freshness/${repositoryId}`);
+    const response = await fetch(`/qa/freshness/${repositoryId}`);
     if (!response.ok) throw new Error(`Freshness check failed: ${response.status}`);
     return response.json();
   },

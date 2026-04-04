@@ -198,6 +198,20 @@ export function useQARun(): UseQARunReturn {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Auto-resume: restart polling if store says a run is still running ──
+  useEffect(() => {
+    if (
+      store.currentRunId &&
+      store.runStatus === 'running' &&
+      !isPollingRef.current &&
+      restoredFromStoreRef.current
+    ) {
+      setRunId(store.currentRunId);
+      setStatus('running');
+      startPolling(store.currentRunId);
+    }
+  }, [store.currentRunId, store.runStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Apply run data to state ────────────────────────────────────────────
 
   const applyRunData = useCallback((run: QARun) => {
@@ -273,9 +287,14 @@ export function useQARun(): UseQARunReturn {
     // Immediate first poll
     pollStatus(id);
 
-    // Then poll every 2 seconds
+    // Fast polling (2s) for first 30s, then slow (8s) to reduce load
+    const startTime = Date.now();
     pollIntervalRef.current = setInterval(() => {
       pollStatus(id);
+      if (Date.now() - startTime > 30000 && pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = setInterval(() => pollStatus(id), 8000);
+      }
     }, 2000);
   }, [pollStatus]);
 
@@ -428,11 +447,10 @@ export function useQARun(): UseQARunReturn {
   useEffect(() => {
     if (!runId || status === 'idle' || status === 'completed' || status === 'failed') return;
 
-    const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
     let socket: Socket | null = null;
 
     try {
-      socket = io(QA_ENGINE_URL, { transports: ['websocket', 'polling'] });
+      socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
 
       socket.on('qa:run.completed', (data: any) => {
         setStatus('completed');

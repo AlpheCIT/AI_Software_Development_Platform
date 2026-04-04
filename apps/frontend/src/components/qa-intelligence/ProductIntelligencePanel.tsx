@@ -80,7 +80,7 @@ interface ProductData {
   };
 }
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 const IMPACT_COLORS: Record<string, string> = {
   high: 'red',
@@ -126,7 +126,7 @@ const ProductIntelligencePanel: React.FC<ProductIntelligencePanelProps> = ({ run
 
     const fetchData = async () => {
       try {
-        const res = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`);
+        const res = await fetch(`/qa/product/${runId}`);
         if (!res.ok) {
           if (res.status === 404) {
             setError('Product intelligence not yet available. The PM and Research agents may still be running.');

@@ -27,6 +27,7 @@ import {
   IconButton,
   Collapse,
   useDisclosure,
+  Progress,
 } from '@chakra-ui/react';
 import {
   Play,
@@ -81,13 +82,20 @@ const QARunControl: React.FC<QARunControlProps> = ({
 
   const statusConfig = STATUS_CONFIG[status];
 
+  const [isStarting, setIsStarting] = useState(false);
+
   const handleStartRun = async () => {
-    await onStartRun({
-      repoUrl,
-      branch,
-      testTypes: testTypes as QARunConfig['testTypes'],
-      maxTests,
-    });
+    setIsStarting(true);
+    try {
+      await onStartRun({
+        repoUrl,
+        branch,
+        testTypes: testTypes as QARunConfig['testTypes'],
+        maxTests,
+      });
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   const formatTimestamp = (ts: string | null) => {
@@ -192,6 +200,8 @@ const QARunControl: React.FC<QARunControlProps> = ({
               leftIcon={<Play size={16} />}
               onClick={handleStartRun}
               isDisabled={!repoUrl}
+              isLoading={isStarting}
+              loadingText="Starting..."
               fontWeight="bold"
               px={6}
               _hover={{ transform: 'translateY(-1px)', shadow: 'lg' }}
@@ -233,6 +243,9 @@ const QARunControl: React.FC<QARunControlProps> = ({
           )}
         </VStack>
       </HStack>
+
+      {/* Progress bar during run */}
+      {isRunning && <Progress size="xs" isIndeterminate colorScheme="blue" mt={2} borderRadius="full" />}
 
       {/* Advanced options toggle */}
       <Button

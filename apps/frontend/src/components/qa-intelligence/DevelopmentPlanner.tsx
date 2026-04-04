@@ -27,7 +27,7 @@ import {
 } from '@chakra-ui/react';
 import { Search, Target, AlertTriangle, Layers, Monitor, Server, GitBranch } from 'lucide-react';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -108,7 +108,7 @@ export default function DevelopmentPlanner({ runId }: DevelopmentPlannerProps) {
   const codeBg = useColorModeValue('gray.50', 'gray.900');
 
   useEffect(() => {
-    if (!QA_ENGINE_URL) {
+    if (false /* always use proxy */) {
       setSpecs(null);
       return;
     }
@@ -122,7 +122,7 @@ export default function DevelopmentPlanner({ runId }: DevelopmentPlannerProps) {
         let effectiveRunId = runId;
         if (!effectiveRunId) {
           try {
-            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+            const runsRes = await fetch(`/qa/runs`, { signal: controller.signal });
             if (runsRes.ok) {
               const runsData = await runsRes.json();
               const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
@@ -136,7 +136,7 @@ export default function DevelopmentPlanner({ runId }: DevelopmentPlannerProps) {
         }
 
         // Skip behavioral-specs (404), go directly to product endpoint
-        const response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`, { signal: controller.signal });
+        const response = await fetch(`/qa/product/${effectiveRunId}`, { signal: controller.signal });
         if (cancelled) return;
         if (response.ok) {
           const data = await response.json();

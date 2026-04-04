@@ -26,7 +26,7 @@ import {
 } from '@chakra-ui/react';
 import { GitBranch, Search, ChevronDown, ChevronRight } from 'lucide-react';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -95,7 +95,7 @@ export default function EndToEndFlowViewer({ runId, flows: propFlows }: EndToEnd
       setLoading(false);
       return;
     }
-    if (!QA_ENGINE_URL) {
+    if (false /* always use proxy */) {
       setFlows([]);
       setLoading(false);
       return;
@@ -110,7 +110,7 @@ export default function EndToEndFlowViewer({ runId, flows: propFlows }: EndToEnd
         let effectiveRunId = runId;
         if (!effectiveRunId) {
           try {
-            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+            const runsRes = await fetch(`/qa/runs`, { signal: controller.signal });
             if (runsRes.ok) {
               const runsData = await runsRes.json();
               const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
@@ -125,7 +125,7 @@ export default function EndToEndFlowViewer({ runId, flows: propFlows }: EndToEnd
         }
 
         // Skip behavioral-specs (404), go directly to product endpoint
-        const response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`, { signal: controller.signal });
+        const response = await fetch(`/qa/product/${effectiveRunId}`, { signal: controller.signal });
         if (cancelled) return;
 
         if (response.ok) {

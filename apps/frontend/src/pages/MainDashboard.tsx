@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { GlobalRunBanner } from '../components/common/GlobalRunBanner';
 import {
   Box,
   Grid,
@@ -518,6 +519,7 @@ const MainDashboard: React.FC = () => {
 
       {/* Main Content */}
       <Box flex="1" p={6}>
+        <GlobalRunBanner onNavigate={() => setCurrentView('qa-intelligence')} />
         {renderMainContent()}
       </Box>
 

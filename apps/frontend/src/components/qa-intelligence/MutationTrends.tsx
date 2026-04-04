@@ -42,7 +42,7 @@ import {
 } from 'recharts';
 import { TrendingUp, Activity, Target } from 'lucide-react';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 interface RunSummary {
   runId: string;
@@ -78,7 +78,7 @@ const MutationTrends: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+        const res = await fetch(`/qa/runs`);
         if (!res.ok) throw new Error('Failed to fetch runs');
         const json = await res.json();
         const runs: RunSummary[] = (json.runs || [])

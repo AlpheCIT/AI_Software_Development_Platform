@@ -206,7 +206,7 @@ export const useQARunStore = create<QARunStore>()(
         const hasTests = runData.testsGenerated > 0 || runData.totalTests > 0;
         const hasMutation = runData.mutationScore > 0 || runData.mutation?.score > 0;
         const isCompleted = runData.status === 'completed';
-        if (hasTests || (isCompleted && hasMutation)) {
+        if (hasTests || isCompleted) {
           const track1 = ['repo-ingester', 'strategist', 'generator', 'critic', 'executor'];
           for (const id of track1) {
             if (!agentStatuses[id] || agentStatuses[id].status === 'idle') {

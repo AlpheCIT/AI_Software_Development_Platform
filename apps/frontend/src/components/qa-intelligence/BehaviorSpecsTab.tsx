@@ -52,7 +52,7 @@ import {
   Layout,
 } from 'lucide-react';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -178,7 +178,7 @@ export default function BehaviorSpecsTab({ runId }: BehaviorSpecsTabProps) {
   const codeBg = useColorModeValue('gray.50', 'gray.900');
 
   useEffect(() => {
-    if (!QA_ENGINE_URL) {
+    if (false /* always use proxy */) {
       setSpecs(null);
       return;
     }
@@ -194,7 +194,7 @@ export default function BehaviorSpecsTab({ runId }: BehaviorSpecsTabProps) {
         // If no runId, fetch latest completed run
         if (!effectiveRunId) {
           try {
-            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+            const runsRes = await fetch(`/qa/runs`, { signal: controller.signal });
             if (runsRes.ok) {
               const runsData = await runsRes.json();
               const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
@@ -211,7 +211,7 @@ export default function BehaviorSpecsTab({ runId }: BehaviorSpecsTabProps) {
         }
 
         // Try product endpoint (known to exist), skip behavioral-specs (404)
-        const response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`, { signal: controller.signal });
+        const response = await fetch(`/qa/product/${effectiveRunId}`, { signal: controller.signal });
 
         if (cancelled) return;
 

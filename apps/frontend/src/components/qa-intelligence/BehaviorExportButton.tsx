@@ -16,7 +16,7 @@ import {
 } from '@chakra-ui/react';
 import { Download, FileText, FileCode, Database, ChevronDown } from 'lucide-react';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 interface BehaviorExportButtonProps {
   runId?: string;
@@ -207,11 +207,11 @@ export default function BehaviorExportButton({ runId }: BehaviorExportButtonProp
   const toast = useToast();
 
   async function fetchSpecs(): Promise<any | null> {
-    if (!QA_ENGINE_URL) return null;
+    if (false /* always use proxy */) return null;
     try {
       let effectiveRunId = runId;
       if (!effectiveRunId) {
-        const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+        const runsRes = await fetch(`/qa/runs`);
         if (runsRes.ok) {
           const runsData = await runsRes.json();
           const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
@@ -221,7 +221,7 @@ export default function BehaviorExportButton({ runId }: BehaviorExportButtonProp
       if (!effectiveRunId) return null;
 
       // Skip behavioral-specs (404), go directly to product endpoint
-      const response = await fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`);
+      const response = await fetch(`/qa/product/${effectiveRunId}`);
       if (response.ok) {
         const data = await response.json();
         return data.behavioralSpecs || data.specs || data;
