@@ -156,8 +156,8 @@ export default function HealthScoreDashboard({ runId }: HealthScoreDashboardProp
       // If no runId provided, fetch the latest completed run
       if (!effectiveRunId) {
         try {
-          const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
-          const runsResponse = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+
+          const runsResponse = await fetch(`/qa/runs`);
           if (runsResponse.ok) {
             const runsData = await runsResponse.json();
             const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');

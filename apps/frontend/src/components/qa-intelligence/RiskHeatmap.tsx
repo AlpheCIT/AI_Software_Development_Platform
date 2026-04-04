@@ -23,7 +23,7 @@ import {
 import { Treemap, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { Target, AlertTriangle, Shield, FileCode } from 'lucide-react';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 interface RiskFile {
   name: string;
@@ -154,7 +154,7 @@ const RiskHeatmap: React.FC<RiskHeatmapProps> = ({ runId }) => {
         let effectiveRunId = runId;
         if (!effectiveRunId) {
           try {
-            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+            const runsRes = await fetch(`/qa/runs`);
             if (runsRes.ok) {
               const runsData = await runsRes.json();
               const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
@@ -173,8 +173,8 @@ const RiskHeatmap: React.FC<RiskHeatmapProps> = ({ runId }) => {
 
         // Fetch test results and code quality data for risk analysis
         const [resultsRes, qualityRes] = await Promise.all([
-          fetch(`${QA_ENGINE_URL}/qa/results/${effectiveRunId}`).catch(() => null),
-          fetch(`${QA_ENGINE_URL}/qa/product/${effectiveRunId}`).catch(() => null),
+          fetch(`/qa/results/${effectiveRunId}`).catch(() => null),
+          fetch(`/qa/product/${effectiveRunId}`).catch(() => null),
         ]);
 
         const results = resultsRes?.ok ? await resultsRes.json() : null;

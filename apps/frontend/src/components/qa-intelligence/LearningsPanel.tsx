@@ -26,7 +26,7 @@ import {
 } from '@chakra-ui/react';
 import { Brain, Bug, TrendingUp, Lightbulb, Shield, AlertTriangle } from 'lucide-react';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 interface Learning {
   type: string;
@@ -86,7 +86,7 @@ export default function LearningsPanel({ repositoryId }: LearningsPanelProps) {
       // If no repositoryId provided, fetch the latest completed run
       if (!effectiveId) {
         try {
-          const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+          const runsRes = await fetch(`/qa/runs`);
           if (runsRes.ok) {
             const runsData = await runsRes.json();
             const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
@@ -103,7 +103,7 @@ export default function LearningsPanel({ repositoryId }: LearningsPanelProps) {
         return;
       }
 
-      const res = await fetch(`${QA_ENGINE_URL}/qa/learnings/${effectiveId}`);
+      const res = await fetch(`/qa/learnings/${effectiveId}`);
       if (res.ok) {
         const data = await res.json();
         setLearnings(data.learnings || []);

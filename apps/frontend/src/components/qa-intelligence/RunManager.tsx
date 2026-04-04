@@ -96,7 +96,7 @@ interface RepoGroup {
   bestGrade: string | null;
 }
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 const AGENT_NAMES = [
   { key: 'ingester', label: 'Ingester', icon: Database },
@@ -526,7 +526,7 @@ const RunManager: React.FC = () => {
   const fetchRuns = useCallback(async (showRefreshSpinner = false) => {
     if (showRefreshSpinner) setRefreshing(true);
     try {
-      const response = await fetch(`${QA_ENGINE_URL}/qa/runs?limit=50`);
+      const response = await fetch(`/qa/runs?limit=50`);
       if (!response.ok) {
         throw new Error(`Failed to fetch runs: ${response.status}`);
       }
@@ -551,9 +551,13 @@ const RunManager: React.FC = () => {
 
   useEffect(() => {
     fetchRuns();
-    const interval = setInterval(() => fetchRuns(), 15000);
+    const interval = setInterval(() => {
+      // Only poll if there's an active run; otherwise single fetch on mount is enough
+      const hasActiveRun = runs.some(r => r.status === 'running' || r.status === 'queued');
+      if (hasActiveRun) fetchRuns();
+    }, 15000);
     return () => clearInterval(interval);
-  }, [fetchRuns]);
+  }, [fetchRuns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const repoGroups = groupRunsByRepo(runs);
 

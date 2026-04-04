@@ -37,7 +37,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ export default function BehaviorChangesTab({ runId }: BehaviorChangesTabProps) {
   const codeBg = useColorModeValue('gray.50', 'gray.900');
 
   useEffect(() => {
-    if (!QA_ENGINE_URL) {
+    if (false /* always use proxy */) {
       setChanges(null);
       return;
     }
@@ -124,7 +124,7 @@ export default function BehaviorChangesTab({ runId }: BehaviorChangesTabProps) {
 
         if (!effectiveRunId) {
           try {
-            const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+            const runsRes = await fetch(`/qa/runs`, { signal: controller.signal });
             if (runsRes.ok) {
               const runsData = await runsRes.json();
               const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');

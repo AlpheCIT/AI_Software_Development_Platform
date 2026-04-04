@@ -81,7 +81,7 @@ interface ProductData {
   };
 }
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 // ── Color Maps ───────────────────────────────────────────────────────────────
 
@@ -824,7 +824,7 @@ const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
       try {
         // Try the provided runId first
         if (runId) {
-          const res = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`);
+          const res = await fetch(`/qa/product/${runId}`);
           if (res.ok) {
             const json = await res.json();
             if (json.roadmap || json.codeQuality) {
@@ -836,13 +836,13 @@ const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
         }
 
         // Fallback: find ANY completed run with product intelligence data
-        const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+        const runsRes = await fetch(`/qa/runs`);
         if (runsRes.ok) {
           const runsData = await runsRes.json();
           const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed');
           for (const run of completedRuns) {
             const rid = run._key || run.runId;
-            const prodRes = await fetch(`${QA_ENGINE_URL}/qa/product/${rid}`);
+            const prodRes = await fetch(`/qa/product/${rid}`);
             if (prodRes.ok) {
               const json = await prodRes.json();
               if (json.roadmap || json.codeQuality) {
@@ -866,14 +866,14 @@ const CumulativeReport: React.FC<CumulativeReportProps> = ({ runId }) => {
       try {
         // Try provided runId, then latest run
         const rid = runId || '';
-        let wikiRes = rid ? await fetch(`${QA_ENGINE_URL}/qa/wiki/${rid}`).catch(() => null) : null;
+        let wikiRes = rid ? await fetch(`/qa/wiki/${rid}`).catch(() => null) : null;
         if (!wikiRes?.ok) {
-          const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs?limit=1`);
+          const runsRes = await fetch(`/qa/runs?limit=1`);
           if (runsRes.ok) {
             const runsData = await runsRes.json();
             const latestRun = runsData.runs?.[0];
             if (latestRun?._key) {
-              wikiRes = await fetch(`${QA_ENGINE_URL}/qa/wiki/${latestRun._key}`);
+              wikiRes = await fetch(`/qa/wiki/${latestRun._key}`);
             }
           }
         }
@@ -1140,8 +1140,8 @@ const ReportChat: React.FC<{ runId: string }> = ({ runId }) => {
     setLoading(true);
 
     try {
-      const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
-      const resp = await fetch(`${QA_ENGINE_URL}/qa/chat`, {
+
+      const resp = await fetch(`/qa/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

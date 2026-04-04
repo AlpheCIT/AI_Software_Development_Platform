@@ -8,7 +8,7 @@ import { io, Socket } from 'socket.io-client';
 import type { AgentName, AgentLogEntry } from '../services/qaService';
 import { useQARunStore } from '../stores/qa-run-store';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 const MAX_LOG_ENTRIES = 200;
 
 // ── Agent Color Map ────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ export function useAgentStream(runId: string | null): UseAgentStreamReturn {
     let socket: Socket;
 
     try {
-      socket = io(QA_ENGINE_URL, {
+      socket = io(window.location.origin, {
         transports: ['websocket', 'polling'],
         timeout: 10000,
         reconnection: true,

@@ -99,7 +99,7 @@ function severityColor(sev: string): string {
   return 'gray';
 }
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 // ── Behavior data types ───────────────────────────────────────────────────
 
@@ -122,7 +122,7 @@ const FileDetail: React.FC<FileDetailProps> = ({ file, entities, testCount }) =>
   const [behaviorLoading, setBehaviorLoading] = useState(false);
 
   useEffect(() => {
-    if (!QA_ENGINE_URL) {
+    if (false /* always use proxy */) {
       setBehavior(null);
       setBehaviorLoading(false);
       return;
@@ -135,7 +135,7 @@ const FileDetail: React.FC<FileDetailProps> = ({ file, entities, testCount }) =>
       setBehavior(null);
       try {
         // Find latest completed run
-        const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+        const runsRes = await fetch(`/qa/runs`, { signal: controller.signal });
         if (!runsRes.ok || cancelled) { setBehaviorLoading(false); return; }
         const runsData = await runsRes.json();
         const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
@@ -143,7 +143,7 @@ const FileDetail: React.FC<FileDetailProps> = ({ file, entities, testCount }) =>
         const runId = completed[0]._key || completed[0].runId;
 
         // Skip behavioral-specs (404), go directly to product endpoint
-        const response = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`, { signal: controller.signal });
+        const response = await fetch(`/qa/product/${runId}`, { signal: controller.signal });
         if (!response.ok || cancelled) { if (!cancelled) setBehaviorLoading(false); return; }
 
         const data = await response.json();

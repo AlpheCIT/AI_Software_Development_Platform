@@ -128,8 +128,8 @@ export default function GraphCanvas({
       setError(null);
 
       // Fetch real graph data from ArangoDB via QA engine
-      const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
-      const response = await fetch(`${QA_ENGINE_URL}/graph/nodes${repositoryId ? `?repositoryId=${repositoryId}` : ''}`);
+
+      const response = await fetch(`/graph/nodes${repositoryId ? `?repositoryId=${repositoryId}` : ''}`);
       if (response.ok) {
         const data = await response.json();
         if (data.nodes?.length > 0) {

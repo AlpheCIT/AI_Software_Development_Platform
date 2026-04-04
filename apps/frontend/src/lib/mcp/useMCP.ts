@@ -368,7 +368,7 @@ export const useMCP = (): UseMCPReturn => {
 
     try {
       // Try the real MCP analytics API first, then fall back to QA engine data
-      const QA_URL = (import.meta.env.VITE_QA_ENGINE_URL || '');
+      const QA_URL = '';
       let result = null;
       try {
         result = await apiClient.mcpGetAnalytics('7d');

@@ -87,7 +87,7 @@ interface ProductData {
   };
 }
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 // ── Color Maps ───────────────────────────────────────────────────────────────
 
@@ -775,7 +775,7 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
       try {
         // Try the provided runId first
         if (runId) {
-          const res = await fetch(`${QA_ENGINE_URL}/qa/product/${runId}`, { signal: controller.signal });
+          const res = await fetch(`/qa/product/${runId}`, { signal: controller.signal });
           if (res.ok) {
             const json = await res.json();
             if (json.roadmap || json.codeQuality) {
@@ -787,14 +787,14 @@ const ActionCenter: React.FC<ActionCenterProps> = ({ runId }) => {
         }
 
         // Fallback: find ANY completed run with product intelligence data (limit to 3 most recent)
-        const runsRes = await fetch(`${QA_ENGINE_URL}/qa/runs`, { signal: controller.signal });
+        const runsRes = await fetch(`/qa/runs`, { signal: controller.signal });
         if (runsRes.ok) {
           const runsData = await runsRes.json();
           const completedRuns = (runsData.runs || []).filter((r: any) => r.status === 'completed').slice(0, 3);
           const results = await Promise.allSettled(
             completedRuns.map(async (run: any) => {
               const rid = run._key || run.runId;
-              const prodRes = await fetch(`${QA_ENGINE_URL}/qa/product/${rid}`, { signal: controller.signal });
+              const prodRes = await fetch(`/qa/product/${rid}`, { signal: controller.signal });
               if (prodRes.ok) {
                 const json = await prodRes.json();
                 if (json.roadmap || json.codeQuality) return json;

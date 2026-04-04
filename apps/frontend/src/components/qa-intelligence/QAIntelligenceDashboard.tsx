@@ -201,7 +201,7 @@ const RunSummaryStats: React.FC<{
         <Stat>
           <StatLabel fontSize="xs">Mutation Score</StatLabel>
           <StatNumber fontSize="2xl" color={mutationScore >= 80 ? 'green.500' : mutationScore >= 60 ? 'yellow.500' : 'red.500'}>
-            {mutationScore > 0 ? `${Math.round(mutationScore)}%` : '--'}
+            {qaRun.status !== 'idle' ? `${Math.round(mutationScore || 0)}%` : '--'}
           </StatNumber>
           <StatHelpText fontSize="xs">Test suite strength</StatHelpText>
         </Stat>

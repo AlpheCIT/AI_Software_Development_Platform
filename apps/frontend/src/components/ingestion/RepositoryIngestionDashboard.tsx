@@ -37,7 +37,7 @@ import {
 import { useIngestionStore } from '../../stores/ingestion-store';
 import { useWebSocket } from '../../hooks/useWebSocket';
 
-const QA_ENGINE_URL = import.meta.env.VITE_QA_ENGINE_URL || '';
+
 
 export interface IngestionJob {
   id: string;
@@ -80,7 +80,7 @@ export const RepositoryIngestionDashboard: React.FC = () => {
     const loadPastRuns = async () => {
       if (jobHistory.length > 0) return; // Already have history
       try {
-        const res = await fetch(`${QA_ENGINE_URL}/qa/runs`);
+        const res = await fetch(`/qa/runs`);
         if (!res.ok) return;
         const data = await res.json();
         if (!data.runs?.length) return;
