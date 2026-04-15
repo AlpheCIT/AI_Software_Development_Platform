@@ -153,7 +153,7 @@ export default function GraphCanvas({
   };
 
   const renderGraph = useCallback(() => {
-    if (!canvasRef.current || !graphData) return;
+    if (!canvasRef.current || !graphData || !graphData.nodes) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -213,7 +213,7 @@ export default function GraphCanvas({
       // Draw node
       ctx.beginPath();
       ctx.arc(node.position.x, node.position.y, radius + (isSelected ? 3 : 0), 0, 2 * Math.PI);
-      ctx.fillStyle = node.color;
+      ctx.fillStyle = node.color || '#A0AEC0';
       ctx.fill();
       
       // Node border
@@ -226,7 +226,8 @@ export default function GraphCanvas({
         ctx.font = `${Math.max(10, 12 * zoomLevel)}px Arial`;
         ctx.fillStyle = '#333';
         ctx.textAlign = 'center';
-        const labelText = node.label.length > 15 ? node.label.substring(0, 15) + '...' : node.label;
+        const label = node.label || node.id || '';
+        const labelText = label.length > 15 ? label.substring(0, 15) + '...' : label;
         ctx.fillText(labelText, node.position.x, node.position.y + radius + 15);
       }
       
