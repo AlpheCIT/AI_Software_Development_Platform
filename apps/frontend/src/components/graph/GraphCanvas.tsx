@@ -172,13 +172,15 @@ export default function GraphCanvas({
     ctx.scale(zoomLevel, zoomLevel);
     ctx.translate(-width / 2, -height / 2);
 
-    // Filter data
-    const filteredNodes = nodeTypeFilter === 'all' 
-      ? graphData.nodes 
-      : graphData.nodes.filter(node => node.type === nodeTypeFilter);
-    
+    // Filter data (guard against null/undefined)
+    const allNodes = graphData.nodes || [];
+    const allEdges = graphData.edges || [];
+    const filteredNodes = nodeTypeFilter === 'all'
+      ? allNodes
+      : allNodes.filter(node => node.type === nodeTypeFilter);
+
     const filteredNodeIds = new Set(filteredNodes.map(node => node.id));
-    const filteredEdges = graphData.edges.filter(edge => {
+    const filteredEdges = allEdges.filter(edge => {
       const typeMatch = edgeTypeFilter === 'all' || edge.type === edgeTypeFilter;
       const nodeMatch = filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target);
       return typeMatch && nodeMatch;
@@ -194,9 +196,11 @@ export default function GraphCanvas({
   }, [graphData, zoomLevel, showEdgeLabels, nodeTypeFilter, edgeTypeFilter, selectedNodeId, width, height]);
 
   const renderNodes = (ctx: CanvasRenderingContext2D, nodes: GraphNode[]) => {
+    if (!nodes || nodes.length === 0) return;
     nodes.forEach(node => {
+      if (!node.position) return; // Skip nodes without position
       const isSelected = node.id === selectedNodeId;
-      const radius = node.size;
+      const radius = node.size || 15;
       
       ctx.save();
       
