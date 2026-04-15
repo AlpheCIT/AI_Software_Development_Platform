@@ -466,10 +466,11 @@ Respond with ONLY valid JSON, no markdown fencing.`;
       componentIssues: [],
       userFlowIssues: [],
       suggestions: [],
-      accessibilityScore: 0,
-      uxScore: 0,
+      accessibilityScore: null as any,
+      uxScore: null as any,
       summary: 'Analysis failed — retry recommended',
-    };
+      __failed: true,
+    } as any;
   }
 
   // --- PASS 2: Programmatic verification — filter framework-handled a11y issues ---

@@ -218,6 +218,11 @@ const QAIntelligenceDashboard: React.FC = () => {
   const notifications = useNotifications(agentStream.agentTimeline);
   const [showTerminal, setShowTerminal] = useState(false);
   const [showReplay, setShowReplay] = useState(false);
+
+  // Auto-show terminal when a run starts (most impressive feature should be visible)
+  useEffect(() => {
+    if (qaRun.status === 'running' && !showTerminal) setShowTerminal(true);
+  }, [qaRun.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const [showDebate, setShowDebate] = useState(false);
   const [reasoningAgent, setReasoningAgent] = useState<{ id: string; name: string } | null>(null);
 
@@ -226,6 +231,8 @@ const QAIntelligenceDashboard: React.FC = () => {
 
   const bgColor = useColorModeValue('gray.50', 'gray.900');
   const headerColor = useColorModeValue('gray.800', 'gray.100');
+  const emptyStateBg = useColorModeValue('purple.50', 'gray.700');
+  const emptyStateBorder = useColorModeValue('purple.200', 'purple.600');
 
   // Listen for qa-view-run events dispatched by RunManager
   useEffect(() => {
@@ -415,6 +422,34 @@ const QAIntelligenceDashboard: React.FC = () => {
             onReplayEvent={() => {}}
             onClose={() => setShowReplay(false)}
           />
+        )}
+
+        {/* Empty state guide for first-time users */}
+        {qaRun.recentRuns.length === 0 && qaRun.status === 'idle' && (
+          <Box
+            bg={emptyStateBg}
+            border="2px dashed"
+            borderColor={emptyStateBorder}
+            borderRadius="xl"
+            p={8}
+            textAlign="center"
+            mb={4}
+          >
+            <VStack spacing={3}>
+              <Text fontSize="xl" fontWeight="bold">
+                QA Intelligence
+              </Text>
+              <Text color="gray.500" maxW="500px">
+                Enter your GitHub repository URL above and click "Start QA Run".
+                22 AI agents will analyze your code for quality, security, API integrity,
+                test coverage, and more. All findings are from real analysis.
+              </Text>
+              <Text fontSize="sm" color="gray.400">
+                Results are stored per-repository. Select a previous run from the
+                dropdown to review historical analysis.
+              </Text>
+            </VStack>
+          </Box>
         )}
 
         {/* ═══ ZONE 2: Agent Control Room ═══ */}

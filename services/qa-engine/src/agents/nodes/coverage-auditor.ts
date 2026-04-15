@@ -375,9 +375,10 @@ Respond with ONLY valid JSON, no markdown fencing.`;
       orphanedRoutes: [],
       dataShapeMismatches: [],
       missingCrudOperations: [],
-      coverageScore: 0,
+      coverageScore: null as any,
       summary: 'Analysis failed — retry recommended',
-    };
+      __failed: true,
+    } as any;
   }
 
   // --- PASS 2: Programmatic verification of each finding ---
