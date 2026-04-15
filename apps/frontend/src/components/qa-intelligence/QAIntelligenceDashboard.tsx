@@ -233,6 +233,8 @@ const QAIntelligenceDashboard: React.FC = () => {
   const headerColor = useColorModeValue('gray.800', 'gray.100');
   const emptyStateBg = useColorModeValue('purple.50', 'gray.700');
   const emptyStateBorder = useColorModeValue('purple.200', 'purple.600');
+  const cardBg = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.700');
 
   // Listen for qa-view-run events dispatched by RunManager
   useEffect(() => {
