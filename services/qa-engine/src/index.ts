@@ -59,6 +59,10 @@ app.use('/qa/product', createProductIntelligenceRouter(dbClient));
 app.use('/qa/wiki', createWikiRouter(dbClient));
 app.use('/qa/chat', createChatRouter(dbClient));
 
+// Graph visualization API
+import { createGraphRouter } from './routes/graph';
+app.use('/qa/graph', createGraphRouter(dbClient));
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({

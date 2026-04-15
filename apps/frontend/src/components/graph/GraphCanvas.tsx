@@ -129,7 +129,7 @@ export default function GraphCanvas({
 
       // Fetch real graph data from ArangoDB via QA engine
 
-      const response = await fetch(`/graph/nodes${repositoryId ? `?repositoryId=${repositoryId}` : ''}`);
+      const response = await fetch(`/qa/graph/seeds?limit=100${repositoryId ? `&repositoryId=${repositoryId}` : ''}`);
       if (response.ok) {
         const data = await response.json();
         if (data.nodes?.length > 0) {
