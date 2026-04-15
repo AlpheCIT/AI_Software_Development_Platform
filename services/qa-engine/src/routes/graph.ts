@@ -20,32 +20,28 @@ export function createGraphRouter(dbClient: any) {
       const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
 
       // Get code files as "file" nodes
+      const fileBindVars: any = { limit };
+      let fileFilter = '';
+      if (repositoryId) { fileFilter = 'FILTER f.repositoryId == @repoId'; fileBindVars.repoId = repositoryId; }
+
       const filesCursor = await dbClient.query(
-        `FOR f IN code_files
-           ${repositoryId ? 'FILTER f.repositoryId == @repoId' : ''}
-           LIMIT @limit
-           RETURN {
-             id: f._id,
-             label: f.path,
-             type: 'file',
-             metadata: { path: f.path, language: f.language, size: f.size, hasDocumentation: f.hasDocumentation }
-           }`,
-        { repoId: repositoryId || '', limit }
+        `FOR f IN code_files ${fileFilter} LIMIT @limit
+         RETURN { id: f._id, label: f.path, type: 'file',
+                  metadata: { path: f.path, language: f.language, size: f.size, hasDocumentation: f.hasDocumentation } }`,
+        fileBindVars
       );
       const fileNodes = await filesCursor.all();
 
       // Get code entities as typed nodes (function, class, interface, etc.)
+      const entBindVars: any = { limit };
+      let entFilter = '';
+      if (repositoryId) { entFilter = 'FILTER e.repositoryId == @repoId'; entBindVars.repoId = repositoryId; }
+
       const entCursor = await dbClient.query(
-        `FOR e IN code_entities
-           ${repositoryId ? 'FILTER e.repositoryId == @repoId' : ''}
-           LIMIT @limit
-           RETURN {
-             id: e._id,
-             label: e.name,
-             type: e.type || 'function',
-             metadata: { file: e.file || e.filePath, signature: e.signature, startLine: e.startLine }
-           }`,
-        { repoId: repositoryId || '', limit }
+        `FOR e IN code_entities ${entFilter} LIMIT @limit
+         RETURN { id: e._id, label: e.name, type: e.type || 'function',
+                  metadata: { file: e.file || e.filePath, signature: e.signature, startLine: e.startLine } }`,
+        entBindVars
       );
       const entityNodes = await entCursor.all();
 
