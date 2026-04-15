@@ -430,6 +430,40 @@ export async function repoIngesterNode(
       `[RepoIngester] Cloned & scanned: ${codeFiles.length} files, ${codeEntities.length} entities`,
     );
 
+    // Persist code files & entities to ArangoDB for graph visualization
+    if (dbClient) {
+      try {
+        const repoId = state.repositoryId || repositoryId;
+        // Upsert code files (without content to save space — content is in git cache)
+        for (const file of codeFiles.slice(0, 200)) {
+          try {
+            await dbClient.query(
+              `UPSERT { path: @path, repositoryId: @repoId }
+               INSERT { path: @path, repositoryId: @repoId, language: @lang, size: @size, hasDocumentation: @hasDocs, content: @content, updatedAt: DATE_NOW() }
+               UPDATE { language: @lang, size: @size, hasDocumentation: @hasDocs, content: @content, updatedAt: DATE_NOW() }
+               IN code_files`,
+              { path: file.path, repoId, lang: file.language, size: file.size, hasDocs: file.hasDocumentation || false, content: (file.content || '').substring(0, 5000) }
+            );
+          } catch { /* skip individual file errors */ }
+        }
+        // Upsert code entities
+        for (const entity of codeEntities.slice(0, 500)) {
+          try {
+            await dbClient.query(
+              `UPSERT { name: @name, file: @file, repositoryId: @repoId }
+               INSERT { name: @name, type: @type, file: @file, repositoryId: @repoId, signature: @sig, updatedAt: DATE_NOW() }
+               UPDATE { type: @type, signature: @sig, updatedAt: DATE_NOW() }
+               IN code_entities`,
+              { name: entity.name, type: entity.type, file: entity.file, repoId, sig: entity.signature || '' }
+            );
+          } catch { /* skip individual entity errors */ }
+        }
+        console.log(`[RepoIngester] Persisted ${Math.min(codeFiles.length, 200)} files and ${Math.min(codeEntities.length, 500)} entities to ArangoDB`);
+      } catch (persistErr: any) {
+        console.warn('[RepoIngester] Failed to persist to ArangoDB:', persistErr.message);
+      }
+    }
+
     eventPublisher?.emit('qa:agent.completed', {
       runId: state.runId,
       agent: 'repo_ingester',

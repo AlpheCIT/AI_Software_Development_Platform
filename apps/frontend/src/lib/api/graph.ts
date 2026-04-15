@@ -32,18 +32,20 @@ export interface NeighborhoodParams {
   limit?: number;
 }
 
-// Graph API endpoints - using the existing API client methods
+// Graph API endpoints — uses /qa/graph/* via Vite proxy to QA engine
 export const graphApi = {
-  // Get initial graph data
+  // Get initial graph data (code files + entities as nodes, relationships as edges)
   async getSeeds(params: GraphSeedsParams = {}) {
     try {
       const limit = params.limit || 50;
-      const response = await apiRequest.get(`/api/graph/seeds?limit=${limit}`);
-      const data = response as any;
+      const repoParam = params.repositoryId ? `&repositoryId=${encodeURIComponent(params.repositoryId)}` : '';
+      const res = await fetch(`/qa/graph/seeds?limit=${limit}${repoParam}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
       return {
         nodes: data.nodes || [],
         edges: data.edges || [],
-        metadata: { total: data.total || 0 }
+        metadata: { total: (data.nodes || []).length }
       };
     } catch (error) {
       console.error('Error fetching graph seeds:', error);
@@ -54,8 +56,9 @@ export const graphApi = {
   // Get detailed node information
   async getNodeDetails(nodeId: string) {
     try {
-      const response = await apiRequest.get(`/api/graph/nodes/${nodeId}/details`);
-      return response;
+      const res = await fetch(`/qa/graph/nodes/${encodeURIComponent(nodeId)}/details`);
+      if (!res.ok) return null;
+      return await res.json();
     } catch (error) {
       console.error('Error fetching node details:', error);
       return null;
@@ -65,8 +68,10 @@ export const graphApi = {
   // Search graph nodes and edges
   async search(params: SearchParams) {
     try {
-      const response = await apiRequest.get(`/api/graph/search?q=${encodeURIComponent(params.q)}&limit=${params.limit || 20}`);
-      return response;
+      const res = await fetch(`/qa/graph/search?q=${encodeURIComponent(params.q)}&limit=${params.limit || 20}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return { nodes: data.nodes || data || [], edges: data.edges || [] };
     } catch (error) {
       console.error('Error searching graph:', error);
       return { nodes: [], edges: [] };
@@ -77,8 +82,9 @@ export const graphApi = {
   async getNeighborhood(nodeId: string, params: Omit<NeighborhoodParams, 'nodeId'> = {}) {
     try {
       const depth = params.depth || 1;
-      const response = await apiRequest.get(`/api/graph/nodes/${nodeId}/expand?depth=${depth}`);
-      const data = response as any;
+      const res = await fetch(`/qa/graph/nodes/${encodeURIComponent(nodeId)}/expand?depth=${depth}&limit=50`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
       return {
         centerNode: nodeId,
         nodes: data.nodes || [],
@@ -87,12 +93,7 @@ export const graphApi = {
       };
     } catch (error) {
       console.error('Error fetching node neighborhood:', error);
-      return {
-        centerNode: nodeId,
-        nodes: [],
-        edges: [],
-        metadata: {}
-      };
+      return { centerNode: nodeId, nodes: [], edges: [], metadata: {} };
     }
   }
 };
