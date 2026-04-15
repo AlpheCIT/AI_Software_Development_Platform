@@ -24,26 +24,24 @@ export function createGraphRouter(dbClient: any) {
       let fileFilter = '';
       if (repositoryId) { fileFilter = 'FILTER f.repositoryId == @repoId'; fileBindVars.repoId = repositoryId; }
 
-      const filesCursor = await dbClient.query(
+      const fileNodes = await dbClient.query(
         `FOR f IN code_files ${fileFilter} LIMIT @limit
          RETURN { id: f._id, label: f.path, type: 'file',
                   metadata: { path: f.path, language: f.language, size: f.size, hasDocumentation: f.hasDocumentation } }`,
         fileBindVars
       );
-      const fileNodes = await filesCursor.all();
 
       // Get code entities as typed nodes (function, class, interface, etc.)
       const entBindVars: any = { limit };
       let entFilter = '';
       if (repositoryId) { entFilter = 'FILTER e.repositoryId == @repoId'; entBindVars.repoId = repositoryId; }
 
-      const entCursor = await dbClient.query(
+      const entityNodes = await dbClient.query(
         `FOR e IN code_entities ${entFilter} LIMIT @limit
          RETURN { id: e._id, label: e.name, type: e.type || 'function',
                   metadata: { file: e.file || e.filePath, signature: e.signature, startLine: e.startLine } }`,
         entBindVars
       );
-      const entityNodes = await entCursor.all();
 
       // Build edges: entity → file (defined_in)
       const edges: any[] = [];
@@ -71,7 +69,7 @@ export function createGraphRouter(dbClient: any) {
             `FOR f IN code_files FILTER f._id == @id RETURN f.content`,
             { id: file.id }
           );
-          const [content] = await contentCursor.all();
+          const [content] = contentCursor;
           if (content) {
             // Extract import statements
             const importPattern = /(?:import\s+.*?from\s+['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\))/g;
@@ -134,7 +132,7 @@ export function createGraphRouter(dbClient: any) {
         `FOR d IN @@collection FILTER d._id == @id RETURN d`,
         { '@collection': req.params.collection, id: docId }
       );
-      const docs = await cursor.all();
+      const docs = cursor;
       if (docs.length === 0) return res.status(404).json({ error: 'Node not found' });
       res.json(docs[0]);
     } catch (err: any) {
@@ -166,7 +164,7 @@ export function createGraphRouter(dbClient: any) {
          RETURN { entities, fileOf }`,
         { id: docId, limit }
       );
-      const [result] = await cursor.all();
+      const [result] = cursor;
       const nodes = [...(result?.entities || []), ...(result?.fileOf || [])];
       const edges = nodes.map((n: any) => ({
         id: `expand_${docId}_${n.id}`,
@@ -207,7 +205,7 @@ export function createGraphRouter(dbClient: any) {
          RETURN { entities: entityResults, files: fileResults }`,
         { q, limit }
       );
-      const [result] = await cursor.all();
+      const [result] = cursor;
       const nodes = [...(result?.entities || []), ...(result?.files || [])];
 
       res.json({ nodes, edges: [] });
