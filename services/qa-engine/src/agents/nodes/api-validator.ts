@@ -348,9 +348,10 @@ Respond with ONLY valid JSON, no markdown fencing.`;
       missingErrorHandling: [],
       schemaIssues: [],
       securityGaps: [],
-      apiHealthScore: 0,
+      apiHealthScore: null as any,
       summary: 'Analysis failed — retry recommended',
-    };
+      __failed: true,
+    } as any;
   }
 
   // --- PASS 2: Programmatic verification of each finding ---
