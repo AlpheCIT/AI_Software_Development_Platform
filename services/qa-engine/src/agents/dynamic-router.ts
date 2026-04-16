@@ -153,36 +153,43 @@ function detectPatterns(codeFiles: any[]): string[] {
   const patterns = new Set<string>();
   const paths = codeFiles.map(f => (f.path || f.filePath || '').toLowerCase());
   const pathSet = new Set(paths);
+  const filesWithContent = codeFiles.filter(f => f.content && f.content.length > 0);
+
+  console.log(`[DynamicRouter] Detecting patterns in ${codeFiles.length} files (${filesWithContent.length} with content)`);
+  console.log(`[DynamicRouter] Sample paths: ${paths.slice(0, 8).join(', ')}`);
 
   // Helper: check if any file path matches a regex
   const anyPath = (rx: RegExp) => paths.some(p => rx.test(p));
   // Helper: check if any file content matches a regex (first 5000 chars)
   const anyContent = (rx: RegExp) =>
-    codeFiles.some(f => rx.test((f.content || '').substring(0, 5000)));
+    filesWithContent.some(f => rx.test((f.content || '').substring(0, 5000)));
 
   // --- api-routes ---
-  if (
-    anyPath(/route[s]?\.(ts|js|py|rb|go|java)$/) ||
+  const apiPathMatch = anyPath(/route[s]?\.(ts|js|py|rb|go|java)$/) ||
     anyPath(/controller[s]?\.(ts|js|py|rb|go|java)$/) ||
     anyPath(/handler[s]?\.(ts|js|py|rb|go|java)$/) ||
     anyPath(/\/api\//) ||
-    anyPath(/\/routes\//) ||
-    anyContent(/\.(get|post|put|delete|patch)\s*\(/) ||
+    anyPath(/\/routes\//);
+  const apiContentMatch = anyContent(/\.(get|post|put|delete|patch)\s*\(/) ||
     anyContent(/app\.(get|post|put|delete|patch)\s*\(/) ||
-    anyContent(/@(Get|Post|Put|Delete|Patch)\s*\(/)
-  ) {
+    anyContent(/@(Get|Post|Put|Delete|Patch)\s*\(/);
+  if (apiPathMatch || apiContentMatch) {
     patterns.add('api-routes');
+    console.log(`[DynamicRouter] ✓ Detected: api-routes (path: ${apiPathMatch}, content: ${apiContentMatch})`);
+  } else {
+    console.log(`[DynamicRouter] ✗ NOT detected: api-routes (path: ${apiPathMatch}, content: ${apiContentMatch})`);
   }
 
   // --- frontend-components ---
-  if (
-    anyPath(/\.(tsx|jsx)$/) ||
-    anyPath(/\/components\//) ||
-    anyContent(/from ['"]react['"]/) ||
+  const fePathMatch = anyPath(/\.(tsx|jsx)$/) || anyPath(/\/components\//);
+  const feContentMatch = anyContent(/from ['"]react['"]/) ||
     anyContent(/from ['"]vue['"]/) ||
-    anyContent(/from ['"]svelte['"]/)
-  ) {
+    anyContent(/from ['"]svelte['"]/);
+  if (fePathMatch || feContentMatch) {
     patterns.add('frontend-components');
+    console.log(`[DynamicRouter] ✓ Detected: frontend-components (path: ${fePathMatch}, content: ${feContentMatch})`);
+  } else {
+    console.log(`[DynamicRouter] ✗ NOT detected: frontend-components (path: ${fePathMatch}, content: ${feContentMatch})`);
   }
 
   // --- middleware ---
@@ -294,6 +301,24 @@ function detectPatterns(codeFiles: any[]): string[] {
     patterns.add('kubernetes');
   }
 
+  // Fallback: if we have substantial code files but no patterns detected,
+  // the regex may be too strict or content may not be loaded. Use file-type heuristics.
+  if (!patterns.has('api-routes') && codeFiles.length >= 5) {
+    const hasBackendFiles = paths.some(p => p.endsWith('.js') || p.endsWith('.ts') || p.endsWith('.py') || p.endsWith('.go'));
+    if (hasBackendFiles) {
+      patterns.add('api-routes');
+      console.log('[DynamicRouter] ✓ Fallback: added api-routes (backend files detected)');
+    }
+  }
+  if (!patterns.has('frontend-components') && codeFiles.length >= 5) {
+    const hasFrontendFiles = paths.some(p => p.endsWith('.jsx') || p.endsWith('.tsx') || p.endsWith('.vue') || p.endsWith('.svelte'));
+    if (hasFrontendFiles) {
+      patterns.add('frontend-components');
+      console.log('[DynamicRouter] ✓ Fallback: added frontend-components (frontend files detected)');
+    }
+  }
+
+  console.log(`[DynamicRouter] Final patterns: ${Array.from(patterns).join(', ') || '(none)'}`);
   return Array.from(patterns);
 }
 
@@ -463,13 +488,20 @@ export function selectAgents(
     if (track && agent.track !== track) return false;
 
     // Check requirements
-    if (!requirementsMet(agent.requires, profile)) return false;
+    if (!requirementsMet(agent.requires, profile)) {
+      console.log(`[DynamicRouter] SKIP ${agent.id}: requirements not met (needs: ${JSON.stringify(agent.requires)}, profile: patterns=[${profile.patterns}], files=${profile.fileCount})`);
+      return false;
+    }
 
     // Check exclusions
-    if (isExcluded(agent, profile)) return false;
+    if (isExcluded(agent, profile)) {
+      console.log(`[DynamicRouter] SKIP ${agent.id}: excluded by profile`);
+      return false;
+    }
 
     return true;
   });
+  console.log(`[DynamicRouter] Selected ${selected.length}/${registry.length} agents: ${selected.map(a => a.id).join(', ')}`);
 
   // Sort by priority (lower = first)
   selected.sort((a, b) => a.priority - b.priority);

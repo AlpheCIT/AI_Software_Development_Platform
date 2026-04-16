@@ -123,6 +123,7 @@ export const useQARunStore = create<QARunStore>()(
         syntaxValid: 0,
         mutationScore: 0,
         productData: null,
+        codeHealth: null,
         agentStatuses: {},
         selectedAgents: [],
         skippedAgents: [],

@@ -14,12 +14,24 @@ export async function behavioralAnalystNode(
   const DSPY_URL = process.env.DSPY_URL || 'http://localhost:8010';
   const TIMEOUT = 180000; // 3 min per call
 
-  // Pre-flight: check if DSPy service is reachable before doing any work
+  // Pre-flight: check if DSPy service is reachable (optional — degrades gracefully)
+  let dspyAvailable = false;
   try {
     const healthRes = await fetch(`${DSPY_URL}/health`, { signal: AbortSignal.timeout(3000) });
-    if (!healthRes.ok) throw new Error(`DSPy returned ${healthRes.status}`);
-  } catch (healthErr: any) {
-    throw new Error(`DSPy service not reachable at ${DSPY_URL}. Start the visionary-agent service. (${healthErr.message})`);
+    dspyAvailable = healthRes.ok;
+  } catch {
+    console.warn(`[BehavioralAnalyst] DSPy service not available at ${DSPY_URL} — using direct LLM mode`);
+  }
+  if (!dspyAvailable) {
+    console.log('[BehavioralAnalyst] Skipping DSPy-dependent analysis (service offline)');
+    return {
+      screens: [],
+      routes: [],
+      flows: [],
+      specs: [],
+      summary: 'Behavioral analysis skipped — DSPy service not available. Results from other agents are still valid.',
+      _dspyUnavailable: true,
+    } as any;
   }
 
   eventPublisher?.emit('qa:agent.started', {

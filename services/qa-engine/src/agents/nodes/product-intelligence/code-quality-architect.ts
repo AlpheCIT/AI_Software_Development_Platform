@@ -541,7 +541,7 @@ export async function codeQualityArchitectNode(
       .map((f: any) => f.path);
   }
 
-  console.log(`[CodeQualityArchitect] Phase A identified ${targetFiles.length} files for deep analysis`);
+  console.log(`[CodeQualityArchitect] Phase A identified ${targetFiles.length} files for deep analysis (from ${codeFiles.length} total)`);
 
   eventPublisher?.emit('qa:agent.progress', {
     runId,
@@ -556,6 +556,52 @@ export async function codeQualityArchitectNode(
     if (!file?.content) return '';
     return `### ${path} (${(file.content || '').split('\n').length} lines)\n\`\`\`\n${file.content}\n\`\`\``;
   }).filter(Boolean).join('\n\n');
+
+  // ── Pre-analysis: programmatic quality checks across ALL files ────────
+  const largeFiles = codeFiles
+    .filter((f: any) => f.content && (f.content.split('\n').length > 300))
+    .map((f: any) => `${f.path} (${f.content.split('\n').length} lines)`)
+    .slice(0, 15);
+  const filesWithJSDoc = codeFiles.filter((f: any) => f.content?.includes('/**')).length;
+  const docCoverage = codeFiles.length > 0 ? Math.round((filesWithJSDoc / codeFiles.length) * 100) : 0;
+  const consoleLogFiles = codeFiles
+    .filter((f: any) => f.content && /console\.(log|warn)\(/.test(f.content) && !f.path?.includes('test'))
+    .map((f: any) => f.path)
+    .slice(0, 10);
+
+  // ── Pre-analysis: Build verified file reference set (for dead code accuracy) ──
+  const htmlFiles = codeFiles.filter((f: any) => f.path?.endsWith('.html'));
+  const scriptRefs = new Set<string>();
+  for (const html of htmlFiles) {
+    if (!html.content) continue;
+    const scriptPattern = /<script[^>]+src=["']([^"']+)["']/g;
+    let match;
+    while ((match = scriptPattern.exec(html.content)) !== null) {
+      const dir = html.path.split('/').slice(0, -1).join('/');
+      const resolved = match[1].startsWith('/') ? match[1].substring(1) : `${dir}/${match[1]}`.replace(/\/\.\//g, '/');
+      scriptRefs.add(resolved);
+    }
+  }
+  const importRefs = new Set<string>();
+  for (const file of codeFiles) {
+    if (!file.content) continue;
+    const importPattern = /(?:import\s+.*?from\s+['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\))/g;
+    let match;
+    while ((match = importPattern.exec(file.content)) !== null) {
+      importRefs.add(match[1] || match[2]);
+    }
+  }
+  const allRefs = [...scriptRefs, ...importRefs];
+  const verifiedFileRefs = allRefs.length > 0
+    ? `\n- Files confirmed referenced (via import/require/HTML script-tag): ${allRefs.length}\n  DO NOT mark these as dead code: ${[...scriptRefs].slice(0, 20).join(', ')}`
+    : '';
+
+  const verifiedQualityMetrics = `
+## VERIFIED Code Quality Metrics (programmatic analysis of ALL ${codeFiles.length} files)
+- Large files (>300 lines): ${largeFiles.length} found${largeFiles.length > 0 ? '\n  ' + largeFiles.join('\n  ') : ''}
+- Documentation coverage: ${docCoverage}% of files have JSDoc/docstrings (${filesWithJSDoc}/${codeFiles.length})
+- Console.log in production code: ${consoleLogFiles.length} files${consoleLogFiles.length > 0 ? '\n  ' + consoleLogFiles.join('\n  ') : ''}${verifiedFileRefs}
+Use these VERIFIED metrics as a baseline. Your findings should be CONSISTENT with these numbers.`;
 
   const analyzeModel = createModel({ temperature: 0.3, maxTokens: 16384 });
 
@@ -614,6 +660,7 @@ Based on this comprehensive analysis:
 10. Analyze documentation coverage -- count documented vs undocumented files/functions, flag critical gaps (high complexity with no docs), and list directories missing READMEs
 
 Be specific -- reference actual files and code patterns. Every finding must have an actionable fix.
+${verifiedQualityMetrics}
 
 Respond with ONLY valid JSON, no markdown fencing.`;
 

@@ -69,7 +69,13 @@ export async function runProductIntelligencePipeline(
   console.log(`[ProductIntelligence] Starting dynamic pipeline for ${repoUrl}`);
 
   // ── Step 1: Build repo profile and select agents ───────────────────────
+  const filesWithContent = codeFiles.filter((f: any) => f.content && f.content.length > 0);
+  console.log(`[Pipeline] codeFiles: ${codeFiles.length} total, ${filesWithContent.length} with content`);
+  if (filesWithContent.length === 0 && codeFiles.length > 0) {
+    console.warn('[Pipeline] ⚠️ WARNING: No files have content loaded — pattern detection will use path-only checks');
+  }
   const profile = buildRepoProfile(codeFiles, undefined); // businessContext comes from the agent itself
+  console.log(`[Pipeline] Repo profile: ${profile.fileCount} files, patterns: [${profile.patterns}], languages: [${profile.languages}], appType: ${profile.appType}`);
   const selectedAgents = selectAgents(agentRegistry, profile);
 
   const skippedAgentDefs = agentRegistry.filter(a => !selectedAgents.find(s => s.id === a.id));
