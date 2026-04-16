@@ -319,11 +319,31 @@ export async function coverageAuditorNode(
 
   const analyzeModel = createModel({ temperature: 0.2, maxTokens: 16384 });
 
+  // ── Pre-analysis: Count real test files ──────────────────────────────
+  const testFiles = codeFiles.filter((f: any) =>
+    f.path?.includes('.test.') || f.path?.includes('.spec.') ||
+    f.path?.includes('__tests__/') || f.path?.includes('/test/') ||
+    f.path?.includes('/tests/')
+  );
+  const sourceFiles = codeFiles.filter((f: any) =>
+    !f.path?.includes('node_modules') && !f.path?.includes('.test.') &&
+    !f.path?.includes('.spec.') && !f.path?.includes('__tests__') &&
+    (f.language === 'javascript' || f.language === 'typescript')
+  );
+  const testRatio = sourceFiles.length > 0 ? Math.round((testFiles.length / sourceFiles.length) * 100) : 0;
+  const verifiedCoverage = `\n\n## VERIFIED Test Coverage Metrics (via static file analysis)
+- Source files: ${sourceFiles.length}
+- Test files: ${testFiles.length}
+- Test-to-source ratio: ${testRatio}%
+- Test files found: ${testFiles.slice(0, 15).map((f: any) => f.path).join(', ')}${testFiles.length > 15 ? ` ... and ${testFiles.length - 15} more` : ''}`;
+  console.log(`[CoverageAuditor] Pre-analysis: ${sourceFiles.length} source files, ${testFiles.length} test files (${testRatio}%)`);
+
   const userMessage = `Cross-reference the backend API with frontend consumers to find coverage gaps.
 
 ## Repository: ${repoUrl}
 
 ${businessContextPrompt}${graphPrompt}
+${verifiedCoverage}
 
 ## Complete Backend Route Inventory (${allRoutes.length} routes extracted programmatically)
 ${routeInventory || '(no routes extracted)'}

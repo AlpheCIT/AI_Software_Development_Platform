@@ -299,6 +299,24 @@ export async function apiValidatorNode(
 
   const analyzeModel = createModel({ temperature: 0.2, maxTokens: 16384 });
 
+  // ── Pre-analysis: Extract real route definitions via regex ────────────
+  const routePattern = /(router|app|server)\.(get|post|put|delete|patch|use|all)\s*\(\s*['"](\/[^'"]*)['"]/g;
+  const discoveredRoutes: { method: string; path: string; file: string }[] = [];
+  for (const file of codeFiles) {
+    if (!file.content) continue;
+    let match;
+    const regex = new RegExp(routePattern.source, routePattern.flags);
+    while ((match = regex.exec(file.content)) !== null) {
+      discoveredRoutes.push({ method: match[2].toUpperCase(), path: match[3], file: file.path });
+    }
+  }
+  const verifiedRoutes = discoveredRoutes.length > 0
+    ? `\n\n## VERIFIED Route Definitions (${discoveredRoutes.length} found via static analysis)\nThese routes were extracted by scanning source code for Express/Fastify patterns:\n${discoveredRoutes.slice(0, 60).map(r => `- ${r.method} ${r.path} (${r.file})`).join('\n')}`
+    : '';
+  if (discoveredRoutes.length > 0) {
+    console.log(`[APIValidator] Pre-analysis found ${discoveredRoutes.length} route definitions`);
+  }
+
   const userMessage = `Discover and validate all API endpoints in this codebase.
 
 ## Repository: ${repoUrl}
@@ -311,8 +329,10 @@ ${deepContext}
 
 ## All Code Entities
 ${codeEntities.filter((e: any) => e.type === 'function' || e.type === 'method').slice(0, 60).map((e: any) => `${e.type} ${e.name} (${e.file})`).join('\n')}
+${verifiedRoutes}
 
 Discover every API endpoint, then validate each for error handling, input validation, authentication, and security.
+Use the VERIFIED route definitions above as your baseline — do not hallucinate routes that don't exist.
 
 Respond with ONLY valid JSON, no markdown fencing.`;
 

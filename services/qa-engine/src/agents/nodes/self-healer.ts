@@ -369,6 +369,36 @@ export async function selfHealerNode(
 
   const analyzeModel = createModel({ temperature: 0.2, maxTokens: 16384 });
 
+  // ── Pre-analysis: Run tsc if TypeScript project ──────────────────────
+  let verifiedErrors = '';
+  const hasTsConfig = codeFiles.some((f: any) => f.path === 'tsconfig.json' || f.path?.endsWith('/tsconfig.json'));
+  if (hasTsConfig) {
+    try {
+      const { execSync } = require('child_process');
+      const path = require('path');
+      const repoHash = (repoUrl + ':dev').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const repoPath = path.join(process.cwd(), '.qa-repo-cache', repoHash);
+      const output = execSync('npx tsc --noEmit 2>&1', {
+        cwd: repoPath, timeout: 30000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe']
+      });
+      const errors = output.split('\n').filter((l: string) => l.includes(': error TS'));
+      if (errors.length > 0) {
+        verifiedErrors = `\n\n## VERIFIED TypeScript Compiler Errors (${errors.length} found)\nThese are REAL errors from running \`tsc --noEmit\`:\n${errors.slice(0, 20).map((e: string) => `- ${e}`).join('\n')}${errors.length > 20 ? `\n... and ${errors.length - 20} more` : ''}`;
+        console.log(`[SelfHealer] tsc found ${errors.length} real TypeScript errors`);
+      } else {
+        verifiedErrors = '\n\n## VERIFIED: TypeScript compilation passed with 0 errors';
+        console.log('[SelfHealer] tsc passed — 0 TypeScript errors');
+      }
+    } catch (e: any) {
+      const output = (e.stdout || e.stderr || e.message || '').toString();
+      const errors = output.split('\n').filter((l: string) => l.includes(': error TS'));
+      if (errors.length > 0) {
+        verifiedErrors = `\n\n## VERIFIED TypeScript Compiler Errors (${errors.length} found)\nThese are REAL errors from running \`tsc --noEmit\`:\n${errors.slice(0, 20).map((e: string) => `- ${e}`).join('\n')}`;
+        console.log(`[SelfHealer] tsc found ${errors.length} real TypeScript errors`);
+      }
+    }
+  }
+
   const userMessage = `Detect cross-file issues in this codebase that compilers and linters miss.
 
 ## Repository: ${repoUrl}
@@ -397,6 +427,7 @@ ${codeEntities.slice(0, 80).map((e: any) => `${e.type} ${e.name} (${e.file})`).j
 
 Find type mismatches, broken imports, missing dependencies, and config inconsistencies.
 For each issue, provide a specific fix.
+${verifiedErrors}
 
 Respond with ONLY valid JSON, no markdown fencing.`;
 
