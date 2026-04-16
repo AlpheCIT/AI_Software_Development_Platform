@@ -285,7 +285,8 @@ export async function repoIngesterNode(
       { repoId: repositoryId },
     );
 
-    if (existingFiles.length > 0) {
+    // Use ArangoDB cache only if we have a reasonable number of files (not partial/stale data)
+    if (existingFiles.length >= 5) {
       const existingEntities: CodeEntity[] = await dbClient.query(
         `FOR e IN code_entities
            FILTER e.repositoryId == @repoId
