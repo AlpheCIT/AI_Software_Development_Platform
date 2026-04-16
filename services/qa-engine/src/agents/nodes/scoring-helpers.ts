@@ -48,11 +48,12 @@ export function calculateCalibratedScore(
   }
 
   // Normalize by repo size (log scale)
-  // Floor at 0.7 to prevent small repos from being unfairly penalized
-  const sizeNormalizer = Math.max(Math.log10(totalFiles + 10) / Math.log10(200), 0.7);
+  // Use a gentler normalizer that accounts for larger codebases having more findings.
+  // For a 20-file sample from a 100-file repo, don't penalize as if ALL files have issues.
+  const sizeNormalizer = Math.max(Math.log2(totalFiles + 2) / 3, 1.0);
   const normalizedDeductions = deductions / sizeNormalizer;
 
-  // No artificial floor — let the score reflect reality
+  // Score: 100 minus deductions, clamped to 0-100
   const score = Math.max(0, Math.min(100, Math.round(100 - normalizedDeductions)));
   const { grade, gradeDescription } = getGrade(score);
 

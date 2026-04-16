@@ -317,6 +317,60 @@ export async function apiValidatorNode(
     console.log(`[APIValidator] Pre-analysis found ${discoveredRoutes.length} route definitions`);
   }
 
+  // ── Pre-analysis: SQL injection scanner ──────────────────────────────
+  const sqlInjectionRisks: { file: string; line: number; pattern: string; severity: string }[] = [];
+  for (const file of codeFiles) {
+    if (!file.content) continue;
+    const lines = file.content.split('\n');
+    lines.forEach((line: string, i: number) => {
+      if (/`(SELECT|INSERT|UPDATE|DELETE|FROM).*\$\{/.test(line)) {
+        sqlInjectionRisks.push({ file: file.path, line: i + 1, pattern: 'template-literal-sql', severity: 'critical' });
+      }
+      if (/FROM\s+\$\{/.test(line) || /INTO\s+\$\{/.test(line)) {
+        sqlInjectionRisks.push({ file: file.path, line: i + 1, pattern: 'dynamic-table-name', severity: 'high' });
+      }
+    });
+  }
+  const sqlContext = sqlInjectionRisks.length > 0
+    ? `\n\n## VERIFIED SQL Injection Risks (${sqlInjectionRisks.length} found)\nThese patterns were detected via static regex scanning:\n${sqlInjectionRisks.slice(0, 20).map(r => `- ${r.severity.toUpperCase()}: ${r.file}:${r.line} (${r.pattern})`).join('\n')}`
+    : '\n\n## VERIFIED: No SQL injection patterns detected via static analysis';
+  if (sqlInjectionRisks.length > 0) {
+    console.log(`[APIValidator] Pre-analysis found ${sqlInjectionRisks.length} SQL injection risks`);
+  }
+
+  // ── Pre-analysis: Unauthenticated route scanner ──────────────────────
+  const unauthRoutes: { file: string; method: string; path: string }[] = [];
+  for (const file of codeFiles) {
+    if (!file.content) continue;
+    const routeRegex = /router\.(get|post|put|delete)\s*\(\s*["']([^"']+)["']\s*,\s*(?:async\s+)?\(/g;
+    let match;
+    while ((match = routeRegex.exec(file.content)) !== null) {
+      // Check 300 chars before route def for auth middleware
+      const context = file.content.substring(Math.max(0, match.index - 300), match.index + match[0].length);
+      if (!context.includes('requireRole') && !context.includes('authenticate') && !context.includes('authMiddleware') && !context.includes('deviceAuth')) {
+        unauthRoutes.push({ file: file.path, method: match[1].toUpperCase(), path: match[2] });
+      }
+    }
+  }
+  const authContext = unauthRoutes.length > 0
+    ? `\n\n## VERIFIED Potentially Unauthenticated Routes (${unauthRoutes.length} found)\nThese routes appear to lack authentication middleware:\n${unauthRoutes.slice(0, 20).map(r => `- ${r.method} ${r.path} (${r.file})`).join('\n')}`
+    : '';
+
+  // ── Pre-analysis: Input validation scanner ───────────────────────────
+  const validationGaps: { file: string; pattern: string }[] = [];
+  for (const file of codeFiles) {
+    if (!file.content) continue;
+    if (/parseInt\(req\.(params|body|query)/.test(file.content) && !/isNaN/.test(file.content)) {
+      validationGaps.push({ file: file.path, pattern: 'parseInt-without-NaN-check' });
+    }
+    if (/req\.body\.\w+/.test(file.content) && !/joi|zod|yup|validate|schema|ajv/.test(file.content.toLowerCase())) {
+      validationGaps.push({ file: file.path, pattern: 'no-input-validation-library' });
+    }
+  }
+  const validationContext = validationGaps.length > 0
+    ? `\n\n## VERIFIED Input Validation Gaps (${validationGaps.length} files)\n${validationGaps.slice(0, 15).map(v => `- ${v.file}: ${v.pattern}`).join('\n')}`
+    : '';
+
   const userMessage = `Discover and validate all API endpoints in this codebase.
 
 ## Repository: ${repoUrl}
@@ -330,9 +384,13 @@ ${deepContext}
 ## All Code Entities
 ${codeEntities.filter((e: any) => e.type === 'function' || e.type === 'method').slice(0, 60).map((e: any) => `${e.type} ${e.name} (${e.file})`).join('\n')}
 ${verifiedRoutes}
+${sqlContext}
+${authContext}
+${validationContext}
 
 Discover every API endpoint, then validate each for error handling, input validation, authentication, and security.
-Use the VERIFIED route definitions above as your baseline — do not hallucinate routes that don't exist.
+Use the VERIFIED findings above as your baseline — these are REAL issues found by static analysis.
+Do not hallucinate routes that don't exist. Focus on the verified security findings.
 
 Respond with ONLY valid JSON, no markdown fencing.`;
 
