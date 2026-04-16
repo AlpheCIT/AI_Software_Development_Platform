@@ -32,6 +32,8 @@ import {
   StatNumber,
   StatHelpText,
   Spinner,
+  Skeleton,
+  SkeletonText,
   Center,
 } from '@chakra-ui/react';
 import {
@@ -480,7 +482,7 @@ const QAIntelligenceDashboard: React.FC = () => {
         )}
 
         {/* Agent Pipeline (compact fallback — shows all 13 tiles) */}
-        <Suspense fallback={<Center py={8}><Spinner size="lg" color="blue.400" /></Center>}>
+        <Suspense fallback={<VStack spacing={3} p={4}><Skeleton height="40px" /><Skeleton height="200px" /><HStack><Skeleton height="30px" width="80px" /><Skeleton height="30px" width="80px" /></HStack></VStack>}>
           <AgentPipeline
             agents={liveAgents}
             runId={qaRun.runId}
@@ -490,7 +492,7 @@ const QAIntelligenceDashboard: React.FC = () => {
 
         {/* Agent Debate View (when loops occurred and user clicked button) */}
         {showDebate && qaRun.runId && (
-          <Suspense fallback={<Center py={4}><Spinner /></Center>}>
+          <Suspense fallback={<Skeleton height="120px" borderRadius="lg" />}>
             <AgentDebateView runId={qaRun.runId} onClose={() => setShowDebate(false)} />
           </Suspense>
         )}
@@ -527,7 +529,7 @@ const QAIntelligenceDashboard: React.FC = () => {
         )}
 
         {/* ═══ ZONE 3: Intelligence Panels ═══ */}
-        <Suspense fallback={<Center py={8}><Spinner size="lg" color="blue.400" /></Center>}>
+        <Suspense fallback={<VStack spacing={3} p={4}><Skeleton height="40px" /><Skeleton height="200px" /><HStack><Skeleton height="30px" width="80px" /><Skeleton height="30px" width="80px" /></HStack></VStack>}>
         <Tabs variant="enclosed" colorScheme="blue" size="sm" isLazy>
           <TabList>
             <Tab>
