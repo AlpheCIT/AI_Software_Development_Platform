@@ -558,7 +558,7 @@ export async function codeQualityArchitectNode(
   }).filter(Boolean).join('\n\n');
 
   // ── Pre-analysis: programmatic quality checks across ALL files ────────
-  const largeFiles = codeFiles
+  const oversizedFiles = codeFiles
     .filter((f: any) => f.content && (f.content.split('\n').length > 300))
     .map((f: any) => `${f.path} (${f.content.split('\n').length} lines)`)
     .slice(0, 15);
@@ -598,7 +598,7 @@ export async function codeQualityArchitectNode(
 
   const verifiedQualityMetrics = `
 ## VERIFIED Code Quality Metrics (programmatic analysis of ALL ${codeFiles.length} files)
-- Large files (>300 lines): ${largeFiles.length} found${largeFiles.length > 0 ? '\n  ' + largeFiles.join('\n  ') : ''}
+- Large files (>300 lines): ${oversizedFiles.length} found${oversizedFiles.length > 0 ? '\n  ' + oversizedFiles.join('\n  ') : ''}
 - Documentation coverage: ${docCoverage}% of files have JSDoc/docstrings (${filesWithJSDoc}/${codeFiles.length})
 - Console.log in production code: ${consoleLogFiles.length} files${consoleLogFiles.length > 0 ? '\n  ' + consoleLogFiles.join('\n  ') : ''}${verifiedFileRefs}
 Use these VERIFIED metrics as a baseline. Your findings should be CONSISTENT with these numbers.`;
