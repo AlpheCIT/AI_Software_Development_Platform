@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { GlobalRunBanner } from '../components/common/GlobalRunBanner';
 import ErrorBoundary from '../components/common/ErrorBoundary';
+import { TrendChart } from '../components/common/TrendChart';
 import {
   Box,
   Grid,
@@ -208,6 +209,11 @@ const MainDashboard: React.FC = () => {
                 )}
               </VStack>
               
+              {/* Health Score Trends — always show if we have a repositoryId */}
+              {(analytics as any)?._qaDetails?.repositoryId && (
+                <TrendChart repositoryId={(analytics as any)._qaDetails.repositoryId} />
+              )}
+
               {analyticsLoading ? (
                 <Box>Loading analytics...</Box>
               ) : !analytics ? (
