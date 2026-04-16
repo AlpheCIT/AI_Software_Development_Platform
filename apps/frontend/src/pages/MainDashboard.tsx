@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { GlobalRunBanner } from '../components/common/GlobalRunBanner';
+import ErrorBoundary from '../components/common/ErrorBoundary';
 import {
   Box,
   Grid,
@@ -153,34 +154,36 @@ const MainDashboard: React.FC = () => {
       
       case 'graph':
         return (
-          <Grid 
-            templateColumns={{ base: '1fr', xl: '1fr 400px' }} 
-            gap={4} 
-            height="100%"
-            minHeight="600px"
-          >
-            <GridItem>
-              <Box height="100%" minHeight="600px">
-                <GraphCanvas
-                  selectedNodeId={selectedNodeId}
-                  onNodeSelect={handleNodeSelect}
-                  onNodeDoubleClick={handleNodeDoubleClick}
-                  width={isMobile ? window.innerWidth - 40 : 800}
-                  height={600}
-                  layout="force"
-                />
-              </Box>
-            </GridItem>
-            {!isMobile && (
+          <ErrorBoundary>
+            <Grid
+              templateColumns={{ base: '1fr', xl: '1fr 400px' }}
+              gap={4}
+              height="100%"
+              minHeight="600px"
+            >
               <GridItem>
-                <InspectorTabs
-                  nodeId={selectedNodeId}
-                  width={400}
-                  height={600}
-                />
+                <Box height="100%" minHeight="600px">
+                  <GraphCanvas
+                    selectedNodeId={selectedNodeId}
+                    onNodeSelect={handleNodeSelect}
+                    onNodeDoubleClick={handleNodeDoubleClick}
+                    width={isMobile ? window.innerWidth - 40 : 800}
+                    height={600}
+                    layout="force"
+                  />
+                </Box>
               </GridItem>
-            )}
-          </Grid>
+              {!isMobile && (
+                <GridItem>
+                  <InspectorTabs
+                    nodeId={selectedNodeId}
+                    width={400}
+                    height={600}
+                  />
+                </GridItem>
+              )}
+            </Grid>
+          </ErrorBoundary>
         );
       
       case 'analytics':
