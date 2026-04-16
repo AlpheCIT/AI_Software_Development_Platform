@@ -14,7 +14,8 @@ import {
   Button,
   useToast,
 } from '@chakra-ui/react';
-import { Download, FileText, FileCode, Database, ChevronDown } from 'lucide-react';
+import { Download, FileText, FileCode, Database, ChevronDown, FileOutput } from 'lucide-react';
+import { exportReportPDF } from '../../utils/pdfExport';
 
 
 
@@ -284,6 +285,66 @@ export default function BehaviorExportButton({ runId }: BehaviorExportButtonProp
     }
   }
 
+  async function exportPDF() {
+    setExporting(true);
+    try {
+      let effectiveRunId = runId;
+      if (!effectiveRunId) {
+        const runsRes = await fetch('/qa/runs');
+        if (runsRes.ok) {
+          const runsData = await runsRes.json();
+          const completed = (runsData.runs || []).filter((r: any) => r.status === 'completed');
+          if (completed[0]) effectiveRunId = completed[0]._key || completed[0].runId;
+        }
+      }
+      if (!effectiveRunId) {
+        toast({ title: 'No run available for export', status: 'warning', duration: 3000 });
+        return;
+      }
+      // Fetch product intelligence for the report
+      const res = await fetch(`/qa/product/${effectiveRunId}`);
+      if (!res.ok) throw new Error('Failed to fetch report data');
+      const product = await res.json();
+      const summary = product.summary || {};
+      const unified = summary.unifiedHealthScore || {};
+
+      // Fetch run details
+      const runRes = await fetch(`/qa/runs/${effectiveRunId}`);
+      const runData = runRes.ok ? await runRes.json() : {};
+
+      exportReportPDF({
+        repoUrl: runData.repoUrl || 'Unknown',
+        branch: runData.branch || 'main',
+        date: new Date(runData.startedAt || Date.now()).toLocaleString(),
+        healthScore: unified.score ?? null,
+        grade: unified.grade || 'N/A',
+        testsGenerated: runData.testsGenerated || 0,
+        testsPassed: runData.testsPassed || 0,
+        mutationScore: runData.mutationScore || 0,
+        breakdown: unified.breakdown
+          ? Object.fromEntries(Object.entries(unified.breakdown).map(([k, v]: [string, any]) => [k, v.score]))
+          : {},
+        findings: (product.codeQuality?.findings || []).slice(0, 20).map((f: any) => ({
+          severity: f.severity || 'medium',
+          title: f.title || f.description || 'Finding',
+          description: f.description || '',
+          file: f.file || f.location || '',
+        })),
+        actionItems: (product.codeQuality?.actionItems || product.actionItems || []).slice(0, 10).map((a: any) => ({
+          priority: a.priority || a.severity || 'medium',
+          title: a.title || a.description || 'Action',
+          effort: a.effort || 'Unknown',
+        })),
+      });
+      toast({ title: 'PDF exported', status: 'success', duration: 2000 });
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      toast({ title: 'PDF export failed', status: 'error', duration: 3000 });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <Menu>
       <MenuButton
@@ -306,6 +367,9 @@ export default function BehaviorExportButton({ runId }: BehaviorExportButtonProp
         </MenuItem>
         <MenuItem icon={<Database size={14} />} onClick={exportJSON} fontSize="sm">
           Export Full Report (.json)
+        </MenuItem>
+        <MenuItem icon={<FileOutput size={14} />} onClick={exportPDF} fontSize="sm">
+          Export PDF Report (.pdf)
         </MenuItem>
       </MenuList>
     </Menu>
