@@ -519,5 +519,31 @@ export function createQARunsRouter(dbClient: any, eventPublisher?: any) {
     }
   });
 
+  // ── GET /trends/:repositoryId — health score trends over time ────────
+  router.get('/trends/:repositoryId', async (req: Request, res: Response) => {
+    try {
+      const runs = await dbClient.query(
+        `FOR r IN ${QA_COLLECTIONS.RUNS}
+           FILTER r.repositoryId == @repoId AND r.status == 'completed'
+           SORT r.startedAt ASC
+           RETURN {
+             runId: r._key,
+             date: r.startedAt,
+             testsGenerated: r.testsGenerated || 0,
+             testsPassed: r.testsPassed || 0,
+             mutationScore: r.mutationScore || 0,
+             healthScore: r.unifiedHealthScore.score,
+             grade: r.unifiedHealthScore.grade,
+             commitSha: r.commitSha,
+             commitMessage: r.commitMessage
+           }`,
+        { repoId: req.params.repositoryId }
+      );
+      res.json({ runs: runs || [], repositoryId: req.params.repositoryId });
+    } catch (err: any) {
+      res.json({ runs: [], error: err.message });
+    }
+  });
+
   return router;
 }
