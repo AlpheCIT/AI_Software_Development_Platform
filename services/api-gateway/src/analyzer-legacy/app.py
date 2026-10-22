@@ -834,7 +834,6 @@ class BedrockAIService:
             logger.info(f"Debug - Model ID lower: {self.model_id.lower()}")
             logger.info(f"Debug - is_claude4: {is_claude4}")
             logger.info(f"Debug - Bearer Token present: {bool(bearer_token)}")
-            logger.info(f"Debug - Bearer Token (first 20 chars): {bearer_token[:20] if bearer_token else 'None'}")
 
             # Debug: Check all AWS env vars
             aws_vars = {k: v for k, v in os.environ.items() if k.startswith('AWS_')}
